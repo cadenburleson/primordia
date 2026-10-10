@@ -4,7 +4,7 @@ import { PRESETS, type Command, type Snapshot } from './types';
 import {storeWorld,readWorld} from '../storage';
 import {NurserySession,nurseryConfig} from './nursery-session';
 import {AssessmentRecorder} from './assessment';
-import {SimulationClock, requestedSpeed, BATCH_MS} from './scheduler';
+import {SimulationClock, requestedSpeed, BATCH_MS, MAX_BATCH_MS} from './scheduler';
 const clock = new SimulationClock(); clock.reset(performance.now());
 
 let world: World | null = null;
@@ -93,7 +93,15 @@ self.onmessage = (event: MessageEvent<Command>) => {
           // fails, the current planet remains available, paused and intact.
           await storeWorld(backup,'nursery-parent');
           const next=new World(JSON.stringify(nurseryConfig(meta.config)));
-          try{if(nursery.savedHabitat)next.load(nursery.savedHabitat);else next.start_physical();}catch(error){next.free();throw error;}
+          try{
+            if(nursery.savedHabitat)next.load(nursery.savedHabitat);
+            else{
+              next.start_physical();
+              // A new nursery inherits the planet's star, oceans and pace of change.
+              const dials=meta.autonomous.steering;
+              if(dials)for(const action of [{kind:'light',scale:dials.light},{kind:'mixing',scale:dials.mixing},{kind:'mutation',scale:dials.mutation}])next.steer(JSON.stringify(action));
+            }
+          }catch(error){next.free();throw error;}
           nursery.begin(backup,meta.config.name);world.free();world=next;speed=0;displayPriority='evolution';paused=false;
         }else{
           paused=true;
@@ -118,7 +126,19 @@ self.onmessage = (event: MessageEvent<Command>) => {
         try{next.load(JSON.stringify(cmd.data));}catch(error){next.free();throw error;}
         world=next;selected=0;paused=true;clock.reset(performance.now());postMessage({type:'loaded'});publish();schedulePump();return;
       }
-      if(assessment.running&&['config','seed','pulse','cell-budget','specimen','editor'].includes(cmd.type))throw new Error('Resource and population changes are disabled during a matched comparison.');
+      if(assessment.running&&['config','seed','pulse','cell-budget','specimen','editor','steer'].includes(cmd.type))throw new Error('Resource and population changes are disabled during a matched comparison.');
+      if(cmd.type==='steer'){
+        if(!world)throw new Error('Create a world first.');
+        if(assessment.running||assessment.control)throw new Error('Return to the checkpoint before steering evolution.');
+        // Disasters can be undone from World → Undo; dials and breeding goals leave time running.
+        const destructive=cmd.action.kind==='meteor'||cmd.action.kind==='dying';
+        const before=destructive?world.save():null;
+        const message=world.steer(JSON.stringify(cmd.action));
+        if(before!==null){editUndo=before;editUndoSelection=selected;}
+        checkpoint=null;assessmentDeadline=null;assessment.reset();
+        postMessage({type:'steered',kind:cmd.action.kind,message});
+        publish();schedulePump();return;
+      }
       if(cmd.type==='editor'){
         if(!world)throw new Error('Create a world first.');
         const meta=JSON.parse(world.metadata(selected)) as Snapshot;
@@ -182,6 +202,8 @@ self.onmessage = (event: MessageEvent<Command>) => {
       }
       if (cmd.type === 'init') {
         const next = new World(JSON.stringify(cmd.config)); next.start_physical();
+        // Starting conditions chosen at creation, such as the star's brightness.
+        try{for(const action of cmd.steering??[])next.steer(JSON.stringify(action));}catch(error){next.free();throw error;}
         paused=true;
         if (world) { previousWorld=world.save(); try { await storeWorld(previousWorld,'before-new-world'); } catch {} }
         else { try { previousWorld=await readWorld('before-new-world'); } catch {} }
@@ -265,10 +287,10 @@ function pump() {
   const now = performance.now();
   if (world && !paused && visible) {
     clock.accrue(now, speed);
-    const start = performance.now(); let steps = 0;
-    // Yield regularly to handle pause/save/config, even in Max mode. One slow
-    // Rust tick cannot be interrupted, so measured speed is always reported.
-    while (steps < 32 && performance.now() - start < BATCH_MS && clock.take(speed)) {
+    const start = performance.now(), budget = speed === 0 ? MAX_BATCH_MS : BATCH_MS; let steps = 0;
+    // Yield between batches to handle pause/save/config, even in Max mode. One
+    // slow Rust tick cannot be interrupted, so measured speed is always reported.
+    while (steps < 256 && performance.now() - start < budget && clock.take(speed)) {
       world.step(1); steps++; clock.record();
       if(assessmentDeadline!==null&&world.simulation_time()>=assessmentDeadline){
         const meta=JSON.parse(world.metadata(selected)) as Snapshot;assessment.finish(meta);assessmentDeadline=null;paused=true;break;
@@ -279,11 +301,18 @@ function pump() {
   if (world && visible && snapshotDirty && performance.now() - lastPublish > (displayPriority==='evolution' ? 2000 : speed === 0 ? 500 : 250)) {
     publish();
   }
-  // Always leave idle time, including Max. A single synchronous tick can overrun
-  // the compute deadline; yielding afterwards still leaves time for other work.
-  schedulePump(paused || !visible ? 250 : 35);
+  // Max, or a paced speed that is still behind, continues immediately: the
+  // worker thread is dedicated to evolution. Otherwise wait for the next frame.
+  const busy = speed === 0 || clock.pending();
+  schedulePump(paused || !visible ? 250 : busy ? 0 : 16);
 }
-function schedulePump(delay=35){
+// A message to ourselves queues behind pending commands without the 4 ms
+// minimum that nested timers impose.
+const yieldChannel = typeof MessageChannel === 'undefined' ? null : new MessageChannel();
+if (yieldChannel) yieldChannel.port1.onmessage = () => { pumpScheduled = false; pump(); };
+function schedulePump(delay=16){
   if(!world||pumpScheduled)return;
-  pumpScheduled=true;setTimeout(()=>{pumpScheduled=false;pump();},delay);
+  pumpScheduled=true;
+  if(delay===0&&yieldChannel)yieldChannel.port2.postMessage(0);
+  else setTimeout(()=>{pumpScheduled=false;pump();},delay);
 }

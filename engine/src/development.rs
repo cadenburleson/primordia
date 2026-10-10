@@ -378,7 +378,10 @@ impl Habitat {
             self.heat += total - rounded as f64;
             embryo.age = 0.;
             embryo.cooldown = 3.;
-            embryo.state = physiology::CellState::default();
+            embryo.state = physiology::CellState {
+                favoured: ca.state.favoured || cb.state.favoured,
+                ..Default::default()
+            };
             embryo.chemicals = [0.; 2];
             embryo.expression = [0.; ACTIONS];
             removed.insert(ca.id);

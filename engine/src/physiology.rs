@@ -32,6 +32,8 @@ pub struct CellState {
     pub germline: f32,
     pub light_contrast: f32,
     pub flux: crate::observations::Flux,
+    /// Member of a lineage the player chose to favour; inherited at division.
+    pub favoured: bool,
 }
 impl CellState {
     pub fn valid(&self) -> bool {

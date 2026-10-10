@@ -43,6 +43,11 @@ export class World {
     start_physical(): void;
     start_population(count: number): void;
     start_tissue_study(): void;
+    /**
+     * Creator steering: mutation rate, breeding goals, favoured lineages and
+     * disasters. Changes selection and variation, never genes or materials.
+     */
+    steer(json: string): string;
     step(count: number): void;
 }
 
@@ -84,6 +89,7 @@ export interface InitOutput {
     readonly world_start_physical: (a: number) => void;
     readonly world_start_population: (a: number, b: number) => void;
     readonly world_start_tissue_study: (a: number) => void;
+    readonly world_steer: (a: number, b: number, c: number) => [number, number, number, number];
     readonly world_step: (a: number, b: number) => void;
     readonly __wbindgen_externrefs: WebAssembly.Table;
     readonly __wbindgen_malloc: (a: number, b: number) => number;

@@ -1,13 +1,13 @@
 import type {Snapshot} from './sim/types';
 const $=<T extends HTMLElement=HTMLElement>(id:string)=>document.getElementById(id) as T;
 const descriptions:Record<string,string>={progress:'The story so far',life:'Select a body. Discover its strategy.',ecology:'What is available, eaten, and produced?',evidence:'Does this mechanism actually help?',collection:'Preserve a lineage. Place it elsewhere.',notes:'A record of this world’s changes'};
-type StudioPanel='guide'|'shape'|'observe'|null;
+type StudioPanel='guide'|'powers'|'shape'|'observe'|null;
 let panel:StudioPanel=null,currentTab='progress';
 export function setStudioPanel(next:StudioPanel){
   panel=next;const workspace=document.querySelector<HTMLElement>('.workspace')!;
   workspace.classList.toggle('hide-shape',next!=='shape');workspace.classList.toggle('hide-observe',next!=='observe');workspace.classList.toggle('panel-open',next!==null);
-  document.querySelector<HTMLElement>('.world-panel')!.hidden=next!=='shape';document.querySelector<HTMLElement>('.life-panel')!.hidden=next!=='observe';$('evolution-guide').hidden=next!=='guide';
-  for(const [id,active] of [['toggle-guide',next==='guide'],['toggle-shape',next==='shape'],['toggle-observe',next==='observe'&&currentTab!=='collection'],['toggle-collection',next==='observe'&&currentTab==='collection']] as const){$(id).classList.toggle('active',active);$(id).setAttribute('aria-expanded',String(active));}
+  document.querySelector<HTMLElement>('.world-panel')!.hidden=next!=='shape';document.querySelector<HTMLElement>('.life-panel')!.hidden=next!=='observe';$('evolution-guide').hidden=next!=='guide';$('powers-panel').hidden=next!=='powers';
+  for(const [id,active] of [['toggle-guide',next==='guide'],['toggle-powers',next==='powers'],['toggle-shape',next==='shape'],['toggle-observe',next==='observe'&&currentTab!=='collection'],['toggle-collection',next==='observe'&&currentTab==='collection']] as const){$(id).classList.toggle('active',active);$(id).setAttribute('aria-expanded',String(active));}
 }
 export function updateStudio(tab:string){
   currentTab=tab;$('observer-context').textContent=descriptions[tab]??'';
@@ -17,6 +17,7 @@ export function updateStudio(tab:string){
 export function initStudio(openTab:(tab:string)=>void){
   $('toggle-guide').onclick=()=>setStudioPanel(panel==='guide'?null:'guide');
   $('guide-hint').onclick=()=>setStudioPanel('guide');
+  $('toggle-powers').onclick=()=>setStudioPanel(panel==='powers'?null:'powers');
   $('toggle-shape').onclick=()=>setStudioPanel(panel==='shape'?null:'shape');
   $('toggle-observe').onclick=()=>{if(panel==='observe'&&currentTab!=='collection')setStudioPanel(null);else openTab(currentTab==='collection'?'progress':currentTab);};
   $('toggle-collection').onclick=()=>{if(panel==='observe'&&currentTab==='collection')setStudioPanel(null);else openTab('collection');};

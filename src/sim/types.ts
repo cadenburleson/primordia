@@ -30,7 +30,7 @@ export interface Lineage {
   id: number; parent: number; name: string; born: number; generation: number;
   color: string; ancestor: number[]; peak: number; representative?: number;
 }
-export interface LifeEvent { time: number; text: string; type: 'origin' | 'birth' | 'colony' | 'sex' | 'extinction' | 'world' | 'motion' | 'feeding' | 'tissue' }
+export interface LifeEvent { time: number; text: string; type: 'origin' | 'birth' | 'colony' | 'sex' | 'extinction' | 'world' | 'motion' | 'feeding' | 'tissue' | 'milestone' }
 export interface HistoryPoint { time: number; population: number; cells: number; colonies: number; diversity: number }
 export interface Stats {
   time: number; population: number; cells: number; colonies: number; diversity: number;
@@ -59,7 +59,24 @@ export interface PlanetView {seasonStrength?:number;seasonPeriod?:number;cloudCo
 export interface CellLifecycle {root:number;depth:number;phase:"somatic"|"gamete"|"zygote";mate:number;homolog:{id:number;genes:ProgramCell["genes"]}|null}
 export interface DevelopmentView {gametesProduced:number;zygotes:number;meioses:number;livingGametes:number;diploidCells:number;synapses:number;transmissions:number;adaptations:number;sensoryWork:number;neuralWork:number;fusionWork:number;recent:{time:number;child:number;parent:number;mate:number;generation:number}[]}
 export interface ProgramCell {lifecycle?:CellLifecycle;state?:CellPhysiology;material?:MaterialInventory|null;id:number;parent:number;genome:number;generation:number;genes:{action:number;promoter:number[];bias:number;strength:number}[];energy:number;chemicals:number[];expression:number[]}
-export interface AutonomousView {systems?:SystemView|null;development?:DevelopmentView|null;resources?:{detritus:number[];mineral:number[];waste?:number[];light?:number[];area?:number[]};feeding?:{time:number;attacker:number;prey:number;attacker_genome:number;prey_genome:number;material:string;amount:number}[];observationControl?:string;physiology?:PhysiologyView;planet?:PlanetView|null;detritus?:number;waste?:number;physics?:PhysicsView|null;actions:string[];expressed:number[];divisions:number;attachedDivisions:number;pointEdits:number;duplications:number;deletions:number;innovations:number;exchanges:number;foodEnergy:number;motorWork:number;peakBody:number;peakGeneration:number;genomeMin:number;genomeMax:number;genomes:number;recent:{time:number;parent:number;child:number;genome:number;generation:number;attached:boolean;edits:number}[]}
+export type BreedingGoal='bodies'|'movement'|'support'|'senses'|'hunting';
+/** Creator commands. They change selection and variation, never genes or materials. */
+export type SteerAction =
+  | {kind:'mutation';scale:number}
+  | {kind:'mixing';scale:number}
+  | {kind:'light';scale:number}
+  | {kind:'goal';goal:BreedingGoal|'';strength:number;period:number}
+  | {kind:'favour';body:number;pressure:number}
+  | {kind:'unfavour'}
+  | {kind:'storm';scale:number;duration:number}
+  | {kind:'winter';depth:number;duration:number}
+  | {kind:'meteor';x:number;z:number;radius:number}
+  | {kind:'dying';fraction:number}
+  | {kind:'nourish';amount:number};
+/** stage: 0 absent · 1 gene in the pool · 2 working somewhere · 3 established. */
+export interface LadderRung {key:string;stage:0|1|2|3;progress:number;genes:number;built:number;count:number;first:(number|null)[]}
+export interface SteeringView {mutation:number;mutationFactor:number;mixing:number;light:number;losses:[number,number,number];storm:number;goal:BreedingGoal|'';strength:number;period:number;nextRound:number;rounds:number;culled:number;note:''|'selecting'|'no-variation'|'recovering'|'too-few';scored:number;bodies:number;favoured:number;favourPressure:number;favourCulled:number;winter:number;ladder:LadderRung[];milestones:{key:string;stage:number;time:number;generation:number}[]}
+export interface AutonomousView {steering?:SteeringView|null;systems?:SystemView|null;development?:DevelopmentView|null;resources?:{detritus:number[];mineral:number[];waste?:number[];light?:number[];area?:number[]};feeding?:{time:number;attacker:number;prey:number;attacker_genome:number;prey_genome:number;material:string;amount:number}[];observationControl?:string;physiology?:PhysiologyView;planet?:PlanetView|null;detritus?:number;waste?:number;physics?:PhysicsView|null;actions:string[];expressed:number[];divisions:number;attachedDivisions:number;pointEdits:number;duplications:number;deletions:number;innovations:number;exchanges:number;foodEnergy:number;motorWork:number;peakBody:number;peakGeneration:number;genomeMin:number;genomeMax:number;genomes:number;recent:{time:number;parent:number;child:number;genome:number;generation:number;attached:boolean;edits:number}[]}
 export interface Snapshot {
   type: 'snapshot'; nursery?:{parentName:string}|null; selection?:number; paused?:boolean; assessment?:Assessment; canUndoWorld?:boolean; config: WorldConfig; data: Float32Array; ids: Uint32Array;
   cellData:Float32Array; linkData:Float32Array; jointData:Float32Array; lab:LabView|null; study:boolean; competition:CompetitionView|null; autonomous?:AutonomousView|null;
@@ -82,6 +99,7 @@ export type WorldEdit =
 export type Command =
   | {type:'brush-stroke';id:number;start:boolean;end:boolean;settings:import('../brush').BrushSettings;points:[number,number][]}
   | {type:'nursery';action:'enter'|'leave'|'recover'}
+  | {type:'steer';action:SteerAction}
   | {type:'display-priority';mode:'live'|'evolution'}
   | {type:'editor';action:'apply';edit:WorldEdit}
   | {type:'editor';action:'undo'}
@@ -90,7 +108,7 @@ export type Command =
   | {type:'specimen';action:'capture';name:string;id:number}
   | {type:'specimen';action:'inspect';json:string}
   | {type:'specimen';action:'place';json:string;x:number;z:number}
-  | { type: 'init'; config: WorldConfig }
+  | { type: 'init'; config: WorldConfig; steering?: SteerAction[] }
   | { type: 'control'; paused?: boolean; speed?: number }
   | { type: 'visibility'; visible: boolean }
   | { type: 'config'; patch: Partial<WorldConfig> }

@@ -339,6 +339,8 @@ pub struct Habitat {
     #[serde(default)]
     pub systems: crate::organics::SystemLedger,
     #[serde(default)]
+    pub steering: crate::steering::Steering,
+    #[serde(default)]
     pub joints: Vec<MaterialJoint>,
     #[serde(default)]
     pub passive: bool,
@@ -435,6 +437,7 @@ impl Habitat {
             physiology: crate::physiology::Ledger::default(),
             development: crate::development::Development::default(),
             systems: crate::organics::SystemLedger::default(),
+            steering: crate::steering::Steering::default(),
             joints: Vec::new(),
             passive: core.config.physical_assay == "passive",
             solutes,
@@ -492,6 +495,7 @@ impl Habitat {
         let ids: BTreeSet<_> = cells.iter().map(|c| c.id).collect();
         let mut keys = BTreeSet::new();
         ["", "motors", "transport", "signals"].contains(&self.ablation.as_str())
+            && self.steering.valid()
             && self.meals.len() <= 24
             && self.meals.iter().all(|m| {
                 m.time.is_finite() && m.time >= 0. && m.amount.is_finite() && m.amount >= 0.
@@ -565,8 +569,9 @@ impl Habitat {
                 .all(|v| v.abs() < 1e-6 * (1. + self.initial_energy))
     }
     pub fn transport(&mut self, dt: f64) {
+        let diffusivity = self.diffusivity(DIFFUSIVITY);
         if self.domain.spherical() {
-            crate::surface::SurfaceFlow::diffuse(self.domain, &mut self.solutes, dt, DIFFUSIVITY);
+            crate::surface::SurfaceFlow::diffuse(self.domain, &mut self.solutes, dt, diffusivity);
             self.decay_signals(dt);
             return;
         }
@@ -606,7 +611,7 @@ impl Habitat {
                                 let donor = if u >= 0. { old[i][k] } else { old[j][k] };
                                 let flux = dt / 4.
                                     * (u / DX * donor
-                                        + DIFFUSIVITY[k] / (DX * DX) * (old[i][k] - old[j][k]));
+                                        + diffusivity[k] / (DX * DX) * (old[i][k] - old[j][k]));
                                 delta[i][k] -= flux;
                                 delta[j][k] += flux;
                             }
@@ -678,7 +683,8 @@ impl Habitat {
             self.reserves_and_repair(c);
             let dt = DT as f64 * self.planet.as_ref().map_or(1., |p| p.kinetics(site));
             let illumination = self.planet.as_ref().map_or(1., |p| p.illumination(site))
-                * self.light_fraction(site);
+                * self.light_fraction(site)
+                * self.steering.light as f64;
             let s = &mut self.solutes[site];
             let m = c.material.as_mut().unwrap();
             let activity: Vec<_> = (0..ACTIONS)
@@ -1304,7 +1310,7 @@ impl Habitat {
                 };
                 let ground = altitude <= floor + 0.001
                     && if self.domain.spherical() {
-                        p.surface_depth(self.domain.locate(c.p)) < 0.1
+                        p.surface_depth(self.domain.index(x, z)) < 0.1
                     } else {
                         self.domain.ground(x, z, core.config.seed) + p.relief_at(x, z) > 0.12
                     };
@@ -1402,6 +1408,7 @@ impl Habitat {
     }
     pub(crate) fn divide(&mut self, e: &mut Evolution, core: &mut Core) {
         let n = e.cells.len();
+        let variation = self.mutation_factor(core.time);
         let mut daughters = Vec::new();
         let mut degree = BTreeMap::<u32, usize>::new();
         for b in &e.bonds {
@@ -1461,13 +1468,13 @@ impl Habitat {
             } else {
                 0.
             };
-            let mut edits = child.genome.mutate_protected(core, fidelity);
+            let mut edits = child.genome.mutate_scaled(core, fidelity, variation);
             if edits.iter().sum::<u32>() > 0 || gamete {
                 child.genome.id = e.next_genome;
                 e.next_genome += 1;
             }
             if let Some(other) = &mut child.lifecycle.homolog {
-                let extra = other.mutate_protected(core, fidelity);
+                let extra = other.mutate_scaled(core, fidelity, variation);
                 if extra.iter().sum::<u32>() > 0 {
                     if edits.iter().sum::<u32>() == 0 {
                         child.genome.id = e.next_genome;
@@ -1566,6 +1573,14 @@ impl Habitat {
             let m = c.material.as_ref().unwrap();
             let alive = c.energy > 0.0001 && m.biomass >= 0.02 && c.state.injury < 0.98;
             if !alive {
+                let cause = if c.state.injury >= 0.98 {
+                    2
+                } else if c.energy <= 0.0001 {
+                    0
+                } else {
+                    1
+                };
+                self.steering.losses[cause] += 1;
                 let site = self.domain.locate(c.p);
                 self.solutes[site][0] += m.fuel;
                 let detritus = m.organic() - m.fuel - m.body.dissolved_organic();
@@ -1648,6 +1663,7 @@ impl Habitat {
         self.mechanics(e, core, &pairs);
         self.fertilize(e, core, &pairs);
         self.divide(e, core);
+        self.steer(e, core);
         self.recycle(e);
         if let Some(p) = &mut self.planet {
             p.biological_water = e

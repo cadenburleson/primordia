@@ -12,6 +12,7 @@ pub mod domain;
 pub mod experiment;
 pub mod observations;
 pub mod specimens;
+pub mod steering;
 pub mod interventions;
 pub mod organics;
 pub mod physical;
@@ -1662,6 +1663,11 @@ impl World {
     }
     pub fn intervene(&mut self, json: &str) -> Result<String, JsValue> {
         self.core.intervene(json).map_err(|e| JsValue::from_str(&e))
+    }
+    /// Creator steering: mutation rate, breeding goals, favoured lineages and
+    /// disasters. Changes selection and variation, never genes or materials.
+    pub fn steer(&mut self, json: &str) -> Result<String, JsValue> {
+        self.core.steer(json).map_err(|e| JsValue::from_str(&e))
     }
     pub fn founder_specimen(&self) -> Result<String, JsValue> {
         self.core.founder_specimen().map_err(|e| JsValue::from_str(&e))

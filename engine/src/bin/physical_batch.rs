@@ -7,10 +7,11 @@ fn run() -> Result<(), String> {
     let mut cycles = 100.;
     let mut output = None;
     let mut input = None;
+    let mut steering = Vec::new();
     let mut i = 0;
     while i < args.len() {
         if args[i] == "--help" {
-            println!("physical_batch [--founders 256] [--cells 8192] [--cycles 100] [--size 128] [--shape sphere] [--spread global] [--seed 8042] [--input save.json] [--output save.json]\nSame fixed-dt physics as the browser, without rendering. Input resumes all chemical, fluid and genome state. The cell budget can be raised on resume.");
+            println!("physical_batch [--founders 256] [--cells 8192] [--cycles 100] [--size 128] [--shape sphere] [--spread global] [--layout patchy] [--seed 8042] [--input save.json] [--output save.json] [--steer <creator command JSON, repeatable>]\nSame fixed-dt physics as the browser, without rendering. Input resumes all chemical, fluid and genome state. The cell budget can be raised on resume.");
             return Ok(());
         }
         let value = args.get(i + 1).ok_or("Each option requires a value")?;
@@ -28,10 +29,13 @@ fn run() -> Result<(), String> {
                 }
             }
             "--spread" => config.founder_spread = value.clone(),
+            "--layout" => config.resource_layout = value.clone(),
             "--seed" => config.seed = value.parse().map_err(|_| "Invalid seed")?,
             "--cycles" => cycles = value.parse::<f64>().map_err(|_| "Invalid cycle count")?,
             "--output" => output = Some(value.clone()),
             "--input" => input = Some(value.clone()),
+            // Repeatable creator command, e.g. '{"kind":"mutation","scale":4}'.
+            "--steer" => steering.push(value.clone()),
             _ => return Err(format!("Unknown option: {}", args[i])),
         }
         i += 2;
@@ -70,16 +74,30 @@ fn run() -> Result<(), String> {
         c.start_physical();
         c
     };
+    for command in &steering {
+        eprintln!("{}", world.steer(command)?);
+    }
     let start = Instant::now();
     let initial_time = world.time;
     let ticks = (cycles * 4.).ceil() as u32;
     for tick in 0..ticks {
         world.step(1);
         if tick % 400 == 399 {
+            let e = world.autonomous.as_ref().unwrap();
+            let n = e.cells.len().max(1) as f32;
+            let mean = |f: &dyn Fn(&primordia_engine::autonomous::Cell) -> f32| {
+                e.cells.iter().map(f).sum::<f32>() / n
+            };
             eprintln!(
-                "{:.1} cycles, {} cells",
+                "{:.1} cycles, {} cells · energy {:.2} biomass {:.3} injury {:.2} exposure {:.2} age {:.0} · lost [starved, wasted, injured] {:?}",
                 world.time,
-                world.autonomous.as_ref().unwrap().cells.len()
+                e.cells.len(),
+                mean(&|c| c.energy),
+                mean(&|c| c.material.as_ref().map_or(0., |m| m.biomass as f32)),
+                mean(&|c| c.state.injury),
+                mean(&|c| c.state.exposure),
+                mean(&|c| c.age),
+                e.physical.as_ref().unwrap().steering.losses
             );
         }
     }
@@ -91,6 +109,20 @@ fn run() -> Result<(), String> {
     println!(
         "{}",
         serde_json::json!({"cycles":world.time-initial_time,"cells":e.cells.len(),"cellBudget":world.config.capacity,"divisions":e.divisions,"maxGeneration":e.peak_generation,"seconds":seconds,"actualSpeed":(world.time-initial_time)as f64/seconds,"balanceErrors":e.physical.as_ref().unwrap().errors(&e.cells)})
+    );
+    let view = e.physical.as_ref().unwrap().steering_view(e, &world);
+    for rung in view["ladder"].as_array().unwrap() {
+        eprintln!(
+            "{:>9}  stage {}  genes {:>5.1}%  built {:>5.1}%",
+            rung["key"].as_str().unwrap(),
+            rung["stage"],
+            rung["genes"].as_f64().unwrap() * 100.,
+            rung["built"].as_f64().unwrap() * 100.
+        );
+    }
+    eprintln!(
+        "breeding: {} rounds, {} cells removed, last round '{}'",
+        view["rounds"], view["culled"], view["note"].as_str().unwrap()
     );
     if let Some(path) = output {
         fs::write(

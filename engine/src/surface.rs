@@ -8,6 +8,70 @@ pub struct SurfaceFlow {
     pub velocities: Vec<V3>,
     pub water_transported: f64,
 }
+/// Static mesh geometry. It depends only on the domain (and, for the seeded
+/// ground height, the world seed), so it is built once instead of every tick.
+struct Mesh {
+    areas: Vec<f64>,
+    normals: Vec<V3>,
+    /// Seeded ground height without player or volcanic relief.
+    ground: Vec<f32>,
+    /// Edge endpoints, their tangent directions and geodesic length.
+    edges: Vec<(usize, usize, V3, V3, f64)>,
+}
+impl Mesh {
+    fn of(d: Domain, seed: u32) -> std::rc::Rc<Mesh> {
+        thread_local! {
+            static CACHE: std::cell::RefCell<Vec<(Domain, u32, std::rc::Rc<Mesh>)>> =
+                const { std::cell::RefCell::new(Vec::new()) };
+        }
+        CACHE.with(|cache| {
+            let mut cache = cache.borrow_mut();
+            if let Some(hit) = cache.iter().find(|c| c.0 == d && c.1 == seed) {
+                return hit.2.clone();
+            }
+            let count = d.sites();
+            let normals: Vec<_> = (0..count)
+                .map(|i| {
+                    let (x, z) = d.point(i);
+                    d.normal(x, z)
+                })
+                .collect();
+            let edges = d
+                .edges()
+                .into_iter()
+                .map(|(i, j)| {
+                    let delta = normals[j].sub(normals[i]);
+                    let a = delta.sub(normals[i].mul(delta.dot(normals[i])));
+                    let b = delta.sub(normals[j].mul(delta.dot(normals[j])));
+                    (
+                        i,
+                        j,
+                        a.mul(1. / a.len().max(1e-8)),
+                        b.mul(1. / b.len().max(1e-8)),
+                        d.distance(i, j),
+                    )
+                })
+                .collect();
+            let mesh = std::rc::Rc::new(Mesh {
+                areas: (0..count).map(|i| d.area(i)).collect(),
+                ground: (0..count)
+                    .map(|i| {
+                        let (x, z) = d.point(i);
+                        d.ground(x, z, seed)
+                    })
+                    .collect(),
+                normals,
+                edges,
+            });
+            // A session only ever alternates between a planet, its nursery and a lab.
+            if cache.len() >= 4 {
+                cache.remove(0);
+            }
+            cache.push((d, seed, mesh.clone()));
+            mesh
+        })
+    }
+}
 impl SurfaceFlow {
     pub fn new(d: Domain) -> Self {
         Self {
@@ -25,35 +89,11 @@ impl SurfaceFlow {
             && self.water_transported >= 0.
     }
     pub fn step(&mut self, d: Domain, p: &mut Planet, solutes: &mut [[f64; 6]], seed: u32) {
-        let edges = d.edges();
+        let mesh = Mesh::of(d, seed);
+        let (areas, normals, geometry) = (&mesh.areas, &mesh.normals, &mesh.edges);
         let count = d.sites();
-        let areas: Vec<_> = (0..count).map(|i| d.area(i)).collect();
-        let normals: Vec<_> = (0..count)
-            .map(|i| {
-                let (x, z) = d.point(i);
-                d.normal(x, z)
-            })
-            .collect();
         let ground: Vec<_> = (0..count)
-            .map(|i| {
-                let (x, z) = d.point(i);
-                d.ground(x, z, seed) as f64 + p.relief[i] as f64
-            })
-            .collect();
-        let geometry: Vec<_> = edges
-            .iter()
-            .map(|&(i, j)| {
-                let delta = normals[j].sub(normals[i]);
-                let a = delta.sub(normals[i].mul(delta.dot(normals[i])));
-                let b = delta.sub(normals[j].mul(delta.dot(normals[j])));
-                (
-                    i,
-                    j,
-                    a.mul(1. / a.len().max(1e-8)),
-                    b.mul(1. / b.len().max(1e-8)),
-                    d.distance(i, j),
-                )
-            })
+            .map(|i| mesh.ground[i] as f64 + p.relief[i] as f64)
             .collect();
         // Small physical substeps, with conservative donor limiting at tiny polar
         // cells. The limiter reduces accuracy at extreme Courant numbers, not mass.
@@ -61,7 +101,7 @@ impl SurfaceFlow {
         for _ in 0..16 {
             let old = self.velocities.clone();
             let mut change = vec![V3::default(); count];
-            for &(i, j, a, b, length) in &geometry {
+            for &(i, j, a, b, length) in geometry {
                 let hi = ground[i] + p.water[i] / areas[i];
                 let hj = ground[j] + p.water[j] / areas[j];
                 let acceleration = (0.3 * (hi - hj) / length * dt / 4.) as f32;
@@ -82,7 +122,7 @@ impl SurfaceFlow {
                 };
             }
             // Each edge transfer also transports its donor's material and momentum.
-            for &(i, j, a, b, _) in &geometry {
+            for &(i, j, a, b, _) in geometry {
                 let speed = (self.velocities[i].dot(a) + self.velocities[j].dot(b)) as f64 * 0.5;
                 let (donor, receiver) = if speed >= 0. { (i, j) } else { (j, i) };
                 let width = areas[i].min(areas[j]).sqrt();
@@ -113,14 +153,10 @@ impl SurfaceFlow {
         }
     }
     pub fn diffuse(d: Domain, solutes: &mut [[f64; 6]], dt: f64, diffusivity: [f64; 6]) {
-        let edges = d.edges();
-        let areas: Vec<_> = (0..d.sites()).map(|i| d.area(i)).collect();
-        let geometry: Vec<_> = edges
-            .into_iter()
-            .map(|(i, j)| (i, j, d.distance(i, j)))
-            .collect();
+        let mesh = Mesh::of(d, 0);
+        let areas = &mesh.areas;
         for _ in 0..4 {
-            for &(i, j, length) in &geometry {
+            for &(i, j, _, _, length) in &mesh.edges {
                 for k in 0..6 {
                     let flux = dt / 4. * diffusivity[k] * areas[i].min(areas[j])
                         / (length * length)

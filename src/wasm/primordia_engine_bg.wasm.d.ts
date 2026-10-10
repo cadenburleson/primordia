@@ -35,6 +35,7 @@ export const world_start_lab: (a: number) => void;
 export const world_start_physical: (a: number) => void;
 export const world_start_population: (a: number, b: number) => void;
 export const world_start_tissue_study: (a: number) => void;
+export const world_steer: (a: number, b: number, c: number) => [number, number, number, number];
 export const world_step: (a: number, b: number) => void;
 export const __wbindgen_externrefs: WebAssembly.Table;
 export const __wbindgen_malloc: (a: number, b: number) => number;

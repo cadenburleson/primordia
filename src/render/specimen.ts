@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import { GI, type OrganismView } from '../sim/types';
 import {jointGeometry} from './joints';
+import {CELL_TYPES,CHOSEN_COLOR,cellType,isChosen} from '../sim/roles';
 import type {PhysicalJoint} from '../sim/types';
 
 /** Inspection uses the same solver state as the world, including actual links. */
@@ -8,6 +9,8 @@ export class SpecimenView {
   renderer:THREE.WebGLRenderer;
   scene=new THREE.Scene();camera=new THREE.PerspectiveCamera(35,1,.1,50);body=new THREE.Group();
   signature='';alive=true;observer:ResizeObserver;
+  /** The physical world uses material cell types; older labs use tissue roles. */
+  physics=false;
   private cells:THREE.Mesh[]=[];private links:THREE.Mesh[]=[];private contacts:THREE.Mesh[]=[];
   private targets:THREE.Vector3[]=[];private linkEnds:[number,number][]=[];
   private radius=.7;
@@ -33,9 +36,10 @@ export class SpecimenView {
       this.body.traverse(child=>{if(child instanceof THREE.Mesh){child.geometry.dispose();(child.material as THREE.Material).dispose();}});
       this.body.clear();this.cells=[];this.links=[];this.contacts=[];this.linkEnds=[];this.targets=[];this.jointVisuals=[];
       for(let i=0;i<n;i++){
-        const role=nodes[i]?.role??0;
+        const raw=nodes[i]?.role??0,role=this.physics?cellType(raw):raw;
         const color=new THREE.Color().setHSL(.30+(o?.genes[GI.pigment]??.5)*.42,.5,.6);
-        if(role===1)color.set('#d8e5c4');if(role===2)color.set('#d88e72');if(role===3)color.set('#83c7d1');if(role===4)color.set('#ddb76b');if(role===5)color.set('#b5a2d9');if(role===6)color.set('#ddb76b');if(role===7)color.set('#b3d99a');if(role===8)color.set('#dbd1ac');if(role===9)color.set('#73c9bb');if(role===10)color.set('#cf9fb9');if(role===11)color.set('#86b996');
+        if(this.physics){if(role>0&&role<CELL_TYPES.length)color.set(CELL_TYPES[role].color);if(isChosen(raw))color.lerp(new THREE.Color(CHOSEN_COLOR),.5);}
+        else{if(role===1)color.set('#d8e5c4');if(role===2)color.set('#d88e72');if(role===3)color.set('#83c7d1');if(role===4)color.set('#ddb76b');if(role===5)color.set('#b5a2d9');}
         const cell=new THREE.Mesh(new THREE.SphereGeometry(nodes[i]?.radius??.26,12,8),new THREE.MeshStandardMaterial({color,roughness:1,metalness:0}));
         this.cells.push(cell);this.body.add(cell);
         const contact=new THREE.Mesh(new THREE.TorusGeometry(.22,.015,5,24),new THREE.MeshBasicMaterial({color:'#c6ef9e',transparent:true,opacity:.7}));contact.rotation.x=Math.PI/2;this.contacts.push(contact);this.body.add(contact);

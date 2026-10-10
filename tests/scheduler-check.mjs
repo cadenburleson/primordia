@@ -10,5 +10,5 @@ const c=new SimulationClock();c.reset(0);c.accrue(250,1);assert.equal(c.take(1),
 c.accrue(500,1);assert.equal(c.take(1),true);c.record();assert.equal(c.measure(500),1);
 c.accrue(1000,10000);assert.equal(c.take(10000),true);c.reset(1000);assert.equal(c.take(1),false);assert.equal(c.measure(1500),0);
 for(let i=0;i<100;i++)assert.equal(c.take(0),true);
-c.reset(0);for(let i=1;i<=100;i++)c.accrue(i*250,10000);let count=0;while(c.take(10000))count++;assert.equal(count,4096);
+c.reset(0);assert.equal(c.pending(),false);for(let i=1;i<=100;i++)c.accrue(i*250,10000);assert.equal(c.pending(),true);let count=0;while(c.take(10000))count++;assert.equal(count,32);assert.equal(c.pending(),false);
 console.log('Scheduler checks passed: fixed ticks, speeds above 100x, Max mode, achieved rate, bounded debt, reset and invalid input.');

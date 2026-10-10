@@ -105,3 +105,67 @@ html,body,#app { height:100%; overflow:hidden; }
 @media(max-width:980px) { .world-panel,.life-panel,.guide-panel { width:330px; top:80px; bottom:170px; right:18px; padding:18px; } .panel-open .stage-top { right:370px; } .progress-grid { grid-template-columns:1fr 1fr; } .life-panel > div,.life-panel > nav,.life-panel > label { max-width:none; } .experiment { min-height:0; } .stage-bottom .orbit-hint { display:none; } .guide-hint { width:225px; bottom:218px; } .timeline { max-width:calc(100% - 36px); } .time-settings { display:block; } .world-name { display:none; } }
 @media(max-width:640px) { .topbar { top:10px; left:14px; right:14px; height:44px; } .brand { font-size:26px; } .workspace,.workspace.hide-observe,.workspace.hide-shape,.workspace.hide-shape.hide-observe { display:block; height:100dvh; } .experiment { padding:0; min-height:0; } .world-stage { min-height:0; } .stage-top { top:73px; left:15px; right:15px; } .stage-badge { font-size:8px; } .world-layers { top:122px; left:15px; } .world-panel,.life-panel,.guide-panel { top:68px; left:12px; right:12px; bottom:165px; width:auto; max-width:none; border-radius:13px; padding:18px; } .panel-open .stage-top,.panel-open .world-layers,.panel-open .world-coordinate,.panel-open #nursery-status { visibility:hidden; } .planet-dock { bottom:max(13px,env(safe-area-inset-bottom)); padding:5px; gap:2px; width:max-content; max-width:calc(100% - 24px); border-radius:13px; } .planet-dock button { padding:10px 13px; font-size:10px; flex-direction:column; gap:5px; } .planet-dock svg { width:18px; height:18px; } .timeline { bottom:90px; left:12px; right:12px; width:auto; max-width:none; transform:none; padding:8px; } .timeline-top { gap:8px; } .playback { width:auto; flex-wrap:nowrap; gap:8px; } .play-button { min-width:68px; padding:0 9px; font-size:10px; } .speed-controls { gap:6px; } .speed-controls select { padding:6px; } #achieved-speed { display:none; } .cycle { font-size:9px; margin-left:auto; } .cycle strong { font-size:12px; } .time-settings[open]>p,.time-settings[open]>select { right:-90px; } .stage-bottom { display:none; } .world-coordinate { left:15px; bottom:146px; } .world-coordinate span { font-size:8px; } .guide-hint { left:15px; bottom:198px; width:220px; padding:12px 14px; } .guide-hint strong { font-size:18px; } #guide-hint-detail { -webkit-line-clamp:2; font-size:10px; } .guide-hint>.eyebrow { font-size:7px; } .nursery-status { top:178px; left:15px; transform:none; max-width:calc(100% - 30px); padding:10px; gap:10px; } .nursery-status small { display:none; } .nursery-status button { font-size:10px; } .placement-status { bottom:150px; max-width:calc(100% - 30px); font-size:11px; } .study-status { top:178px; left:15px; } }
 @media(max-height:650px) and (min-width:641px) { .world-panel,.life-panel,.guide-panel { top:70px; bottom:150px; } .guide-hint { bottom:175px; } .world-coordinate { bottom:153px; } .stage-top { top:73px; } .world-layers { top:122px; } }
+
+/* Life's ascent, creator powers and milestone moments. */
+.planet-dock button { padding:12px 13px; }
+.guide-hint .hud-bar { display:block; height:3px; border-radius:2px; background:#c7dbad1f; overflow:hidden; }
+.guide-hint .hud-bar b { display:block; height:100%; width:0; background:var(--lime); transition:width .6s; }
+.guide-hint strong { font-size:24px; }
+.ascent { margin:20px 0 24px; }
+.ascent-head { display:flex; justify-content:space-between; align-items:baseline; margin-bottom:12px; }
+#ascent-summary { font-size:10px; color:#9fb7a7; }
+.ascent-now { border:1px solid #f2b84b55; background:#f2b84b0d; border-radius:10px; padding:15px; margin-bottom:16px; }
+.ascent-now > .eyebrow { color:#f2c877; }
+.ascent-now h3 { font:22px/1.2 var(--serif); margin:9px 0 8px; }
+.ascent-now p { font-size:12px; line-height:1.65; color:#c3d3bd; margin:0 0 13px; }
+.ascent-now .primary-button { padding:11px; font-size:12px; }
+.ascent-rungs { list-style:none; margin:0 0 12px; padding:0; }
+.rung { display:grid; grid-template-columns:20px 1fr; gap:9px; padding:9px 0; border-top:1px solid #c7dbad14; color:#7f978a; }
+.rung:first-child { border-top:0; }
+.rung-mark { font-size:13px; line-height:1.35; color:#5d766a; }
+.rung-top { display:flex; justify-content:space-between; align-items:baseline; gap:10px; }
+.rung strong { font-size:13px; font-weight:500; color:#9fb5a6; }
+.rung em { font-style:normal; font-size:9px; letter-spacing:.8px; text-transform:uppercase; white-space:nowrap; }
+.rung p { font-size:11px; line-height:1.55; margin:5px 0 0; color:#a5bfae; }
+.rung small { display:block; font-size:10px; margin-top:5px; color:#8aa394; }
+.rung-bar { display:block; height:3px; margin-top:8px; border-radius:2px; background:#c7dbad17; overflow:hidden; }
+.rung-bar b { display:block; height:100%; background:#8fb39a; transition:width .6s; }
+.rung.stage-1 .rung-mark,.rung.stage-1 em { color:#c9b06c; }
+.rung.stage-2 .rung-mark,.rung.stage-2 em { color:#e3c26a; }
+.rung.stage-2 strong { color:#dbe6cf; }
+.rung.stage-2 .rung-bar b { background:#e3c26a; }
+.rung.stage-3 .rung-mark,.rung.stage-3 em { color:var(--lime); }
+.rung.stage-3 strong { color:#e2eed6; }
+.rung.next { margin:4px -10px; padding:12px 10px; border:1px solid #c7dbad3d; border-radius:10px; background:#c7dbad0a; }
+.rung.next + .rung { border-top:0; }
+.rung.next strong { font:19px/1.2 var(--serif); color:#e6efda; }
+.rung button { margin-top:10px; width:100%; padding:9px 11px; border:1px solid #c7dbad45; border-radius:8px; font-size:11px; color:#d4e6c4; text-align:left; display:flex; justify-content:space-between; }
+.rung button:hover:not(:disabled) { background:#c7dbad1a; }
+.rung-hint { color:#b9cdb2 !important; }
+.powers-panel .power { margin-top:22px; padding-top:18px; border-top:1px solid #c7dbad1a; }
+.power-head { display:flex; justify-content:space-between; align-items:baseline; gap:12px; margin-bottom:12px; }
+.power-head strong { font-size:11px; font-weight:500; color:#d6e6c6; text-align:right; }
+.power-note { font-size:11px; line-height:1.65; color:#9fb7a7; margin:11px 0 0; }
+.segmented { display:flex; gap:3px; padding:3px; border:1px solid #c7dbad24; border-radius:9px; background:#0f1d21; }
+.segmented button { flex:1; padding:8px 4px; border-radius:6px; font-size:11px; color:#9fb7a7; }
+.segmented button.active { background:var(--lime); color:#1f3320; }
+.segmented button:hover:not(.active):not(:disabled) { background:#c7dbad1a; }
+.choice-grid { display:grid; grid-template-columns:1fr 1fr; gap:6px; }
+.choice-grid + .segmented { margin-top:8px; }
+.choice-grid button { text-align:left; padding:10px 11px; border:1px solid #c7dbad24; border-radius:9px; background:#0f1d2180; }
+.choice-grid button b { display:block; font-size:12px; font-weight:500; color:#dce7d3; }
+.choice-grid button small { display:block; font-size:10px; line-height:1.4; margin-top:3px; color:#8fa898; }
+.choice-grid button:hover:not(:disabled) { border-color:#c7dbad66; }
+.choice-grid button.active { border-color:var(--lime); background:#b9df9b1c; }
+.powers-panel .observe-button { width:100%; }
+.cell-legend { position:absolute; top:190px; left:26px; z-index:2; display:flex; flex-direction:column; gap:6px; padding:11px 13px; border:1px solid #c9dbd426; border-radius:9px; background:#112126ba; font-size:10px; color:#b9cdbd; min-width:165px; pointer-events:none; }
+.cell-legend > span:not(.eyebrow) { display:flex; align-items:center; gap:8px; }
+.cell-legend i { width:9px; height:9px; border-radius:50%; flex:none; }
+.cell-legend b { margin-left:auto; padding-left:14px; font-weight:400; color:#dce7d3; font-variant-numeric:tabular-nums; }
+.world-layers[open] ~ .cell-legend { display:none; }
+.milestone { position:absolute; top:84px; left:50%; z-index:7; display:flex; flex-direction:column; align-items:center; gap:6px; padding:16px 30px 17px; border:1px solid #e3c26a66; border-radius:14px; background:#16272bf2; box-shadow:0 14px 50px #0006; text-align:center; pointer-events:none; opacity:0; transform:translate(-50%,-14px); transition:opacity .35s,transform .35s; }
+.milestone.show { opacity:1; transform:translate(-50%,0); }
+.milestone .eyebrow { color:#e9cd80; }
+.milestone strong { font:27px/1.15 var(--serif); font-weight:400; color:#f1f5e6; }
+.milestone span:last-child { font-size:10px; color:#a9bfad; }
+@media (prefers-reduced-motion:reduce){ .milestone,.hud-bar b,.rung-bar b { transition:none; } }

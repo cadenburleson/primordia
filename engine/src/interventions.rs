@@ -38,7 +38,7 @@ enum Intervention {
         genes: Vec<autonomous::Gene>,
     },
 }
-fn site(d: domain::Domain, x: f32, z: f32) -> Result<(), String> {
+pub(crate) fn site(d: domain::Domain, x: f32, z: f32) -> Result<(), String> {
     if !x.is_finite()
         || !z.is_finite()
         || x.abs() > d.half()

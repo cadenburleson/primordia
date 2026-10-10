@@ -1,6 +1,8 @@
 /** Fixed biology ticks; high requested speed changes throughput, never dt. */
 export const MAX_REQUESTED_SPEED = 10000;
 export const BATCH_MS = 6;
+/** Max runs back-to-back batches this long, yielding only to handle commands. */
+export const MAX_BATCH_MS = 14;
 export function requestedSpeed(value: number): number {
   if (!Number.isFinite(value)) throw new Error('Speed must be finite');
   return value === 0 ? 0 : Math.max(1, Math.min(MAX_REQUESTED_SPEED, value));
@@ -23,6 +25,8 @@ export class SimulationClock {
     if (this.debt < 1) return false;
     this.debt -= 1; return true;
   }
+  /** Paced speeds only: owed ticks remain, so the next batch should not idle. */
+  pending(): boolean { return this.debt >= 1; }
   record() { this.ticks++; }
   measure(now: number) {
     const elapsed = (now - this.rateStart) / 1000;

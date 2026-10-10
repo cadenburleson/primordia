@@ -242,7 +242,11 @@ impl Genome {
         self.mutate_protected(core, 0.)
     }
     pub(crate) fn mutate_protected(&mut self, core: &mut Core, fidelity: f32) -> [u32; 4] {
-        let rate = (1. - fidelity.clamp(0., 1.) * 0.98).max(0.02);
+        self.mutate_scaled(core, fidelity, 1.)
+    }
+    /// `scale` multiplies every copying-error probability; 1 is the natural rate.
+    pub(crate) fn mutate_scaled(&mut self, core: &mut Core, fidelity: f32, scale: f32) -> [u32; 4] {
+        let rate = (1. - fidelity.clamp(0., 1.) * 0.98).max(0.02) * scale.clamp(0., 16.);
         let mut edits = [0; 4];
         for gene in &mut self.genes {
             if core.random() < 0.025 * rate {
@@ -862,7 +866,8 @@ impl Evolution {
                         rest: c.p,
                         radius: c.radius(),
                         role: if c.material.is_some() {
-                            c.material_role()
+                            // Bit 6 marks the player's chosen lineage for display.
+                            c.material_role() | if c.state.favoured { 64 } else { 0 }
                         } else if c.activity(4) > 0.1 {
                             2
                         } else if c
@@ -1032,6 +1037,7 @@ impl Evolution {
         metadata["autonomous"]["development"] = serde_json::json!(development);
         if let Some(h) = &self.physical {
             metadata["autonomous"]["systems"] = h.systems_view(self);
+            metadata["autonomous"]["steering"] = h.steering_view(self, core);
             metadata["autonomous"]["physiology"] = h.physiology_view(self);
             metadata["autonomous"]["planet"] = h.planet.as_ref().map(|p| p.view(core.time)).into();
             metadata["autonomous"]["resources"] = serde_json::json!({"detritus":h.solutes.iter().map(|s|s[5]).collect::<Vec<_>>(),"mineral":h.solutes.iter().map(|s|s[2]).collect::<Vec<_>>(),"waste":h.solutes.iter().map(|s|s[1]).collect::<Vec<_>>(),"light":(0..h.domain.sites()).map(|i|h.planet.as_ref().map_or(1.,|p|p.illumination(i))*h.light_fraction(i)*core.config.sunlight as f64).collect::<Vec<_>>(),"area":(0..h.domain.sites()).map(|i|h.domain.area(i)).collect::<Vec<_>>()});

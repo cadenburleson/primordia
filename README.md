@@ -1,4 +1,9 @@
-# Primordia — creator’s observatory
+# Primordia — grow life on your own planet
+
+Plant single cells on a planet and steer what they become. **Life** shows how far your world has climbed, from colonies to tissues, muscle, skeleton and nerves, measured from living cells. **Powers** let you set the pace of change, brighten the star, breed for a purpose, favour a lineage, or drop a meteor. You never write a gene; you decide which inventions get a future. Cell types have their own colours on the planet, and each first is announced as it happens.
+
+Max speed now uses the whole simulation thread and the shipped engine is a release build. See [creator powers, life's ascent and speed](docs/CREATOR_POWERS.md) for what changed, what was measured, and what is still unsolved. The sections below describe the engine those powers act on; where they describe the old throttled scheduler or a "Guide / Shape" dock, this section supersedes them.
+
 
 ## One project, one active app
 
