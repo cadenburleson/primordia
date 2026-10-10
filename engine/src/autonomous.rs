@@ -5,10 +5,10 @@ use body::{Cell as RenderCell, Link, V3};
 pub const MAX_CELLS: usize = 64000;
 pub const MAX_FOUNDERS: usize = 8192;
 pub const MAX_GENES: usize = 48;
-pub const ACTIONS: usize = 38;
+pub const ACTIONS: usize = 44;
 pub const INPUTS: usize = 32;
 /// Vocabulary sizes of earlier engine versions, padded with zeros on load.
-const OLD_ACTIONS: [usize; 4] = [10, 16, 21, 32];
+const OLD_ACTIONS: [usize; 7] = [10, 16, 21, 32, 38, 42, 43];
 const OLD_INPUTS: [usize; 4] = [8, 16, 20, 28];
 /// The last promoter inputs are signed left-minus-right senses.
 pub const LATERAL: usize = 4;
@@ -93,7 +93,18 @@ pub const ACTION_NAMES: [&str; ACTIONS] = [
     "Venom",
     "Spines",
     "Chemosynthesis",
+    "Fate A commitment",
+    "Fate B commitment",
+    "Fate C commitment",
+    "Cell wall",
+    "Fins",
+    "Sideways division",
 ];
+/// A cell is a stem cell (fate 0) or committed to one of three fates.
+pub const FATES: u8 = 4;
+fn all_fates() -> u8 {
+    (1 << FATES) - 1
+}
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
 pub struct Gene {
     pub action: usize,
@@ -101,6 +112,10 @@ pub struct Gene {
     pub promoter: [f32; INPUTS],
     pub bias: f32,
     pub strength: f32,
+    /// Fates in which this gene is switched on, one bit each. This is how
+    /// cells with the same genome come to do different jobs.
+    #[serde(default = "all_fates")]
+    pub fates: u8,
 }
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
 pub struct Genome {
@@ -110,7 +125,7 @@ pub struct Genome {
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct Cell {
     #[serde(default)]
-    pub collection_sources:Vec<String>,
+    pub collection_sources: Vec<String>,
     #[serde(default)]
     pub material: Option<crate::physical::Inventory>,
     #[serde(default)]
@@ -183,6 +198,7 @@ impl Gene {
                 .chain([&self.bias, &self.strength])
                 .all(|x| x.is_finite() && x.abs() <= 2.)
             && self.strength >= 0.
+            && (1..=all_fates()).contains(&self.fates)
     }
 }
 fn founder_promoter(values: &[f32]) -> [f32; INPUTS] {
@@ -205,6 +221,7 @@ impl Genome {
                     ]),
                     bias: 0.7,
                     strength: 0.55,
+                    fates: 15,
                 },
                 Gene {
                     action: 1,
@@ -214,6 +231,7 @@ impl Genome {
                     ]),
                     bias: 0.7,
                     strength: 0.55,
+                    fates: 15,
                 },
                 Gene {
                     action: 7,
@@ -223,19 +241,26 @@ impl Genome {
                     ]),
                     bias: -0.2,
                     strength: 0.75,
+                    fates: 15,
                 },
                 Gene {
                     action: 2,
                     promoter: [0.; INPUTS],
                     bias: 0.2,
                     strength: 0.12,
+                    fates: 15,
                 },
             ],
         }
     }
     pub fn express<const N: usize>(&self, inputs: [f32; N]) -> [f32; ACTIONS] {
+        self.express_in(inputs, 0)
+    }
+    /// Expression in a cell of the given fate: genes masked off for that
+    /// fate are silent, whatever their promoters say.
+    pub fn express_in<const N: usize>(&self, inputs: [f32; N], fate: u8) -> [f32; ACTIONS] {
         let mut out = [0.; ACTIONS];
-        for g in &self.genes {
+        for g in self.genes.iter().filter(|g| g.fates >> fate & 1 == 1) {
             let drive = g.bias
                 + g.promoter
                     .iter()
@@ -251,10 +276,10 @@ impl Genome {
     }
     /// Signed turn command: each steering gene weighs the left-minus-right
     /// senses with its own promoter weights. Positive turns left.
-    pub fn steer(&self, lateral: [f32; LATERAL]) -> f32 {
+    pub fn steer(&self, lateral: [f32; LATERAL], fate: u8) -> f32 {
         self.genes
             .iter()
-            .filter(|g| g.action == crate::physical::STEER)
+            .filter(|g| g.action == crate::physical::STEER && g.fates >> fate & 1 == 1)
             .map(|g| {
                 g.strength
                     * g.promoter[INPUTS - LATERAL..]
@@ -280,6 +305,18 @@ impl Genome {
     }
     /// `scale` multiplies every copying-error probability; 1 is the natural rate.
     pub(crate) fn mutate_scaled(&mut self, core: &mut Core, fidelity: f32, scale: f32) -> [u32; 4] {
+        self.mutate_toward(core, fidelity, scale, &[])
+    }
+    /// As `mutate_scaled`, with half of all new genes drawn from `favoured`.
+    /// The gene still arrives by a copying error, with random regulation, and
+    /// its material still has to be built and paid for.
+    pub(crate) fn mutate_toward(
+        &mut self,
+        core: &mut Core,
+        fidelity: f32,
+        scale: f32,
+        favoured: &[usize],
+    ) -> [u32; 4] {
         let rate = (1. - fidelity.clamp(0., 1.) * 0.98).max(0.02) * scale.clamp(0., 16.);
         let mut edits = [0; 4];
         for gene in &mut self.genes {
@@ -292,6 +329,14 @@ impl Genome {
                     gene.bias = (gene.bias + delta).clamp(-2., 2.);
                 } else {
                     gene.strength = (gene.strength + delta).clamp(0., 2.);
+                }
+                edits[0] += 1;
+            }
+            // Restrict or widen the fates a gene is switched on in.
+            if core.random() < 0.02 * rate {
+                gene.fates ^= 1 << (core.random() * FATES as f32) as u8;
+                if gene.fates == 0 {
+                    gene.fates = all_fates();
                 }
                 edits[0] += 1;
             }
@@ -312,10 +357,20 @@ impl Genome {
                 *w = (core.random() - 0.5) * 2.;
             }
             self.genes.push(Gene {
-                action: (core.random() * ACTIONS as f32) as usize,
+                action: if !favoured.is_empty() && core.random() < 0.5 {
+                    favoured[((core.random() * favoured.len() as f32) as usize).min(favoured.len() - 1)]
+                } else {
+                    (core.random() * ACTIONS as f32) as usize
+                },
                 promoter,
                 bias: (core.random() - 0.5) * 1.2,
                 strength: core.random() * 0.7,
+                // Most new genes work everywhere; some arrive fate-specific.
+                fates: if core.random() < 0.25 {
+                    1 + (core.random() * (all_fates() as f32 - 0.001)) as u8
+                } else {
+                    all_fates()
+                },
             });
             edits[3] += 1;
         }
@@ -341,7 +396,7 @@ impl Evolution {
             }
 
             cells.push(Cell {
-                collection_sources:vec![],
+                collection_sources: vec![],
                 material: None,
                 state: crate::physiology::CellState::default(),
                 lifecycle: crate::development::Lifecycle::default(),
@@ -457,7 +512,10 @@ impl Evolution {
             && self.motor_work >= 0.
             && self.peak_body <= MAX_CELLS
             && self.cells.iter().all(|c| {
-                c.collection_sources.len()<=16 && c.collection_sources.iter().all(|s|!s.is_empty()&&s.len()<=80)
+                c.collection_sources.len() <= 16
+                    && c.collection_sources
+                        .iter()
+                        .all(|s| !s.is_empty() && s.len() <= 80)
                     && c.id > 0
                     && c.parent < c.id
                     && c.founder > 0
@@ -901,10 +959,12 @@ impl Evolution {
                         radius: c.radius(),
                         role: if c.material.is_some() {
                             // Display flags: bit 6 the player's chosen lineage,
-                            // bit 5 a complex cell carrying a symbiont.
+                            // bit 5 a complex cell carrying a symbiont, bit 7 a
+                            // cell committed to a fate.
                             c.material_role()
                                 | if c.state.favoured { 64 } else { 0 }
                                 | if c.state.symbiont > 0. { 32 } else { 0 }
+                                | if c.state.fate > 0 { 128 } else { 0 }
                         } else if c.activity(4) > 0.1 {
                             2
                         } else if c
@@ -1023,9 +1083,21 @@ impl Evolution {
     pub fn metadata(&self, core: &Core, selected: u32) -> String {
         self.metadata_projected(core, selected, &self.project())
     }
-    pub fn metadata_projected(&self, core: &Core, selected: u32, projections: &[Organism]) -> String {
+    pub fn metadata_projected(
+        &self,
+        core: &Core,
+        selected: u32,
+        projections: &[Organism],
+    ) -> String {
         let selected_body = projections.iter().find(|o| o.id == selected);
-        let selected_cells = if selected_body.is_some() { self.groups().into_iter().find(|g| self.cells[g[0]].id == selected).unwrap_or_default() } else { vec![] };
+        let selected_cells = if selected_body.is_some() {
+            self.groups()
+                .into_iter()
+                .find(|g| self.cells[g[0]].id == selected)
+                .unwrap_or_default()
+        } else {
+            vec![]
+        };
         let mut lineages = BTreeMap::<u32, serde_json::Value>::new();
         for o in projections {
             let l=lineages.entry(o.lineage).or_insert_with(||serde_json::json!({"id":o.lineage,"parent":0,"name":format!("Genome {}",o.lineage),"born":0.,"generation":o.generation,"color":"#b7df9c","ancestor":o.genes,"peak":0,"count":0,"representative":o.id}));
@@ -1048,7 +1120,10 @@ impl Evolution {
         let programs:Vec<_>=selected_cells.iter().take(64).map(|&i|{let c=&self.cells[i];serde_json::json!({"id":c.id,"parent":c.parent,"genome":c.genome.id,"generation":c.generation,"genes":c.genome.genes,"energy":c.energy,"chemicals":c.chemicals,"expression":c.expression.as_slice(),"material":c.material,"state":c.state,"lifecycle":c.lifecycle})}).collect();
         if let Some(v) = &mut selected_value {
             v["programCells"] = serde_json::json!(programs);
-            v["collectionSources"]=serde_json::json!(selected_cells.iter().flat_map(|&i|self.cells[i].collection_sources.iter()).collect::<BTreeSet<_>>());
+            v["collectionSources"] = serde_json::json!(selected_cells
+                .iter()
+                .flat_map(|&i| self.cells[i].collection_sources.iter())
+                .collect::<BTreeSet<_>>());
             if let Some(h) = &self.physical {
                 v["observation"] = h.observation(self, &selected_cells);
             }
@@ -1170,6 +1245,7 @@ mod tests {
                 promoter: [0.; INPUTS],
                 bias: 1.,
                 strength: 1.,
+                fates: 15,
             });
         }
         e.bonds.push(Bond {

@@ -144,8 +144,8 @@ fn run() -> Result<(), String> {
         );
     }
     eprintln!(
-        "diet [light, soup, remains, vents, herbivore, omnivore, carnivore] {} · complex-cell captures {}",
-        view["diet"], view["captures"]
+        "diet [light, soup, remains, vents, herbivore, omnivore, carnivore] {} · complex-cell captures {}\nkinds [microbe, plant-like, fungus-like, animal-like] {}",
+        view["diet"], view["captures"], view["kinds"]
     );
     eprintln!(
         "breeding: {} rounds, {} cells removed, last round '{}'",

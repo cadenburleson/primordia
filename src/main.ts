@@ -17,7 +17,7 @@ import {WorldTools,worldToolsHTML,geneEditorHTML,brushToolbarHTML,type EditorMes
 import {progressHTML,updateProgress} from './progress';
 import {Ladder,ladderHTML,ladderHUD,milestoneHTML,type LadderAction} from './ladder';
 import {Powers,powersHTML} from './powers';
-import {CELL_TYPES,CHOSEN_COLOR,cellType,isChosen,isComplex} from './sim/roles';
+import {CELL_TYPES,CHOSEN_COLOR,cellType,isChosen,isCommitted,isComplex} from './sim/roles';
 import {CELL_STRIDE} from './sim/types';
 
 const icons={Orbit,Dna,Sun,Droplets,Mountain,Thermometer,Zap,Play,Pause,RotateCcw,Plus,Focus,Layers,ArrowUpRight,Download,Upload,X,FlaskConical,Leaf,Settings2,CircleHelp,Volume2,VolumeX,ChevronRight,Activity,Bone,Microscope,Maximize2,Sprout,Globe};
@@ -402,11 +402,11 @@ function physicsPanel(p:import('./sim/types').PhysicsView){
 function updateLegend(s:Snapshot){
   const host=$('cell-legend'),cells=s.cellData;
   if(!s.autonomous?.physics||!cells.length){host.hidden=true;return;}
-  const counts=new Array<number>(CELL_TYPES.length).fill(0);let chosen=0,complex=0;
-  for(let p=5;p<cells.length;p+=CELL_STRIDE){const raw=cells[p],type=cellType(raw);if(type<counts.length)counts[type]++;if(isChosen(raw))chosen++;if(isComplex(raw))complex++;}
+  const counts=new Array<number>(CELL_TYPES.length).fill(0);let chosen=0,complex=0,committed=0;
+  for(let p=5;p<cells.length;p+=CELL_STRIDE){const raw=cells[p],type=cellType(raw);if(type<counts.length)counts[type]++;if(isChosen(raw))chosen++;if(isComplex(raw))complex++;if(isCommitted(raw))committed++;}
   const row=(color:string,name:string,count:number)=>`<span><i style="background:${color}"></i>${name}<b>${fmt(count)}</b></span>`;
   host.hidden=false;
-  host.innerHTML=`<span class="eyebrow">CELL TYPES ALIVE</span>${CELL_TYPES.map((t,i)=>counts[i]?row(i?t.color:'linear-gradient(135deg,#7fd6a0,#8f9be0)',t.name,counts[i]):'').join('')}${complex?row('radial-gradient(circle,#ffffff 35%,#9fb7a7 40%)','Complex cells',complex):''}${chosen?row(CHOSEN_COLOR,'Chosen lineage',chosen):''}`;
+  host.innerHTML=`<span class="eyebrow">CELL TYPES ALIVE</span>${CELL_TYPES.map((t,i)=>counts[i]?row(i?t.color:'linear-gradient(135deg,#7fd6a0,#8f9be0)',t.name,counts[i]):'').join('')}${complex?row('radial-gradient(circle,#ffffff 35%,#9fb7a7 40%)','Complex cells',complex):''}${committed?row('conic-gradient(#e8584f,#4fb4ff,#f2b84b,#e8584f)','Committed to a fate',committed):''}${chosen?row(CHOSEN_COLOR,'Chosen lineage',chosen):''}`;
 }
 function updateUI(s:Snapshot){
   const technicalOpen=$<HTMLDetailsElement>('technical-details').open;
@@ -481,7 +481,7 @@ document.querySelector('.lineage-heading > span')!.textContent=auto?'BODIES ALIV
     const traitDefs:[string,number][]=[['Light harvesting',GI.photo],['Chemosynthesis',GI.chemo],['Cell adhesion',GI.adhesion],['Contractile potential',GI.muscle],['Structural support',GI.skeleton],['Specialization',GI.specialization],['Cell digestion',GI.predation],['Resource sensing',GI.sensing],['Gene exchange',GI.sex]];
     if(technicalOpen&&!auto)$('traits').innerHTML=traitDefs.map(([label,index])=>`<div class="trait-row"><span>${label}</span><div><b style="width:${Math.round(o.genes[index]*100)}%"></b></div><small>${Math.round(o.genes[index]*100)}%</small></div>`).join('');
     const roles=o.body.nodes.some(n=>n.role===0)||o.cells===1?['Metabolic']:[];if(o.body.nodes.some(n=>n.role===1))roles.push('Support tissue');if(o.body.links.some(l=>l.kind===2)||o.body.joints.some(j=>j.enabled&&j.work>0))roles.push('Contractile tissue');if(o.body.nodes.some(n=>n.role===3))roles.push('Sensory');if(o.body.nodes.some(n=>n.role===4))roles.push('Digestive tissue');if(o.body.nodes.some(n=>n.role===5))roles.push('Reproductive tissue');if(o.genes[GI.sex]>.5)roles.push('Gene exchange');if(o.cells>1&&o.genes[GI.predation]>.02)roles.push('Cell ingestion');
-    if(auto?.physics){roles.length=0;for(const role of new Set(o.body.nodes.map(n=>cellType(n.role))))roles.push(CELL_TYPES[role]?.name??CELL_TYPES[0].name);if(o.body.nodes.some(n=>isComplex(n.role)))roles.push('Complex cells');if(o.body.nodes.some(n=>isChosen(n.role)))roles.push('Chosen lineage');}
+    if(auto?.physics){roles.length=0;for(const role of new Set(o.body.nodes.map(n=>cellType(n.role))))roles.push(CELL_TYPES[role]?.name??CELL_TYPES[0].name);if(o.body.nodes.some(n=>isComplex(n.role)))roles.push('Complex cells');if(o.body.nodes.some(n=>isCommitted(n.role)))roles.push('Committed cells');if(o.body.nodes.some(n=>isChosen(n.role)))roles.push('Chosen lineage');}
     $('roles').innerHTML=roles.map(r=>`<span>${r}</span>`).join('');
     const support=o.body.links.filter(l=>l.kind===1).length,motors=o.body.links.filter(l=>l.kind===2).length;
     if(technicalOpen)$('body-mechanics').innerHTML=o.body.nodes.length||competition?`<span class="eyebrow">LIVE BODY MECHANICS</span><div><span>${o.body.joints.length?'Support links / linear motors':'Support / motor links'}</span><strong>${support} / ${motors}</strong></div><div><span>Ground contacts</span><strong>${o.body.contacts} cells</strong></div><div><span>Foot contact transitions</span><strong>${o.body.steps}</strong></div><div><span>Contraction work</span><strong>${o.body.work.toFixed(2)}</strong></div>${competition?`<div><span>Independent offspring</span><strong>${fmt(o.offspring)}</strong></div><div><span>Parents</span><strong>${o.parent?`#${o.parent}`:'Supplied founder'}${o.mate?` + #${o.mate}`:''}</strong></div>`:''}${!lab?`<div><span>Cells consumed</span><strong>${fmt(o.meals)}</strong></div><div><span>Digestion</span><strong>${o.feedingCooldown>0?`${o.feedingCooldown.toFixed(1)} cycles`:'Ready'}</strong></div>`:''}<small>Contacts, strain and joint flexion are measured from the body as it moves.</small>`:'';

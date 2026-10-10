@@ -40,6 +40,7 @@ fn network_fixture() -> (Core, Evolution, Habitat) {
             promoter,
             bias: 1.,
             strength: 1.,
+            fates: 15,
         });
     }
     e.bonds.push(Bond {
@@ -202,6 +203,7 @@ fn fertilization_inherits_two_chromosomes_conserves_matter_and_resets_memory() {
         promoter: [0.; INPUTS],
         bias: 1.,
         strength: 1.,
+        fates: 15,
     });
     e.cells[1].genome.id = 2;
     e.next_genome = 3;
@@ -251,6 +253,7 @@ fn fertilization_requires_contact_compatibility_different_origin_fusogen_and_atp
                     promoter: [0.; INPUTS],
                     bias: 1.,
                     strength: 1.,
+                    fates: 15,
                 }];
             }
         }
@@ -346,6 +349,7 @@ fn developmental_and_chemical_inputs_allow_local_differentiation_without_templat
         promoter,
         bias: -0.2,
         strength: 1.,
+        fates: 15,
     });
     assert!(g.express(input)[4] > 0.);
     e.cells[1].lifecycle.depth = 0;

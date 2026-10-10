@@ -5,7 +5,7 @@
 use crate::{
     autonomous::{Cell, Evolution},
     body::V3,
-    physical::{Habitat, ENGULF, PROPEL, SPINE, STEER, TOXIN},
+    physical::{Habitat, BROADEN, ENGULF, FIN, PROPEL, SPINE, STEER, TOXIN, WALL},
     physiology::{BARRIER, CHANNEL, RECEPTOR},
     *,
 };
@@ -32,6 +32,12 @@ pub struct Steering {
     pub storm_until: f32,
     /// Multiplies how fast dissolved fuel, waste, minerals and remains spread.
     pub mixing: f32,
+    /// How readily touching cells pass a copy of a gene across. 0 is never.
+    pub sharing: f32,
+    /// Seasons: the share of the star's light lost at midwinter, and the
+    /// length of a year in cycles. Depth 0 is a world without seasons.
+    pub season_depth: f32,
+    pub season_length: f32,
     /// Brightness of the star: multiplies the light reaching photosynthesis.
     pub light: f32,
     /// Activity of the planet's interior: multiplies chemosynthesis at vents.
@@ -71,6 +77,9 @@ impl Default for Steering {
             storm_scale: 1.,
             storm_until: 0.,
             mixing: 1.,
+            sharing: 0.,
+            season_depth: 0.,
+            season_length: 400.,
             light: 1.,
             vents: 1.,
             goal: String::new(),
@@ -96,6 +105,27 @@ impl Default for Steering {
     }
 }
 impl Steering {
+    /// Share of the star's light arriving at this point in the year: full at
+    /// midsummer, down by the season's depth at midwinter.
+    pub(crate) fn season(&self, now: f32) -> f32 {
+        1. - self.season_depth
+            * (0.5 - 0.5 * (std::f32::consts::TAU * now / self.season_length).cos())
+    }
+    /// The genes a breeding goal leans new copying errors toward. Breeding
+    /// can only choose among what variation offers; this makes it offer more
+    /// of what is being bred for. No goal, no lean.
+    pub(crate) fn focus(&self) -> &'static [usize] {
+        match self.goal.as_str() {
+            "bodies" => &[2, 20, 21, 38, 39, 40, BROADEN],
+            "swimming" => &[PROPEL, STEER],
+            "movement" => &[2, 4, 5, 20, CHANNEL, FIN],
+            "support" => &[3, 28],
+            "senses" => &[RECEPTOR, CHANNEL, 16, 24],
+            "hunting" => &[9, ENGULF, TOXIN],
+            "defence" => &[BARRIER, SPINE, TOXIN, WALL],
+            _ => &[],
+        }
+    }
     pub fn valid(&self) -> bool {
         [
             self.mutation_scale,
@@ -113,6 +143,9 @@ impl Steering {
         .all(|v| v.is_finite() && *v >= 0.)
             && self.mutation_scale <= 10.
             && (0.25..=8.).contains(&self.mixing)
+            && (0.0..=8.).contains(&self.sharing)
+            && (0.0..=0.95).contains(&self.season_depth)
+            && (40.0..=4000.).contains(&self.season_length)
             && (0.25..=8.).contains(&self.light)
             && (0.25..=8.).contains(&self.vents)
             && self.storm_scale <= 16.
@@ -144,21 +177,26 @@ pub struct Rung {
     pub first: [Option<f32>; 3],
 }
 
-const RUNG_NAMES: [(&str, &str); 19] = [
+const RUNG_NAMES: [(&str, &str); 24] = [
     ("cells", "Living cells"),
     ("colonies", "Colonies"),
     ("bodies", "Multicellular bodies"),
     ("tissues", "Specialised tissues"),
+    ("fates", "Cell fates"),
+    ("castes", "Workers and breeders"),
+    ("shapes", "Shaped bodies"),
     ("senses", "Senses"),
     ("swimming", "Swimming"),
     ("steering", "Guided swimming"),
     ("muscle", "Muscle"),
+    ("fins", "Fins and feet"),
     ("skeleton", "Skeleton"),
     ("hunters", "Hunters"),
     ("carnivores", "Carnivores"),
     ("complex", "Complex cells"),
     ("guts", "Guts"),
     ("defences", "Defences"),
+    ("walls", "Walled life"),
     ("nerves", "Nerve nets"),
     ("movement", "Powered movement"),
     ("reflexes", "Reflex arcs"),
@@ -169,18 +207,54 @@ const RUNG_NAMES: [(&str, &str); 19] = [
 #[derive(Deserialize)]
 #[serde(tag = "kind", rename_all = "kebab-case", deny_unknown_fields)]
 enum Command {
-    Mutation { scale: f32 },
-    Mixing { scale: f32 },
-    Light { scale: f32 },
-    Vents { scale: f32 },
-    Goal { goal: String, strength: f32, period: f32 },
-    Favour { body: u32, pressure: f32 },
+    Mutation {
+        scale: f32,
+    },
+    Mixing {
+        scale: f32,
+    },
+    Sharing {
+        scale: f32,
+    },
+    Seasons {
+        depth: f32,
+        length: f32,
+    },
+    Light {
+        scale: f32,
+    },
+    Vents {
+        scale: f32,
+    },
+    Goal {
+        goal: String,
+        strength: f32,
+        period: f32,
+    },
+    Favour {
+        body: u32,
+        pressure: f32,
+    },
     Unfavour {},
-    Storm { scale: f32, duration: f32 },
-    Winter { depth: f32, duration: f32 },
-    Meteor { x: f32, z: f32, radius: f32 },
-    Dying { fraction: f32 },
-    Nourish { amount: f64 },
+    Storm {
+        scale: f32,
+        duration: f32,
+    },
+    Winter {
+        depth: f32,
+        duration: f32,
+    },
+    Meteor {
+        x: f32,
+        z: f32,
+        radius: f32,
+    },
+    Dying {
+        fraction: f32,
+    },
+    Nourish {
+        amount: f64,
+    },
 }
 
 fn carries(c: &Cell, actions: &[usize]) -> bool {
@@ -198,7 +272,10 @@ fn built(c: &Cell, actions: &[usize]) -> bool {
 /// silent gene earns almost nothing, or breeding would fill the pool with
 /// genes that are never switched on.
 fn latent(c: &Cell, actions: &[usize]) -> f32 {
-    actions.iter().map(|&k| c.expression[k]).fold(0f32, f32::max)
+    actions
+        .iter()
+        .map(|&k| c.expression[k])
+        .fold(0f32, f32::max)
         + if carries(c, actions) { 0.03 } else { 0. }
 }
 fn mineral_fraction(c: &Cell) -> f32 {
@@ -219,7 +296,11 @@ impl Habitat {
     }
     pub(crate) fn mutation_factor(&self, time: f32) -> f32 {
         let s = &self.steering;
-        let storm = if time < s.storm_until { s.storm_scale } else { 1. };
+        let storm = if time < s.storm_until {
+            s.storm_scale
+        } else {
+            1.
+        };
         (s.mutation_scale * storm).clamp(0., 16.)
     }
 
@@ -267,7 +348,8 @@ impl Habitat {
     /// does useful work.
     fn goal_score(&self, e: &Evolution, group: &[usize], goal: &str) -> (f32, f32) {
         let n = group.len() as f32;
-        let mean = |f: &dyn Fn(&Cell) -> f32| group.iter().map(|&i| f(&e.cells[i])).sum::<f32>() / n;
+        let mean =
+            |f: &dyn Fn(&Cell) -> f32| group.iter().map(|&i| f(&e.cells[i])).sum::<f32>() / n;
         // Muscle and skeleton are properties of a body: a lone cell has nothing
         // to pull on or hold up, so its material earns no credit.
         let embodied = ((n - 1.) / 3.).min(1.);
@@ -278,8 +360,15 @@ impl Habitat {
                     .map(|&i| e.cells[i].material_role())
                     .collect::<BTreeSet<_>>()
                     .len() as f32;
+                // Cells that have committed to different fates count for more
+                // than cells that merely hold different materials.
+                let fates = group
+                    .iter()
+                    .map(|&i| e.cells[i].state.fate)
+                    .collect::<BTreeSet<_>>()
+                    .len() as f32;
                 (
-                    n.min(64.) * (1. + 0.5 * (roles - 1.)) - 1.,
+                    n.min(64.) * (1. + 0.5 * (roles - 1.) + (fates - 1.)) - 1.,
                     mean(&|c| c.activity(2)),
                 )
             }
@@ -301,16 +390,37 @@ impl Habitat {
                 if goal == "swimming" {
                     // A driven motor that actually got somewhere. Lone cells count.
                     (
-                        mean(&|c| c.activity(PROPEL) * c.expression[PROPEL]) * (0.2 + travel.min(12.)),
+                        mean(&|c| c.activity(PROPEL) * c.expression[PROPEL])
+                            * (0.2 + travel.min(12.)),
                         mean(&|c| {
-                            c.activity(PROPEL) + 0.5 * c.activity(STEER) + latent(c, &[PROPEL, STEER])
+                            c.activity(PROPEL)
+                                + 0.5 * c.activity(STEER)
+                                + latent(c, &[PROPEL, STEER])
                         }),
                     )
                 } else {
+                    // A body that rowed somewhere: muscle, fins to push with,
+                    // and ground covered. Cilia earn nothing here. Until a
+                    // body manages it, the parts are bred for: muscle, the
+                    // excitable channels that make it beat, and fins.
                     (
-                        rate * (1. + travel.min(8.)),
                         embodied
-                            * mean(&|c| c.activity(4) + 0.5 * c.activity(CHANNEL) + latent(c, &[4])),
+                            * mean(&|c| c.activity(4))
+                            * mean(&|c| c.activity(FIN)).sqrt()
+                            * (1. - mean(&|c| c.activity(PROPEL)))
+                            * (rate.min(1.) + travel.min(12.)),
+                        // Muscle needs a body to pull on, so being a body
+                        // is itself the first part worth having.
+                        embodied
+                            * (0.3
+                                + mean(&|c| {
+                                    c.activity(4)
+                                        + 0.5 * c.activity(CHANNEL)
+                                        + 0.5 * c.activity(FIN)
+                                        + latent(c, &[4])
+                                        + 0.5 * latent(c, &[CHANNEL])
+                                        + 0.5 * latent(c, &[FIN])
+                                })),
                     )
                 }
             }
@@ -332,17 +442,23 @@ impl Habitat {
             "hunting" => (
                 mean(&|c| c.state.flux.prey as f32 / (c.age + 1.)),
                 mean(&|c| {
-                    c.activity(9) + c.activity(ENGULF) + 0.5 * c.activity(TOXIN) + latent(c, &[9, ENGULF, TOXIN])
+                    c.activity(9)
+                        + c.activity(ENGULF)
+                        + 0.5 * c.activity(TOXIN)
+                        + latent(c, &[9, ENGULF, TOXIN])
                 }),
             ),
             "defence" => (
-                mean(&|c| (c.state.flux.defense_blocked + c.state.flux.wounded) as f32 / (c.age + 1.)),
+                mean(&|c| {
+                    (c.state.flux.defense_blocked + c.state.flux.wounded) as f32 / (c.age + 1.)
+                }),
                 mean(&|c| {
                     c.activity(BARRIER)
                         + c.activity(SPINE)
                         + c.activity(TOXIN)
+                        + c.activity(WALL)
                         + 4. * mineral_fraction(c)
-                        + latent(c, &[BARRIER, SPINE, TOXIN])
+                        + latent(c, &[BARRIER, SPINE, TOXIN, WALL])
                 }),
             ),
             _ => (0., 0.),
@@ -369,12 +485,24 @@ impl Habitat {
         // A hunter needs prey. Once any body is really eating, hunters are judged
         // on what they catch alone; rewarding the weapon as well would arm the
         // whole world and leave nothing to hunt.
-        let material_weight = if goal == "hunting" && best_measure > 0. { 0. } else { 0.25 };
+        let material_weight = if goal == "hunting" && best_measure > 0. {
+            0.
+        } else {
+            0.25
+        };
         let scores: Vec<f32> = raw
             .iter()
             .map(|r| {
-                (if best_measure > 0. { r.0 / best_measure } else { 0. })
-                    + material_weight * (if best_material > 0. { r.1 / best_material } else { 0. })
+                (if best_measure > 0. {
+                    r.0 / best_measure
+                } else {
+                    0.
+                }) + material_weight
+                    * (if best_material > 0. {
+                        r.1 / best_material
+                    } else {
+                        0.
+                    })
             })
             .collect();
         // Breeding hunters never touches their prey: only bodies that carry a
@@ -382,9 +510,17 @@ impl Habitat {
         // the unarmed would starve the hunters it was meant to favour.
         let exempt: Vec<bool> = groups
             .iter()
-            .map(|g| goal == "hunting" && !g.iter().any(|&i| built(&e.cells[i], &[9, ENGULF, TOXIN])))
+            .map(|g| {
+                goal == "hunting" && !g.iter().any(|&i| built(&e.cells[i], &[9, ENGULF, TOXIN]))
+            })
             .collect();
-        let judged = || scores.iter().zip(&exempt).filter(|(_, x)| !**x).map(|(v, _)| *v);
+        let judged = || {
+            scores
+                .iter()
+                .zip(&exempt)
+                .filter(|(_, x)| !**x)
+                .map(|(v, _)| *v)
+        };
         let best = judged().fold(0f32, f32::max);
         let worst = judged().fold(f32::INFINITY, f32::min);
         let contenders: usize = groups
@@ -431,7 +567,9 @@ impl Habitat {
             }
             // A body larger than what is left of the quota loses that many
             // cells rather than escaping: size alone is no protection.
-            let take = groups[i].len().min((quota - removed as f32).ceil() as usize);
+            let take = groups[i]
+                .len()
+                .min((quota - removed as f32).ceil() as usize);
             for &c in groups[i].iter().take(take) {
                 e.cells[c].state.injury = 1.;
                 e.cells[c].state.culled = true;
@@ -439,7 +577,12 @@ impl Habitat {
             removed += take;
         }
         s.culled += removed as u32;
-        s.round_note = if removed > 0 { "selecting" } else { "recovering" }.into();
+        s.round_note = if removed > 0 {
+            "selecting"
+        } else {
+            "recovering"
+        }
+        .into();
     }
 
     /// How living cells feed, counted by body: light, dissolved fuel, remains
@@ -484,6 +627,35 @@ impl Habitat {
         (cells, eaters, carnivores)
     }
 
+    /// Cells living as each broad kind of life: free microbes, plant-like
+    /// (walled, feeding itself from light or vents), fungus-like (walled,
+    /// absorbing or digesting) and animal-like (bare, with a mouth, motor or fin).
+    pub(crate) fn kinds(&self, e: &Evolution, groups: &[Vec<usize>]) -> [usize; 4] {
+        let mut cells = [0usize; 4];
+        for g in groups {
+            let mut flux = crate::observations::Flux::default();
+            for &i in g {
+                flux.add(&e.cells[i].state.flux);
+            }
+            let walled = g.iter().filter(|&&i| built(&e.cells[i], &[WALL])).count() * 2 >= g.len();
+            let kind = if walled {
+                if flux.intake() <= 0. {
+                    continue;
+                } else if (flux.photosynthesis + flux.chemosynthesis) * 2. >= flux.intake() {
+                    1
+                } else {
+                    2
+                }
+            } else if g.iter().any(|&i| built(&e.cells[i], &[ENGULF, PROPEL, FIN])) {
+                3
+            } else {
+                0
+            };
+            cells[kind] += g.len();
+        }
+        cells
+    }
+
     /// Signalling contacts that run from a sensing cell to a moving one.
     fn reflex_arcs(&self, e: &Evolution) -> usize {
         if self.development.synapses.is_empty() {
@@ -497,7 +669,8 @@ impl Habitat {
                 let (Some(&from), Some(&to)) = (ids.get(&s.from), ids.get(&s.to)) else {
                     return false;
                 };
-                built(&e.cells[from], &[RECEPTOR, 16, 24]) && built(&e.cells[to], &[4, PROPEL, STEER])
+                built(&e.cells[from], &[RECEPTOR, 16, 24])
+                    && built(&e.cells[to], &[4, PROPEL, STEER])
             })
             .count()
     }
@@ -506,12 +679,18 @@ impl Habitat {
     pub(crate) fn ladder(&self, e: &Evolution) -> Vec<Rung> {
         let n = e.cells.len();
         let fraction = |count: usize| if n > 0 { count as f32 / n as f32 } else { 0. };
-        let genes = |actions: &[usize]| fraction(e.cells.iter().filter(|c| carries(c, actions)).count());
-        let makers = |actions: &[usize]| fraction(e.cells.iter().filter(|c| built(c, actions)).count());
+        let genes =
+            |actions: &[usize]| fraction(e.cells.iter().filter(|c| carries(c, actions)).count());
+        let makers =
+            |actions: &[usize]| fraction(e.cells.iter().filter(|c| built(c, actions)).count());
         let groups = e.groups();
         let multi: Vec<&Vec<usize>> = groups.iter().filter(|g| g.len() >= 3).collect();
         let largest = groups.iter().map(Vec::len).max().unwrap_or(0);
-        let attached = groups.iter().filter(|g| g.len() >= 2).map(|g| g.len()).sum::<usize>();
+        let attached = groups
+            .iter()
+            .filter(|g| g.len() >= 2)
+            .map(|g| g.len())
+            .sum::<usize>();
         let roles = |g: &[usize]| {
             g.iter()
                 .map(|&i| e.cells[i].material_role())
@@ -534,9 +713,21 @@ impl Habitat {
             .iter()
             .filter(|g| g.len() >= 8 && roles(g) >= 4)
             .count();
+        // Powered movement: a body with a muscle at work, excitable cells to
+        // make it beat, and a fin to push with.
+        let ids = e.index();
+        let mut pulling = vec![false; n];
+        for b in e.bonds.iter().filter(|b| b.activation > 0.05) {
+            pulling[ids[&b.a]] = true;
+            pulling[ids[&b.b]] = true;
+        }
         let moving = multi
             .iter()
-            .filter(|g| g.iter().map(|&i| e.cells[i].state.motor_work).sum::<f64>() > 1e-6)
+            .filter(|g| {
+                g.iter().any(|&i| pulling[i])
+                    && g.iter().any(|&i| built(&e.cells[i], &[FIN]))
+                    && g.iter().any(|&i| built(&e.cells[i], &[CHANNEL]))
+            })
             .count();
         let per_body = |count: usize| {
             if multi.is_empty() {
@@ -545,7 +736,12 @@ impl Habitat {
                 count as f32 / multi.len() as f32
             }
         };
-        let mineral = fraction(e.cells.iter().filter(|c| mineral_fraction(c) > 0.025).count());
+        let mineral = fraction(
+            e.cells
+                .iter()
+                .filter(|c| mineral_fraction(c) > 0.025)
+                .count(),
+        );
         let synapses = self.development.synapses.len();
         let diploid = fraction(
             e.cells
@@ -561,10 +757,33 @@ impl Habitat {
         let defended = e
             .cells
             .iter()
-            .filter(|c| built(c, &[BARRIER, SPINE, TOXIN]) || mineral_fraction(c) > 0.025)
+            .filter(|c| built(c, &[BARRIER, SPINE, TOXIN, WALL]) || mineral_fraction(c) > 0.025)
             .count();
+        let walled = e.cells.iter().filter(|c| built(c, &[WALL])).count();
         let (_, hunters, carnivores) = self.diets(e, &groups);
         let complex = e.cells.iter().filter(|c| c.state.symbiont > 0.).count();
+        // Workers and breeders: a body of four or more with at least one stem
+        // cell that can still divide and one committed cell that cannot.
+        let castes = groups
+            .iter()
+            .filter(|g| {
+                g.len() >= 4
+                    && g.iter()
+                        .any(|&i| e.cells[i].state.fate == 0 && e.cells[i].activity(7) > 0.25)
+                    && g.iter()
+                        .any(|&i| e.cells[i].state.fate > 0 && e.cells[i].activity(7) <= 0.25)
+            })
+            .count();
+        let committed = e.cells.iter().filter(|c| c.state.fate > 0).count();
+        // A shaped body: four or more cells, most of them carrying the polar
+        // scaffold that aims each division along or across the heading.
+        let shaped = groups
+            .iter()
+            .filter(|g| {
+                g.len() >= 4
+                    && g.iter().filter(|&&i| built(&e.cells[i], &[20])).count() * 2 >= g.len()
+            })
+            .count();
         // A gut: a body of four or more whose mouths pass on at least a fifth
         // of everything the body takes in to cells that have no mouth.
         let guts = groups
@@ -588,27 +807,179 @@ impl Habitat {
             }
         };
         // key, gene carriers, built measure, measure needed, count, extra gate
-        let rows: [(&'static str, f32, f32, f32, usize, bool); 19] = [
-            ("cells", 1., if e.divisions > 0 { 1. } else { 0.5 }, 1., n, n > 0),
-            ("colonies", genes(&[2]), fraction(attached), 0.3, attached, true),
-            ("bodies", genes(&[2, 20, 21]), largest as f32 / 24., 1., largest, largest >= 3),
-            ("tissues", 0., per_body(differentiated), 0.25, differentiated, differentiated >= 5),
-            ("senses", genes(&[RECEPTOR, CHANNEL, 16, 24]), makers(&[RECEPTOR, CHANNEL, 16, 24]), 0.1, 0, true),
-            ("swimming", genes(&[PROPEL]), makers(&[PROPEL]), 0.1, 0, true),
-            ("steering", genes(&[STEER]), fraction(guided), 0.05, guided, true),
+        let rows: [(&'static str, f32, f32, f32, usize, bool); 24] = [
+            (
+                "cells",
+                1.,
+                if e.divisions > 0 { 1. } else { 0.5 },
+                1.,
+                n,
+                n > 0,
+            ),
+            (
+                "colonies",
+                genes(&[2]),
+                fraction(attached),
+                0.3,
+                attached,
+                true,
+            ),
+            (
+                "bodies",
+                genes(&[2, 20, 21]),
+                largest as f32 / 24.,
+                1.,
+                largest,
+                largest >= 3,
+            ),
+            (
+                "tissues",
+                0.,
+                per_body(differentiated),
+                0.25,
+                differentiated,
+                differentiated >= 5,
+            ),
+            (
+                "fates",
+                genes(&crate::physical::BECOME),
+                fraction(committed),
+                0.1,
+                committed,
+                true,
+            ),
+            (
+                "castes",
+                genes(&crate::physical::BECOME),
+                per_body(castes),
+                0.1,
+                castes,
+                castes >= 3,
+            ),
+            (
+                "shapes",
+                genes(&[20, BROADEN]),
+                per_body(shaped),
+                0.1,
+                shaped,
+                shaped >= 3,
+            ),
+            (
+                "senses",
+                genes(&[RECEPTOR, CHANNEL, 16, 24]),
+                makers(&[RECEPTOR, CHANNEL, 16, 24]),
+                0.1,
+                0,
+                true,
+            ),
+            (
+                "swimming",
+                genes(&[PROPEL]),
+                makers(&[PROPEL]),
+                0.1,
+                0,
+                true,
+            ),
+            (
+                "steering",
+                genes(&[STEER]),
+                fraction(guided),
+                0.05,
+                guided,
+                true,
+            ),
             ("muscle", genes(&[4]), makers(&[4]), 0.1, 0, true),
+            ("fins", genes(&[FIN]), makers(&[FIN]), 0.1, 0, true),
             ("skeleton", genes(&[3, 29]), mineral, 0.1, 0, true),
             // Eaters are about one body in a hundred of a food web that lasts.
-            ("hunters", genes(&[9, ENGULF, TOXIN]), per_any(hunters), 0.01, hunters, hunters >= 3),
-            ("carnivores", genes(&[9, ENGULF, TOXIN]), per_any(carnivores), 0.005, carnivores, carnivores >= 3),
-            ("complex", genes(&[ENGULF]), fraction(complex), 0.1, complex, true),
-            ("guts", genes(&[ENGULF]), per_body(guts), 0.05, guts, guts >= 3),
-            ("defences", genes(&[BARRIER, SPINE, TOXIN]), fraction(defended), 0.15, defended, true),
-            ("nerves", genes(&[17]), fraction(synapses), 0.05, synapses, synapses >= 8),
-            ("movement", genes(&[4]), per_body(moving), 0.1, moving, moving >= 3),
-            ("reflexes", genes(&[17, CHANNEL]), fraction(arcs), 0.03, arcs, arcs >= 8),
-            ("organs", genes(&[8, 9, 21, 22, 23]), per_body(organ_bodies), 0.1, organ_bodies, organ_bodies >= 3),
-            ("sex", genes(&[18, 19]), diploid, 0.05, self.development.zygotes as usize, self.development.zygotes >= 10),
+            (
+                "hunters",
+                genes(&[9, ENGULF, TOXIN]),
+                per_any(hunters),
+                0.01,
+                hunters,
+                hunters >= 3,
+            ),
+            (
+                "carnivores",
+                genes(&[9, ENGULF, TOXIN]),
+                per_any(carnivores),
+                0.005,
+                carnivores,
+                carnivores >= 3,
+            ),
+            (
+                "complex",
+                genes(&[ENGULF]),
+                fraction(complex),
+                0.1,
+                complex,
+                true,
+            ),
+            (
+                "guts",
+                genes(&[ENGULF]),
+                per_body(guts),
+                0.05,
+                guts,
+                guts >= 3,
+            ),
+            (
+                "defences",
+                genes(&[BARRIER, SPINE, TOXIN, WALL]),
+                fraction(defended),
+                0.15,
+                defended,
+                true,
+            ),
+            (
+                "walls",
+                genes(&[WALL]),
+                fraction(walled),
+                0.1,
+                walled,
+                true,
+            ),
+            (
+                "nerves",
+                genes(&[17]),
+                fraction(synapses),
+                0.05,
+                synapses,
+                synapses >= 8,
+            ),
+            (
+                "movement",
+                genes(&[4, FIN]),
+                per_body(moving),
+                0.1,
+                moving,
+                moving >= 3,
+            ),
+            (
+                "reflexes",
+                genes(&[17, CHANNEL]),
+                fraction(arcs),
+                0.03,
+                arcs,
+                arcs >= 8,
+            ),
+            (
+                "organs",
+                genes(&[8, 9, 21, 22, 23]),
+                per_body(organ_bodies),
+                0.1,
+                organ_bodies,
+                organ_bodies >= 3,
+            ),
+            (
+                "sex",
+                genes(&[18, 19]),
+                diploid,
+                0.05,
+                self.development.zygotes as usize,
+                self.development.zygotes >= 10,
+            ),
         ];
         rows.into_iter()
             .map(|(key, genes, built, needed, count, gate)| {
@@ -631,7 +1002,15 @@ impl Habitat {
                         .find(|m| m.key == key && m.stage == stage)
                         .map(|m| m.time)
                 });
-                Rung { key, stage, progress, genes, built, count: count as u32, first }
+                Rung {
+                    key,
+                    stage,
+                    progress,
+                    genes,
+                    built,
+                    count: count as u32,
+                    first,
+                }
             })
             .collect()
     }
@@ -658,7 +1037,10 @@ impl Habitat {
                 if core.time < CENSUS_PERIOD || (rung.key == "cells" && stage < 3) {
                     continue;
                 }
-                let name = RUNG_NAMES.iter().find(|r| r.0 == rung.key).map_or(rung.key, |r| r.1);
+                let name = RUNG_NAMES
+                    .iter()
+                    .find(|r| r.0 == rung.key)
+                    .map_or(rung.key, |r| r.1);
                 core.event(
                     "milestone",
                     match stage {
@@ -678,6 +1060,10 @@ impl Habitat {
             "mutation": s.mutation_scale,
             "mutationFactor": self.mutation_factor(now),
             "mixing": s.mixing,
+            "sharing": s.sharing,
+            "seasonDepth": s.season_depth,
+            "seasonLength": s.season_length,
+            "season": s.season(now),
             "light": s.light,
             "vents": s.vents,
             "storm": (s.storm_until - now).max(0.),
@@ -697,6 +1083,7 @@ impl Habitat {
             "losses": s.losses,
             "ladder": self.ladder(e),
             "diet": self.diets(e, &e.groups()).0,
+            "kinds": self.kinds(e, &e.groups()),
             "captures": s.captures,
             "milestones": s.milestones,
         })
@@ -758,6 +1145,23 @@ impl Core {
                 h.steering.mixing = unit(scale, 0.25, 8., "Ocean mixing")?;
                 format!("The waters now mix at {scale:.2}× their natural rate.")
             }
+            Command::Seasons { depth, length } => {
+                h.steering.season_depth = unit(depth, 0., 0.95, "Winter depth")?;
+                h.steering.season_length = unit(length, 40., 4000., "Year length")?;
+                if depth > 0. {
+                    format!("The year now turns every {length:.0} cycles; midwinter dims the star by {:.0}%.", depth * 100.)
+                } else {
+                    "The seasons are stilled.".into()
+                }
+            }
+            Command::Sharing { scale } => {
+                h.steering.sharing = unit(scale, 0., 8., "Gene sharing")?;
+                if scale > 0. {
+                    format!("Touching cells now trade genes at {scale:.2}× the rare rate.")
+                } else {
+                    "Cells keep their genes to themselves.".into()
+                }
+            }
             Command::Light { scale } => {
                 h.steering.light = unit(scale, 0.25, 8., "Star brightness")?;
                 format!("The star now shines at {scale:.2}× its natural brightness.")
@@ -766,7 +1170,11 @@ impl Core {
                 h.steering.vents = unit(scale, 0.25, 8., "Vent activity")?;
                 format!("The planet's interior now feeds vents at {scale:.2}× its natural rate.")
             }
-            Command::Goal { goal, strength, period } => {
+            Command::Goal {
+                goal,
+                strength,
+                period,
+            } => {
                 if !goal.is_empty() && !GOALS.contains(&goal.as_str()) {
                     return Err("Unknown breeding goal".into());
                 }
@@ -794,7 +1202,10 @@ impl Core {
                     e.cells[i].state.favoured = true;
                 }
                 h.steering.favour_pressure = pressure;
-                format!("Body #{body} and its descendants are favoured ({} cells marked).", group.len())
+                format!(
+                    "Body #{body} and its descendants are favoured ({} cells marked).",
+                    group.len()
+                )
             }
             Command::Unfavour {} => {
                 for c in &mut e.cells {
@@ -843,7 +1254,8 @@ impl Core {
                             (sx - x).hypot(sz - z)
                         };
                         if distance < radius {
-                            p.relief[i] = (p.relief[i] - 2.2 * (1. - distance / radius)).clamp(-8., 8.);
+                            p.relief[i] =
+                                (p.relief[i] - 2.2 * (1. - distance / radius)).clamp(-8., 8.);
                         }
                     }
                     p.terrain_version = p.terrain_version.wrapping_add(1);
@@ -864,7 +1276,10 @@ impl Core {
                 h.initial_organic += after.0 - before.0;
                 h.initial_mineral += after.1 - before.1;
                 h.initial_energy += after.2 - before.2;
-                format!("Fuel rained on {} inhabited sites. Genes are unchanged.", sites.len())
+                format!(
+                    "Fuel rained on {} inhabited sites. Genes are unchanged.",
+                    sites.len()
+                )
             }
             Command::Dying { fraction } => {
                 let fraction = unit(fraction, 0.05, 0.95, "Extinction fraction")?;
@@ -906,6 +1321,7 @@ mod tests {
             promoter: [0.; autonomous::INPUTS],
             bias: 2.,
             strength: 1.,
+            fates: 15,
         }
     }
 
@@ -926,7 +1342,8 @@ mod tests {
     fn mutation_scale_changes_how_often_copies_vary_and_zero_freezes_genes() {
         let edits = |scale: f32| {
             let mut c = world(64);
-            c.steer(&format!(r#"{{"kind":"mutation","scale":{scale}}}"#)).unwrap();
+            c.steer(&format!(r#"{{"kind":"mutation","scale":{scale}}}"#))
+                .unwrap();
             c.step(400);
             let e = c.autonomous.as_ref().unwrap();
             assert!(e.divisions > 0);
@@ -959,15 +1376,23 @@ mod tests {
             let e = c.autonomous.as_ref().unwrap();
             e.cells.iter().filter(|c| carries(c, &[4])).count() as f32 / e.cells.len() as f32
         };
-        c.steer(r#"{"kind":"goal","goal":"movement","strength":0.4,"period":5}"#).unwrap();
+        c.steer(r#"{"kind":"goal","goal":"movement","strength":0.4,"period":5}"#)
+            .unwrap();
         c.step(4 * 60);
         let e = c.autonomous.as_ref().unwrap();
         let h = e.physical.as_ref().unwrap();
         assert!(h.steering.rounds >= 5 && h.steering.culled > 0);
         let carriers_after =
             e.cells.iter().filter(|c| carries(c, &[4])).count() as f32 / e.cells.len() as f32;
-        assert!(carriers_after > carriers_before, "{carriers_before} -> {carriers_after}");
-        assert!(h.errors(&e.cells).iter().all(|v| v.abs() < 1e-4), "{:?}", h.errors(&e.cells));
+        assert!(
+            carriers_after > carriers_before,
+            "{carriers_before} -> {carriers_after}"
+        );
+        assert!(
+            h.errors(&e.cells).iter().all(|v| v.abs() < 1e-4),
+            "{:?}",
+            h.errors(&e.cells)
+        );
         assert!(e.valid() && !e.cells.is_empty());
     }
 
@@ -975,7 +1400,8 @@ mod tests {
     fn breeding_without_variation_removes_nothing() {
         let mut c = world(64);
         c.steer(r#"{"kind":"mutation","scale":0}"#).unwrap();
-        c.steer(r#"{"kind":"goal","goal":"support","strength":0.5,"period":5}"#).unwrap();
+        c.steer(r#"{"kind":"goal","goal":"support","strength":0.5,"period":5}"#)
+            .unwrap();
         c.step(200);
         let s = &habitat(&mut c).steering;
         assert!(s.rounds > 0);
@@ -987,14 +1413,27 @@ mod tests {
         let mut c = world(64);
         c.step(40);
         let body = c.autonomous.as_ref().unwrap().cells[0].id;
-        c.steer(&format!(r#"{{"kind":"favour","body":{body},"pressure":0.1}}"#)).unwrap();
+        c.steer(&format!(
+            r#"{{"kind":"favour","body":{body},"pressure":0.1}}"#
+        ))
+        .unwrap();
         c.step(4 * 120);
         let e = c.autonomous.as_ref().unwrap();
         let favoured = e.cells.iter().filter(|c| c.state.favoured).count();
         assert!(favoured > 1, "descendants inherit the mark");
-        assert!(favoured * 2 > e.cells.len(), "{favoured} of {}", e.cells.len());
+        assert!(
+            favoured * 2 > e.cells.len(),
+            "{favoured} of {}",
+            e.cells.len()
+        );
         c.steer(r#"{"kind":"unfavour"}"#).unwrap();
-        assert!(c.autonomous.as_ref().unwrap().cells.iter().all(|c| !c.state.favoured));
+        assert!(c
+            .autonomous
+            .as_ref()
+            .unwrap()
+            .cells
+            .iter()
+            .all(|c| !c.state.favoured));
     }
 
     #[test]
@@ -1002,9 +1441,12 @@ mod tests {
         let mut c = world(128);
         c.step(20);
         let warm = c.config.temperature;
-        c.steer(r#"{"kind":"winter","depth":0.2,"duration":10}"#).unwrap();
+        c.steer(r#"{"kind":"winter","depth":0.2,"duration":10}"#)
+            .unwrap();
         assert!((c.config.temperature - (warm - 0.2)).abs() < 1e-6);
-        assert!(c.steer(r#"{"kind":"winter","depth":0.2,"duration":10}"#).is_err());
+        assert!(c
+            .steer(r#"{"kind":"winter","depth":0.2,"duration":10}"#)
+            .is_err());
         c.step(48);
         assert!((c.config.temperature - warm).abs() < 1e-6);
         let before = c.autonomous.as_ref().unwrap().cells.len();
@@ -1014,23 +1456,43 @@ mod tests {
         assert!(e.cells.len() < before * 3 / 4 && !e.cells.is_empty());
         let h = e.physical.as_ref().unwrap();
         assert!(h.errors(&e.cells).iter().all(|v| v.abs() < 1e-4));
-        c.steer(r#"{"kind":"storm","scale":8,"duration":20}"#).unwrap();
+        c.steer(r#"{"kind":"storm","scale":8,"duration":20}"#)
+            .unwrap();
         let now = c.time;
         assert_eq!(habitat(&mut c).mutation_factor(now), 8.);
         assert!(c.steer(r#"{"kind":"mutation","scale":99}"#).is_err());
         assert!(c.steer(r#"{"kind":"mixing","scale":4}"#).is_ok());
         assert!(c.steer(r#"{"kind":"mixing","scale":40}"#).is_err());
+        assert!(c.steer(r#"{"kind":"sharing","scale":4}"#).is_ok());
+        assert!(c.steer(r#"{"kind":"sharing","scale":40}"#).is_err());
+        assert!(c.steer(r#"{"kind":"sharing","scale":0}"#).is_ok());
+        assert!(c.steer(r#"{"kind":"seasons","depth":0.8,"length":200}"#).is_ok());
+        assert!(c.steer(r#"{"kind":"seasons","depth":2,"length":200}"#).is_err());
+        {
+            let s = &c.autonomous.as_ref().unwrap().physical.as_ref().unwrap().steering;
+            assert!((s.season(0.) - 1.).abs() < 1e-6 && (s.season(100.) - 0.2).abs() < 1e-5);
+            assert!((s.season(200.) - 1.).abs() < 1e-5, "a year later it is midsummer again");
+        }
+        assert!(c.steer(r#"{"kind":"seasons","depth":0,"length":400}"#).is_ok());
         assert!(c.steer(r#"{"kind":"light","scale":3}"#).is_ok());
         assert!(c.steer(r#"{"kind":"light","scale":0}"#).is_err());
-        assert!(c.steer(r#"{"kind":"goal","goal":"wings","strength":0.2,"period":30}"#).is_err());
-        assert!(c.steer(r#"{"kind":"meteor","x":0,"z":0,"radius":6}"#).is_ok());
+        assert!(c
+            .steer(r#"{"kind":"goal","goal":"wings","strength":0.2,"period":30}"#)
+            .is_err());
+        assert!(c
+            .steer(r#"{"kind":"meteor","x":0,"z":0,"radius":6}"#)
+            .is_ok());
         assert!(c.steer(r#"{"kind":"nourish","amount":0.5}"#).is_ok());
         assert!(c.steer(r#"{"kind":"nourish","amount":50}"#).is_err());
         c.step(4);
         let e = c.autonomous.as_ref().unwrap();
         assert!(e.valid());
         let h = e.physical.as_ref().unwrap();
-        assert!(h.errors(&e.cells).iter().all(|v| v.abs() < 1e-4), "{:?}", h.errors(&e.cells));
+        assert!(
+            h.errors(&e.cells).iter().all(|v| v.abs() < 1e-4),
+            "{:?}",
+            h.errors(&e.cells)
+        );
     }
 
     #[test]
@@ -1046,9 +1508,14 @@ mod tests {
         h.steering.goal = "hunting".into();
         e.divisions = 1000; // plenty of recent births to draw the quota from
         h.selection_round(&mut e, &mut c);
-        let culled: Vec<usize> = (0..e.cells.len()).filter(|&i| e.cells[i].state.culled).collect();
+        let culled: Vec<usize> = (0..e.cells.len())
+            .filter(|&i| e.cells[i].state.culled)
+            .collect();
         assert!((1..=6).contains(&culled.len()), "{culled:?}");
-        assert!(culled.iter().all(|&i| (1..21).contains(&i)), "only idle armed cells: {culled:?}");
+        assert!(
+            culled.iter().all(|&i| (1..21).contains(&i)),
+            "only idle armed cells: {culled:?}"
+        );
         assert_eq!(h.steering.round_note, "selecting");
         // With no armed body at all there is nobody to judge.
         for cell in &mut e.cells {
@@ -1082,17 +1549,72 @@ mod tests {
     }
 
     #[test]
+    fn a_breeding_goal_leans_new_genes_toward_itself_and_no_goal_changes_nothing() {
+        let family = |goal: &str| {
+            let mut c = world(64);
+            let mut s = Steering::default();
+            s.goal = goal.into();
+            let focus = s.focus();
+            let genome = c.autonomous.as_ref().unwrap().cells[0].genome.clone();
+            let founders = genome.genes.len();
+            let (mut new, mut hits) = (0, 0);
+            for _ in 0..4000 {
+                let mut copy = genome.clone();
+                let edits = copy.mutate_toward(&mut c, 0., 4., focus);
+                if edits[3] > 0 && copy.genes.len() > founders {
+                    new += 1;
+                    hits += usize::from([2, 4, 5, 20, CHANNEL, FIN].contains(&copy.genes.last().unwrap().action));
+                }
+            }
+            hits as f32 / new as f32
+        };
+        let (plain, leaning) = (family(""), family("movement"));
+        assert!(plain < 0.25, "six genes in forty-four by chance: {plain}");
+        assert!(leaning > 0.45, "half of new genes come from the goal's family: {leaning}");
+        // With no goal a copy draws exactly the random numbers it always did.
+        let (mut a, mut b) = (world(64), world(64));
+        let genome = a.autonomous.as_ref().unwrap().cells[0].genome.clone();
+        for _ in 0..500 {
+            let (mut x, mut y) = (genome.clone(), genome.clone());
+            x.mutate_scaled(&mut a, 0., 4.);
+            y.mutate_toward(&mut b, 0., 4., Steering::default().focus());
+            assert_eq!(x.genes, y.genes);
+        }
+    }
+
+    #[test]
+    fn kinds_tell_microbes_plant_like_fungus_like_and_animal_like_life_apart() {
+        let mut c = world(64);
+        let e = c.autonomous.as_mut().unwrap();
+        let make = |cell: &mut Cell, action: usize| cell.material.as_mut().unwrap().proteins[action] = 0.02;
+        e.cells[0].state.flux.photosynthesis = 5.; // a bare light feeder
+        make(&mut e.cells[1], WALL);
+        e.cells[1].state.flux.photosynthesis = 5.;
+        make(&mut e.cells[2], WALL);
+        e.cells[2].state.flux.detritus = 5.;
+        make(&mut e.cells[3], ENGULF);
+        make(&mut e.cells[4], PROPEL);
+        make(&mut e.cells[5], WALL); // walled but not yet fed: unsorted
+        let h = e.physical.as_ref().unwrap();
+        let kinds = h.kinds(e, &e.groups());
+        assert_eq!(kinds, [e.cells.len() - 5, 1, 1, 2]);
+    }
+
+    #[test]
     fn ladder_reports_measured_steps_and_steering_resumes_from_a_save() {
         let mut c = world(64);
         c.step(4 * 60);
-        c.steer(r#"{"kind":"goal","goal":"bodies","strength":0.2,"period":20}"#).unwrap();
+        c.steer(r#"{"kind":"goal","goal":"bodies","strength":0.2,"period":20}"#)
+            .unwrap();
         c.step(40);
         let e = c.autonomous.as_ref().unwrap();
         let h = e.physical.as_ref().unwrap();
         let ladder = h.ladder(e);
-        assert_eq!(ladder.len(), 19);
+        assert_eq!(ladder.len(), 24);
         assert_eq!(ladder[0].stage, 3, "founders divide");
-        assert!(ladder.iter().all(|r| (0.0..=1.).contains(&r.progress) && r.stage <= 3));
+        assert!(ladder
+            .iter()
+            .all(|r| (0.0..=1.).contains(&r.progress) && r.stage <= 3));
         // No founder carries muscle, skeleton or nerve genes.
         assert!(h.steering.milestones.iter().any(|m| m.key == "cells"));
         let saved = save(&c);

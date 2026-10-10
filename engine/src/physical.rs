@@ -86,13 +86,47 @@ pub const SYNTHESIS_NAMES: [&str; ACTIONS] = [
     "Venom synthesis",
     "Spine synthesis",
     "Chemosynthetic catalyst synthesis",
+    "Fate A commitment",
+    "Fate B commitment",
+    "Fate C commitment",
+    "Cell wall synthesis",
+    "Fin synthesis",
+    "Sideways division",
 ];
+/// Regulatory genes: a bonded stem cell driving one of these past half commits
+/// to that fate. They build no material.
+pub const BECOME: [usize; 3] = [38, 39, 40];
 pub const PROPEL: usize = 32;
 pub const STEER: usize = 33;
 pub const ENGULF: usize = 34;
 pub const TOXIN: usize = 35;
 pub const SPINE: usize = 36;
 pub const CHEMO: usize = 37;
+/// A rigid casing. A walled cell cannot be swallowed whole and is cemented to
+/// its walled sisters, but it can neither swallow nor swim: the trade that
+/// separates plant-like and fungus-like life from animal-like life. Enzymes
+/// still digest it, so grazers and decomposers are what eat walled life.
+pub const WALL: usize = 41;
+/// Bristles, flaps and feet that feather: they slip easily along the cell's
+/// heading and catch the water, or the ground, when pushed back against it.
+/// A fin makes no thrust of its own. It turns any back-and-forth stroke, such
+/// as a beating muscle, into travel along the heading.
+pub const FIN: usize = 42;
+/// Bending stiffness of a joint per unit of mineral in its three cells. Bone
+/// holds the angle it was laid down at, firmly enough for the muscle at the
+/// joint to swing a limb against water or ground.
+const JOINT_STRENGTH: f32 = 30.;
+/// The most a joint can twist, so a sudden change of target cannot fling a cell.
+const JOINT_TORQUE: f32 = 1.;
+/// Stiffness a bond gains from fully built muscle in both its cells.
+const MUSCLE_SPRING: f32 = 0.6;
+/// A regulatory gene that builds nothing. Driven fully, it swings a polarised
+/// cell's division a quarter turn off its heading, so the body widens instead
+/// of lengthening. With cell fates it lets one genome grow a body with a
+/// length, a width and branches.
+pub const BROADEN: usize = 43;
+/// How many times harder a fully built fin is to push backward than forward.
+const FIN_GRIP: f64 = 8.;
 /// Share of a cell's own feeding (light, vents, dissolved fuel) given up by a
 /// fully built engulfing membrane. Low enough that a hunter between meals can
 /// limp along on light, as many single-celled hunters do.
@@ -753,19 +787,41 @@ impl Habitat {
             let mut inputs = inputs;
             let lateral = self.lateral_senses(c, core);
             inputs[INPUTS - LATERAL..].copy_from_slice(&lateral);
+            // A cell on its own is its own organism and can become anything.
+            // Inside a body a stem cell commits when one of its commitment
+            // genes is driven past half by where it finds itself; from then
+            // on only the genes switched on for that fate are read.
+            let bonded = degree.get(&c.id).copied().unwrap_or(0) > 0;
+            if !bonded {
+                c.state.fate = 0;
+            }
             c.expression = c.cellular_expression(inputs);
+            if bonded && c.state.fate == 0 {
+                let (fate, drive) = BECOME.iter().enumerate().fold((0, 0.5), |best, (k, &a)| {
+                    if c.expression[a] > best.1 {
+                        (k as u8 + 1, c.expression[a])
+                    } else {
+                        best
+                    }
+                });
+                if drive > 0.5 {
+                    c.state.fate = fate;
+                    c.expression = c.cellular_expression(inputs);
+                }
+            }
+            let fate = c.state.fate;
             c.state.turn = {
-                let turn = c.genome.steer(lateral);
+                let turn = c.genome.steer(lateral, fate);
                 c.lifecycle
                     .homolog
                     .as_ref()
-                    .map_or(turn, |other| (turn + other.steer(lateral)) * 0.5)
+                    .map_or(turn, |other| (turn + other.steer(lateral, fate)) * 0.5)
             };
             self.reserves_and_repair(c);
             let dt = DT as f64 * self.planet.as_ref().map_or(1., |p| p.kinetics(site));
             let illumination = self.planet.as_ref().map_or(1., |p| p.illumination(site))
                 * self.light_fraction(site)
-                * self.steering.light as f64;
+                * (self.steering.light * self.steering.season(core.time)) as f64;
             let s = &mut self.solutes[site];
             let m = c.material.as_mut().unwrap();
             let activity: Vec<_> = (0..ACTIONS)
@@ -783,7 +839,7 @@ impl Habitat {
                 * core.config.solvent as f64
                 * c.state.exposure as f64)
                 .min(s[0])
-                    .min((m.biomass * 1.5 - m.fuel).max(0.));
+                .min((m.biomass * 1.5 - m.fuel).max(0.));
             s[0] -= uptake;
             m.fuel += uptake * 0.9;
             s[5] += uptake * 0.1; // unassimilated organic excretion, not oxidized waste
@@ -849,16 +905,23 @@ impl Habitat {
             // Gene output is a production rate. Mechanical effects use actual
             // protein/mineral inventories, never promoter output directly.
             for k in 0..ACTIONS {
-                let amount = (dt * 0.012 * c.expression[k] as f64)
-                    .min(m.fuel)
-                    .min(c.energy as f64);
+                // Commitment genes regulate; they build nothing.
+                let building = if BECOME.contains(&k) || k == BROADEN {
+                    0.
+                } else {
+                    c.expression[k] as f64
+                };
+                let amount = (dt * 0.012 * building).min(m.fuel).min(c.energy as f64);
                 m.fuel -= amount;
                 m.proteins[k] += amount;
                 c.state.flux.proteins += amount;
                 let before = c.energy as f64;
                 c.energy = (before - amount) as f32;
                 self.heat += before - c.energy as f64;
-                let turnover = m.proteins[k] * (1. - (-0.025 * dt).exp());
+                // Machinery whose gene is silent in this cell is dismantled fast,
+                // so what a cell is follows what its genes are doing now.
+                let decay = if c.expression[k] > 0. { 0.025 } else { 0.2 };
+                let turnover = m.proteins[k] * (1. - (-decay * dt).exp());
                 m.proteins[k] -= turnover;
                 m.fuel += turnover;
             }
@@ -868,8 +931,8 @@ impl Habitat {
                 * 0.04
                 * activity[7]
                 * (1. - m.biomass / (0.5 * (1. + activity[ENGULF]))).max(0.))
-                .min(m.fuel)
-                .min(c.energy as f64 / 0.4);
+            .min(m.fuel)
+            .min(c.energy as f64 / 0.4);
             m.fuel -= growth;
             m.biomass += growth;
             let before = c.energy as f64;
@@ -926,6 +989,7 @@ impl Habitat {
     }
     pub(crate) fn contacts(&mut self, e: &mut Evolution, core: &mut Core) -> Vec<(usize, usize)> {
         let mut pairs = Vec::new();
+        let sharing = self.steering.sharing as f64;
         // Keep exact inventory-dependent radii, refreshing only after digestion
         // moves matter. Broad-phase candidates need not repeatedly compute cbrt.
         let mut radii: Vec<_> = e.cells.iter().map(Cell::radius).collect();
@@ -939,21 +1003,17 @@ impl Habitat {
         // Kin are cells whose sets of working genes are at least four-fifths
         // the same. Weapons spare armed kin; they do not spare a stranger just
         // because it carries the same weapon.
-        let steering = e.cells.iter().any(|c| c.activity(STEER) > 0.01);
-        let genes: Vec<u64> = if armed || steering {
-            e.cells
-                .iter()
-                .map(|c| {
-                    std::iter::once(&c.genome)
-                        .chain(c.lifecycle.homolog.as_ref())
-                        .flat_map(|g| &g.genes)
-                        .filter(|g| g.strength > 0.05)
-                        .fold(0u64, |set, g| set | 1 << g.action)
-                })
-                .collect()
-        } else {
-            Vec::new()
-        };
+        let genes: Vec<u64> = e
+            .cells
+            .iter()
+            .map(|c| {
+                std::iter::once(&c.genome)
+                    .chain(c.lifecycle.homolog.as_ref())
+                    .flat_map(|g| &g.genes)
+                    .filter(|g| g.strength > 0.05)
+                    .fold(0u64, |set, g| set | 1 << g.action)
+            })
+            .collect();
         let kin = |a: usize, b: usize| {
             (genes[a] & genes[b]).count_ones() * 5 >= (genes[a] | genes[b]).count_ones() * 4
         };
@@ -1055,19 +1115,31 @@ impl Habitat {
                         .body
                         .properties(c.material.as_ref().unwrap().biomass)[0]
                 };
+                // Gene sharing: now and then one of two touching cells takes up
+                // a copy of a gene the other carries and it lacks. Off unless
+                // the player turns it on.
+                if sharing > 0. && (core.random() as f64) < 0.002 * sharing {
+                    let (from, to) = if core.random() < 0.5 { (i, j) } else { (j, i) };
+                    let donor = &e.cells[from].genome.genes;
+                    let gene = donor[((core.random() * donor.len() as f32) as usize).min(donor.len() - 1)].clone();
+                    let taker = &mut e.cells[to].genome;
+                    if taker.genes.len() < crate::autonomous::MAX_GENES
+                        && !taker.genes.iter().any(|g| g.action == gene.action)
+                    {
+                        taker.genes.push(gene);
+                        taker.id = e.next_genome;
+                        e.next_genome += 1;
+                        e.exchanges += 1;
+                    }
+                }
                 let adhesion = ((e.cells[i].activity(2) + material_affinity(&e.cells[i]) * 0.2)
                     .min(1.)
                     * (e.cells[j].activity(2) + material_affinity(&e.cells[j]) * 0.2).min(1.)
                     * e.cells[i].recognition(&e.cells[j])
-                    // A mouth does not glue itself to a stranger it could
-                    // swallow. Kin bind whether armed or not, or a body could
-                    // never have a mouth and anything else.
-                    * if armed && !kin(i, j) {
-                        1. - (e.cells[i].activity(ENGULF) - e.cells[j].activity(ENGULF)).abs()
-                    } else {
-                        1.
-                    })
-                    as f64;
+                    // Only kin stick together on contact, so a body is a family
+                    // and not a crowd of strangers. It also means a mouth
+                    // never glues itself to a stranger it could swallow.
+                    * if kin(i, j) { 1. } else { 0. }) as f64;
                 if !bonded.contains(&key)
                     && e.cells[i].lifecycle.phase != crate::development::Phase::Gamete
                     && e.cells[j].lifecycle.phase != crate::development::Phase::Gamete
@@ -1204,7 +1276,9 @@ impl Habitat {
                     // is out of reach altogether. Skin does not help once
                     // swallowed; spines and mineral armour do, and spines wound
                     // whatever tries.
-                    let mouth = e.cells[a].activity(ENGULF) as f64;
+                    let mouth = (e.cells[a].activity(ENGULF)
+                        * (1. - e.cells[a].activity(WALL)).powi(2))
+                        as f64;
                     if mouth > 0.
                         && e.cells[a].energy > 0.1
                         && body[a] != body[b]
@@ -1213,11 +1287,11 @@ impl Habitat {
                         // The bigger the hunter is than its prey, the faster it
                         // gets it down: nothing against prey a quarter larger
                         // than itself, full speed at half again its size.
-                        let outsize =
-                            bulk[body[a]] / e.cells[b].material.as_ref().unwrap().biomass;
+                        let outsize = bulk[body[a]] / e.cells[b].material.as_ref().unwrap().biomass;
                         let advantage = ((outsize - 0.8) / 0.7).clamp(0., 1.);
                         let grip = degree[b] as f64 * 1.5 / outsize.clamp(1., 8.);
                         let spines = e.cells[b].activity(SPINE) as f64;
+                        let wall = e.cells[b].activity(WALL) as f64;
                         // Engulfers recognise and spare other engulfers.
                         // Engulfers spare armed kin, even wounded or half-built.
                         let spared = if kin(a, b) {
@@ -1234,8 +1308,12 @@ impl Habitat {
                             .min((prey.biomass - 0.005).max(0.))
                             .min(capacity / 0.85)
                             .min(available);
-                        let extracted =
-                            potential / (1. + spines * 6. + prey.mineral / prey.biomass * 4. + grip);
+                        let extracted = potential
+                            / (1.
+                                + spines * 6.
+                                + wall * 10.
+                                + prey.mineral / prey.biomass * 4.
+                                + grip);
                         // Swallowing takes the prey's fuel store along with its body.
                         let swallowed = (prey.fuel * extracted / prey.biomass.max(1e-9))
                             .min(prey.fuel)
@@ -1316,8 +1394,9 @@ impl Habitat {
                         } else {
                             0.
                         };
-                        let dose = (DT as f64 * 0.03 * venom * (1. - immune) * (paid / wanted).min(1.)
-                            / (1. + skin * 4.)) as f32;
+                        let dose =
+                            (DT as f64 * 0.03 * venom * (1. - immune) * (paid / wanted).min(1.)
+                                / (1. + skin * 4.)) as f32;
                         e.cells[b].state.injury = (e.cells[b].state.injury + dose).min(1.);
                         e.cells[a].state.flux.wounded += dose as f64;
                     }
@@ -1386,6 +1465,39 @@ impl Habitat {
             ],
         );
     }
+    /// A fin's extra resistance to slipping backward through the water along
+    /// the cell's heading. The water takes the opposite push.
+    fn fin_drag(&mut self, c: &mut Cell, mass: f64, ratio: f64, site: usize) {
+        let heading = self.domain.tangent(c.p, c.heading);
+        if let Some(flow) = &mut self.fluid.surface {
+            let water = self.planet.as_ref().unwrap().water[site];
+            if water < 1e-9 {
+                return;
+            }
+            let fluid_mass = water * WATER_DENSITY;
+            let slip = c.v.sub(flow.velocities[site]).dot(heading);
+            if slip < 0. {
+                let push = -slip * (ratio / (1. + ratio * (1. + mass / fluid_mass))) as f32;
+                c.v = c.v.add(heading.mul(push));
+                flow.velocities[site] =
+                    flow.velocities[site].sub(heading.mul(push * (mass / fluid_mass) as f32));
+            }
+            return;
+        }
+        let u = self.fluid.velocity(site);
+        let slip = (c.v.x as f64 - u[0]) * heading.x as f64 + (c.v.z as f64 - u[1]) * heading.z as f64;
+        if slip < 0. {
+            let push = (-slip * ratio / (1. + ratio)) as f32;
+            c.v = c.v.add(heading.mul(push));
+            self.fluid.impulse(
+                site,
+                [
+                    -mass * (push * heading.x) as f64,
+                    -mass * (push * heading.z) as f64,
+                ],
+            );
+        }
+    }
     fn sync_joints(&mut self, e: &Evolution) {
         let ids = e.index();
         let mut neighbors = vec![Vec::new(); e.cells.len()];
@@ -1439,7 +1551,7 @@ impl Habitat {
                 (m.mineral / m.mass()) as f32
             })
             .fold(1., f32::min)
-            * 0.08
+            * JOINT_STRENGTH
     }
     fn prepare_joint_motors(&mut self, e: &mut Evolution) {
         let ids = e.index();
@@ -1475,7 +1587,7 @@ impl Habitat {
         }
         self.joints = joints;
     }
-    fn mechanics(&mut self, e: &mut Evolution, core: &mut Core, pairs: &[(usize, usize)]) {
+    pub(crate) fn mechanics(&mut self, e: &mut Evolution, core: &mut Core, pairs: &[(usize, usize)]) {
         self.sync_joints(e);
         self.prepare_joint_motors(e);
         let ids = e.index();
@@ -1504,6 +1616,8 @@ impl Habitat {
                 * 0.5;
             b.stiffness = (b.stiffness + fiber_strength * alignment * 0.1).min(1.);
             let catalyst = (x.activity(4) + y.activity(4)) * 0.5;
+            // Muscle is springy tissue: it pulls hard and snaps back when it lets go.
+            b.stiffness = (b.stiffness + catalyst * MUSCLE_SPRING).min(1.);
             let xs = x.motor_signals();
             let ys = y.motor_signals();
             let drive = (xs[0] + ys[0]) * 0.5 * (1. - (xs[1] + ys[1]) * 0.5);
@@ -1585,6 +1699,16 @@ impl Habitat {
         let mut thrust = vec![V3::default(); e.cells.len()];
         // Crawlers meet the ground's resistance where swimmers meet the water's.
         let mut crawling = vec![false; e.cells.len()];
+        let fins: Vec<f64> = e
+            .cells
+            .iter()
+            .map(|c| if self.passive { 0. } else { c.activity(FIN) as f64 })
+            .collect();
+        let mut bonded = vec![false; e.cells.len()];
+        for b in &e.bonds {
+            bonded[ids[&b.a]] = true;
+            bonded[ids[&b.b]] = true;
+        }
         if !self.passive {
             for (i, c) in e.cells.iter_mut().enumerate() {
                 let steer = c.activity(STEER);
@@ -1595,13 +1719,20 @@ impl Habitat {
                         + TURN_RATE * DT * steer * c.state.turn * (paid / wanted).min(1.) as f32)
                         .rem_euclid(std::f32::consts::TAU);
                 }
-                let motor = (c.activity(PROPEL) * c.expression[PROPEL]) as f64;
+                // Cilia and flagella work only where a cell faces open water:
+                // a cell buried in a body has nothing to beat against. A big
+                // body therefore outgrows its motors.
+                let motor = (c.activity(PROPEL)
+                    * c.expression[PROPEL]
+                    * (1. - c.activity(WALL)).powi(2)
+                    * if bonded[i] { c.state.exposure } else { 1. }) as f64;
                 c.state.wet = 0.;
                 if motor <= 1e-4 {
                     continue;
                 }
                 // A free cell tumbles; this alone gives an undirected search.
-                if !c.state.ground {
+                // A cell held in a body cannot spin on its own.
+                if !c.state.ground && !bonded[i] {
                     c.heading = (c.heading + (core.random() - 0.5) * 0.5 * DT.sqrt())
                         .rem_euclid(std::f32::consts::TAU);
                 }
@@ -1649,7 +1780,10 @@ impl Habitat {
                 } else {
                     self.fluid.impulse(
                         site,
-                        [-(direction.x as f64) * impulse, -(direction.z as f64) * impulse],
+                        [
+                            -(direction.x as f64) * impulse,
+                            -(direction.z as f64) * impulse,
+                        ],
                     );
                 }
             }
@@ -1662,13 +1796,23 @@ impl Habitat {
                 if group.len() < 2 {
                     continue;
                 }
-                let net = group.iter().fold(V3::default(), |sum, &i| sum.add(thrust[i]));
+                let net = group
+                    .iter()
+                    .fold(V3::default(), |sum, &i| sum.add(thrust[i]));
                 let mass: f64 = group.iter().map(|&i| properties[i].0).sum();
                 for &i in &group {
                     thrust[i] = net.mul((properties[i].0 / mass) as f32);
                 }
             }
         }
+        // Which way each bond points, to see afterwards how the body turned.
+        let domain = self.domain;
+        let bearing = |e: &Evolution, a: usize, c: usize| {
+            let d = e.cells[c].p.sub(e.cells[a].p);
+            d.dot(domain.tangent(e.cells[a].p, std::f32::consts::FRAC_PI_2))
+                .atan2(d.dot(domain.tangent(e.cells[a].p, 0.)))
+        };
+        let bearings: Vec<f32> = springs.iter().map(|&(a, c, ..)| bearing(e, a, c)).collect();
         // Terrain and the field site under a cell change little within one
         // tick, so they are sampled on every fourth substep and reused between.
         let mut sites: Vec<usize> = e.cells.iter().map(|c| self.domain.locate(c.p)).collect();
@@ -1688,7 +1832,7 @@ impl Habitat {
                     e.cells[b].p,
                     e.cells[c].p,
                 );
-                let torque = (-(angle - target) * k).clamp(-0.04, 0.04);
+                let torque = (-(angle - target) * k).clamp(-JOINT_TORQUE, JOINT_TORQUE);
                 for (i, grad) in [a, b, c].into_iter().zip(gradients) {
                     force[i] = force[i].add(grad.mul(torque));
                 }
@@ -1713,6 +1857,9 @@ impl Habitat {
                 force[i] = force[i].sub(self.domain.up(c.p).mul(weight * gravity));
                 c.v = c.v.add(force[i].mul(step / mass as f32));
                 self.drag_cached(c, mass, drag_ratio, sites[i]);
+                if fins[i] > 0. {
+                    self.fin_drag(c, mass, drag_ratio * FIN_GRIP * fins[i], sites[i]);
+                }
                 if crawling[i] {
                     let up = self.domain.up(c.p);
                     let normal = up.mul(c.v.dot(up));
@@ -1786,7 +1933,33 @@ impl Habitat {
                         (1. - step * (3. + c.activity(crate::physiology::REPAIR) * 3.)).max(0.);
                     let normal = contact_normal.mul(c.v.dot(contact_normal));
                     c.v = normal.add(c.v.sub(normal).mul(friction));
+                    // A foot digs in when pushed back along the ground.
+                    if fins[i] > 0. {
+                        let heading = self.domain.tangent(c.p, c.heading);
+                        let back = c.v.dot(heading);
+                        if back < 0. {
+                            let hold = (step as f64 * 3. * FIN_GRIP * fins[i]).min(1.) as f32;
+                            c.v = c.v.sub(heading.mul(back * hold));
+                        }
+                    }
                 }
+            }
+        }
+        // A cell's heading is a direction in its tissue, not on the map: when
+        // the body turns, the heading of every cell in it turns too.
+        let mut turned = vec![(0f32, 0u8); e.cells.len()];
+        for (&(a, c, ..), &before) in springs.iter().zip(&bearings) {
+            let swing = (bearing(e, a, c) - before + std::f32::consts::PI)
+                .rem_euclid(std::f32::consts::TAU)
+                - std::f32::consts::PI;
+            for i in [a, c] {
+                turned[i].0 += swing;
+                turned[i].1 += 1;
+            }
+        }
+        for (c, &(swing, bonds)) in e.cells.iter_mut().zip(&turned) {
+            if bonds > 0 && swing != 0. {
+                c.heading = (c.heading + swing / bonds as f32).rem_euclid(std::f32::consts::TAU);
             }
         }
         e.bonds.retain_mut(|b| {
@@ -1797,10 +1970,13 @@ impl Habitat {
             } else {
                 (&mut right[0], &mut left[c])
             };
-            let strain = (x.p.sub(y.p).len() / b.rest - 1.).abs();
+            // A working muscle is not strained by reaching the length it pulls to.
+            let strain = (x.p.sub(y.p).len() / (b.rest * (1. - b.activation * 0.22)) - 1.).abs();
             x.state.strain = x.state.strain.max(strain.min(2.));
             y.state.strain = y.state.strain.max(strain.min(2.));
-            let toughness = 0.4 + (x.scaffold() + y.scaffold()) * 0.2;
+            // Walled sisters share a wall: the join is tough and does not let go.
+            let cemented = x.activity(WALL) * y.activity(WALL);
+            let toughness = 0.4 + (x.scaffold() + y.scaffold()) * 0.2 + cemented * 0.6;
             let brittleness = 1. + b.stiffness * 0.4;
             let damage = DT * 0.03 * (strain - toughness / brittleness).max(0.);
             for cell in [&mut *x, &mut *y] {
@@ -1816,6 +1992,11 @@ impl Habitat {
             let paid = self.spend(x, requested as f64 * 0.005, false)
                 + self.spend(y, requested as f64 * 0.005, false);
             b.integrity = (b.integrity - damage + paid as f32 / 0.01).clamp(0., 1.);
+            // Soft tissue gives as its cells grow: an unstiffened bond eases
+            // toward the distance at which the two cells just touch. Without
+            // this, growth alone strains every bond until it breaks.
+            b.rest = (b.rest + (x.radius() + y.radius() - b.rest) * DT * 0.05 * (1. - b.stiffness))
+                .clamp(0.1, 2.);
             let remodel =
                 (x.activity(crate::organics::REMODEL) + y.activity(crate::organics::REMODEL)) * 0.5;
             let distance = x.p.sub(y.p).len();
@@ -1830,8 +2011,11 @@ impl Habitat {
             self.spend(x, available * 0.5, false);
             self.spend(y, available * 0.5, false);
             b.rest = (b.rest + change * fraction as f32).clamp(0.1, 2.);
-            let rate =
-                0.004 * (1. + strain as f64 * 8.) / (0.1 + (x.activity(2) * y.activity(2)) as f64);
+            // Weak glue lets go within a few dozen cycles. Strong glue on both
+            // sides holds for hundreds, long enough for a body to be built on.
+            let glue = (x.activity(2) * y.activity(2)) as f64;
+            let rate = 0.004 * (1. + strain as f64 * 8.)
+                / (0.1 + glue * (1. + 8. * glue) + cemented as f64 * 6.);
             let survive = b.integrity > 0.02
                 && strain < 2.
                 && (core.random() as f64) >= 1. - (-rate * DT as f64).exp();
@@ -1847,6 +2031,7 @@ impl Habitat {
     pub(crate) fn divide(&mut self, e: &mut Evolution, core: &mut Core) {
         let n = e.cells.len();
         let variation = self.mutation_factor(core.time);
+        let focus = self.steering.focus();
         let mut daughters = Vec::new();
         let mut degree = BTreeMap::<u32, usize>::new();
         for b in &e.bonds {
@@ -1906,13 +2091,13 @@ impl Habitat {
             } else {
                 0.
             };
-            let mut edits = child.genome.mutate_scaled(core, fidelity, variation);
+            let mut edits = child.genome.mutate_toward(core, fidelity, variation, focus);
             if edits.iter().sum::<u32>() > 0 || gamete {
                 child.genome.id = e.next_genome;
                 e.next_genome += 1;
             }
             if let Some(other) = &mut child.lifecycle.homolog {
-                let extra = other.mutate_scaled(core, fidelity, variation);
+                let extra = other.mutate_toward(core, fidelity, variation, focus);
                 if extra.iter().sum::<u32>() > 0 {
                     if edits.iter().sum::<u32>() == 0 {
                         child.genome.id = e.next_genome;
@@ -1957,13 +2142,13 @@ impl Habitat {
                 })
                 .sum::<f32>();
             child.heading = (child.heading + turn * polarity).rem_euclid(std::f32::consts::TAU);
+            // Daughters go to alternate sides, so a widening body stays even.
+            let side = if child.id % 2 == 0 { 1. } else { -1. };
+            let axis = child.heading
+                + side * e.cells[i].expression[BROADEN].min(1.) * std::f32::consts::FRAC_PI_2;
             let delta = random_direction
                 .mul(1. - polarity)
-                .add(
-                    self.domain
-                        .tangent(child.p, child.heading)
-                        .mul(dist * polarity),
-                )
+                .add(self.domain.tangent(child.p, axis).mul(dist * polarity))
                 .normalized()
                 .mul(dist);
             child.p = child.p.add(delta.mul(0.5));
@@ -1976,7 +2161,9 @@ impl Habitat {
             }
             let attached = !gamete
                 && degree.get(&child.parent).copied().unwrap_or(0) < 6
-                && core.random() < child.activity(2) * e.cells[i].activity(2);
+                && core.random()
+                    < (child.activity(2) * e.cells[i].activity(2))
+                        .max(child.activity(WALL) * e.cells[i].activity(WALL));
             if attached {
                 e.bonds.push(Bond {
                     a: child.parent,
@@ -2446,6 +2633,7 @@ mod tests {
             promoter: [0.; crate::autonomous::INPUTS],
             bias: 1.,
             strength: 1.,
+            fates: 15,
         });
         let site = field_index(e.cells[0].p.x, e.cells[0].p.z);
         h.solutes[site][2] = 0.;
@@ -2553,6 +2741,7 @@ mod tests {
             promoter: [0.; crate::autonomous::INPUTS],
             bias: 1.,
             strength: 1.,
+            fates: 15,
         });
         assert_eq!(cell.activity(3), 0.);
         h.physiology(&mut e, &c);

@@ -151,6 +151,10 @@ button:hover { color: #edf6e7; }
 .diet-bar [data-diet="Living prey"] { background: #d6249f; }
 .diet-bar [data-diet="Vents"] { background: #c98f5a; }
 .diet-key { display: flex; flex-wrap: wrap; gap: 7px 12px; color: #97b29f; font-size: 10px; }
+.body-story .eyebrow:not(:first-child) { display: block; margin-top: 16px; }
+.cell-parts { display: flex; flex-wrap: wrap; gap: 6px; margin: 9px 0 4px; }
+.cell-parts span { padding: 4px 9px; border: 1px solid var(--border); border-radius: 999px; font-size: 10.5px; color: #c9dccb; background: #a5c7b00d; }
+.cell-parts b { font-weight: 400; color: #8fa698; }
 .diet-key b { color: #d2dec8; font-weight: 500; }
 .body-story .body-function-note { font-size: 11px; }
 .organism-browser { font-size: 12px; padding: 12px; border-radius: 8px; margin-top: 0; }

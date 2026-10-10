@@ -7,6 +7,9 @@ use crate::{
 };
 
 pub const LIPID: usize = 10;
+/// How fast excitable cells fire and recover. At 3 a steadily stimulated
+/// cell beats about once every seventeen cycles: quick enough to row with.
+const NERVE_PACE: f32 = 3.;
 pub const RECEPTOR: usize = 11;
 pub const CHANNEL: usize = 12;
 pub const REPAIR: usize = 13;
@@ -43,6 +46,9 @@ pub struct CellState {
     /// Light-harvesting capacity of a cell swallowed and kept alive inside
     /// this one. Inherited at division: the step that made complex cells.
     pub symbiont: f32,
+    /// 0 for a stem cell that can still become anything; 1 to 3 once it has
+    /// committed. Daughters inherit it. A cell on its own is always a stem cell.
+    pub fate: u8,
     /// Removed by the player's selection: its body returns to the world as
     /// fuel the survivors can use, rather than as remains.
     pub culled: bool,
@@ -83,6 +89,7 @@ impl CellState {
             && (0.0..=1.).contains(&self.wet)
             && self.nearby.is_finite()
             && self.nearby.abs() <= 1.
+            && self.fate < crate::autonomous::FATES
             && self.symbiont.is_finite()
             && (0.0..=1.).contains(&self.symbiont)
     }
@@ -137,7 +144,10 @@ impl Cell {
         let receptor = self.activity(RECEPTOR);
         self.state.food_change = (food - self.state.nutrient_memory).clamp(-1., 1.);
         self.state.nutrient_memory += (food - self.state.nutrient_memory) * 0.08;
-        self.state.exposure = (1. - degree as f32 / 6.).clamp(0.05, 1.);
+        // Two round cells touch over a small patch, so one neighbour costs a
+        // cell little of its surface; it is being packed in on every side
+        // that buries it. Thin bodies feed almost freely, thick ones do not.
+        self.state.exposure = (1. - (degree as f32 / 6.).powi(2)).clamp(0.05, 1.);
         // Samples one membrane radius along the cell's inherited spatial
         // polarity. This is a scalar promoter input; it never sets a force.
         let r = self.radius();
@@ -195,8 +205,12 @@ impl Cell {
     }
     pub(crate) fn material_role(&self) -> u8 {
         let Some(m) = &self.material else { return 0 };
-        use crate::physical::{CHEMO, ENGULF, PROPEL, SPINE, TOXIN};
-        if self.activity(ENGULF) > 0.25 {
+        use crate::physical::{CHEMO, ENGULF, FIN, PROPEL, SPINE, TOXIN, WALL};
+        if self.activity(WALL) > 0.25 {
+            17
+        } else if self.activity(FIN) > 0.25 {
+            18
+        } else if self.activity(ENGULF) > 0.25 {
             15
         } else if self.activity(TOXIN) > 0.25 {
             13
@@ -297,7 +311,8 @@ impl Habitat {
             let gut = mouths.0.max(mouths.1) as f64 * b.integrity as f64;
             let (xm, ym) = (x.material.as_mut().unwrap(), y.material.as_mut().unwrap());
             let slope = xm.fuel / xm.biomass - ym.fuel / ym.biomass;
-            let carried = slope * DT as f64 * 0.04 * mobility;
+            // Transport tissue carries fuel between any two cells that build it.
+            let carried = slope * DT as f64 * 0.3 * mobility;
             // Never past the receiver's capacity: a gut fills, it does not burst.
             let room = |m: &crate::physical::Inventory| (m.biomass * 1.5 - m.fuel).max(0.);
             let poured = (slope * DT as f64 * 0.5 * gut).clamp(-room(xm), room(ym));
@@ -377,14 +392,17 @@ impl Habitat {
                     + c.activity(crate::organics::TOUCH)
                         * (c.state.strain * 0.2 + c.state.pressure_gradient * 0.1)
                     + c.state.neural_input;
-                let du = 3. * u * (1. - u) * (u - 0.18) - 0.65 * v
+                // Recovery pulls hard enough that a cell held under steady
+                // stimulation, by light or by signal A, fires again and again
+                // across a wide range of strengths instead of locking on.
+                let du = 3. * u * (1. - u) * (u - 0.18) - v
                     + stimulus
-                    + 0.18 * (c.chemicals[0] - c.chemicals[1])
+                    + 0.4 * (c.chemicals[0] - c.chemicals[1])
                     + coupling[i];
                 let dv = 0.12 * (u - v * 0.8);
                 state[i] = [
-                    (u + DT / 8. * gates[i] * du).clamp(0., 1.),
-                    (v + DT / 8. * gates[i] * dv).clamp(0., 1.),
+                    (u + DT / 8. * NERVE_PACE * gates[i] * du).clamp(0., 1.),
+                    (v + DT / 8. * NERVE_PACE * gates[i] * dv).clamp(0., 1.),
                 ];
             }
         }

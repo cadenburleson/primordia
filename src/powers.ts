@@ -3,7 +3,7 @@ import type {BreedingGoal,Command,Snapshot,SteerAction} from './sim/types';
 const $=<T extends HTMLElement=HTMLElement>(id:string)=>document.getElementById(id) as T;
 
 const dial=(id:string,key:string,label:string,choices:[number|string,string][])=>`<div class="segmented" id="${id}" role="group" aria-label="${label}">${choices.map(([value,name])=>`<button data-${key}="${value}" aria-pressed="false">${name}</button>`).join('')}</div>`;
-const GOALS:[BreedingGoal|'',string,string][]=[['bodies','Bigger bodies','Size and mixed tissues'],['swimming','Swimmers','Motors that get somewhere'],['movement','Muscle','Bodies that contract'],['support','Skeleton','Mineral support'],['senses','Senses & nerves','Receptors and signals'],['hunting','Hunters','Prunes armed bodies that catch nothing'],['defence','Defences','Skin, spines and venom'],['','Let nature decide','No breeding']];
+const GOALS:[BreedingGoal|'',string,string][]=[['bodies','Bigger bodies','Size and mixed tissues'],['swimming','Swimmers','Motors that get somewhere'],['movement','Muscle','Bodies that row with muscle'],['support','Skeleton','Mineral support'],['senses','Senses & nerves','Receptors and signals'],['hunting','Hunters','Prunes armed bodies that catch nothing'],['defence','Defences','Skin, spines and venom'],['','Let nature decide','No breeding']];
 const INTENSITY={gentle:{strength:.15,period:40},firm:{strength:.25,period:30},ruthless:{strength:.4,period:20}} as const;
 type Intensity=keyof typeof INTENSITY;
 const ACTS:[string,string,string][]=[['nourish','Rain of plenty','Fuel falls where life already is'],['storm','Mutation storm','8× variation for 60 cycles'],['winter','Ice age','Deep cold for 120 cycles'],['meteor','Meteor strike','Click the planet to aim'],['dying','Great dying','Half of all cells perish']];
@@ -16,7 +16,7 @@ export const powersHTML=`<aside id="powers-panel" class="guide-panel powers-pane
 <section class="power"><div class="power-head"><span class="eyebrow">BREED FOR A PURPOSE</span><strong id="goal-readout">Off</strong></div>
 <div class="choice-grid" id="goal-choices" role="group" aria-label="Breeding goal">${GOALS.map(([goal,name,note])=>`<button data-goal="${goal}" aria-pressed="false"><b>${name}</b><small>${note}</small></button>`).join('')}</div>
 ${dial('goal-intensity','intensity','Selection strength',[['gentle','Gentle'],['firm','Firm'],['ruthless','Ruthless']])}
-<p class="power-note" id="goal-note">Every few cycles, the bodies showing the least of this trait are returned to the soil. The rest inherit their room and material.</p></section>
+<p class="power-note" id="goal-note">Every few cycles, the bodies showing the least of this trait are returned to the soil. The rest inherit their room and material. While you breed, half of all new genes are of the kind the goal needs.</p></section>
 <section class="power"><div class="power-head"><span class="eyebrow">PACE OF CHANGE</span><strong id="mutation-readout">Natural</strong></div>
 ${dial('mutation-choices','mutation','Mutation rate',[[0,'Still'],[.5,'Calm'],[1,'Natural'],[3,'Restless'],[8,'Wild']])}
 <p class="power-note" id="mutation-note">How often a copied gene comes out different. Faster brings more new ideas, and more broken ones.</p></section>
@@ -26,6 +26,12 @@ ${dial('light-choices','light','Star brightness',[[.5,'Dim'],[1,'Natural'],[3,'W
 <section class="power"><div class="power-head"><span class="eyebrow">THE DEEP</span><strong id="vents-readout">Natural</strong></div>
 ${dial('vents-choices','vents','Vent activity',[[.5,'Quiet'],[1,'Natural'],[4,'Active'],[8,'Violent']])}
 <p class="power-note">The planet’s interior feeds vent chemistry that needs no light. Cells must evolve the catalyst to use it.</p></section>
+<section class="power"><div class="power-head"><span class="eyebrow">SEASONS</span><strong id="seasons-readout">None</strong></div>
+${dial('seasons-choices','seasons','Seasons',[[0,'None'],[.5,'Mild'],[.875,'Harsh']])}
+<p class="power-note">The star dims toward midwinter and returns, once every 200 cycles. Lean months are what make stored fat worth carrying.</p></section>
+<section class="power"><div class="power-head"><span class="eyebrow">GENE SHARING</span><strong id="sharing-readout">Off</strong></div>
+${dial('sharing-choices','sharing','Gene sharing',[[0,'Off'],[1,'Rare'],[4,'Common'],[8,'Rampant']])}
+<p class="power-note">Touching cells pass copies of single genes to each other, as microbes do. Useful genes that arose in different lineages can then meet in one.</p></section>
 <section class="power"><div class="power-head"><span class="eyebrow">THE OCEANS</span><strong id="mixing-readout">Natural</strong></div>
 ${dial('mixing-choices','mixing','Ocean mixing',[[.5,'Still'],[1,'Natural'],[3,'Stirred'],[8,'Churning']])}
 <p class="power-note">Currents carry fuel, waste and minerals to cells that cannot yet go and find them.</p></section>
@@ -45,6 +51,8 @@ export class Powers {
       if(d.mutation!==undefined)this.steer({kind:'mutation',scale:Number(d.mutation)});
       else if(d.light!==undefined)this.steer({kind:'light',scale:Number(d.light)});
       else if(d.mixing!==undefined)this.steer({kind:'mixing',scale:Number(d.mixing)});
+      else if(d.sharing!==undefined)this.steer({kind:'sharing',scale:Number(d.sharing)});
+      else if(d.seasons!==undefined)this.steer({kind:'seasons',depth:Number(d.seasons),length:200});
       else if(d.vents!==undefined)this.steer({kind:'vents',scale:Number(d.vents)});
       else if(d.intensity!==undefined){this.intensity=d.intensity as Intensity;const goal=this.snapshot?.autonomous?.steering?.goal;if(goal)this.breed(goal);else this.render();}
       else if(d.goal!==undefined)this.breed(d.goal as BreedingGoal|'');
@@ -67,7 +75,7 @@ export class Powers {
     const s=this.snapshot,st=s?.autonomous?.steering;
     const available=!!st&&!s!.assessment?.control&&!s!.assessment?.running&&(s!.config.physicalAssay??'full')==='full';
     $('powers-unavailable').hidden=available||!s;
-    const signature=JSON.stringify([available,this.intensity,this.selected(),st&&[st.mutation,st.light,st.vents,st.mixing,st.goal,st.strength,st.rounds,st.note,st.scored,st.bodies,st.culled,Math.ceil(st.nextRound),st.favoured,st.favourPressure,Math.ceil(st.storm),Math.ceil(st.winter),s!.stats.cells]]);
+    const signature=JSON.stringify([available,this.intensity,this.selected(),st&&[st.mutation,st.light,st.vents,st.mixing,st.sharing,st.seasonDepth,Math.round((st.season??1)*20),st.goal,st.strength,st.rounds,st.note,st.scored,st.bodies,st.culled,Math.ceil(st.nextRound),st.favoured,st.favourPressure,Math.ceil(st.storm),Math.ceil(st.winter),s!.stats.cells]]);
     if(signature===this.signature)return;this.signature=signature;
     document.querySelectorAll<HTMLButtonElement>('#powers-panel .power button').forEach(b=>b.disabled=!available);
     if(!st)return;
@@ -75,6 +83,8 @@ export class Powers {
     $('mutation-readout').textContent=`${press('mutation-choices','mutation',String(st.mutation))} · ${st.mutation}×${st.storm>0?` · storm ×${(st.mutationFactor/Math.max(st.mutation,1e-6)).toFixed(0)} for ${Math.ceil(st.storm)} more`:''}`;
     $('light-readout').textContent=`${press('light-choices','light',String(st.light))} · ${st.light}×`;
     $('mixing-readout').textContent=`${press('mixing-choices','mixing',String(st.mixing))} · ${st.mixing}×`;
+    $('sharing-readout').textContent=press('sharing-choices','sharing',String(st.sharing??0));
+    const year=press('seasons-choices','seasons',String(st.seasonDepth??0));$('seasons-readout').textContent=(st.seasonDepth??0)>0?`${year} · ${Math.round((st.season??1)*100)}% light now`:year;
     $('vents-readout').textContent=`${press('vents-choices','vents',String(st.vents))} · ${st.vents}×`;
     press('goal-choices','goal',st.goal);
     const strength=Object.entries(INTENSITY).find(([,v])=>Math.abs(v.strength-st.strength)<1e-3&&v.period===st.period)?.[0];
@@ -82,8 +92,8 @@ export class Powers {
     press('goal-intensity','intensity',this.intensity);
     $('goal-readout').textContent=st.goal?`${GOAL_NAMES[st.goal]} · round ${st.rounds}`:'Off';
     const wait=`Next round in ${Math.ceil(st.nextRound)} cycles.`;
-    $('goal-note').textContent=!st.goal?'Every few cycles, the bodies showing the least of this trait are returned to the soil. The rest inherit their room and material.'
-      :st.note==='no-variation'?`No body differs on this trait yet, so nothing was removed. Quicken the pace of change and wait for the first mutation. ${wait}`
+    $('goal-note').textContent=!st.goal?'Every few cycles, the bodies showing the least of this trait are returned to the soil. The rest inherit their room and material. While you breed, half of all new genes are of the kind the goal needs.'
+      :st.note==='no-variation'?`No body differs on this trait yet, so nothing was removed. New genes now lean toward this goal; quicken the pace of change and wait for the first. ${wait}`
       :st.note==='too-few'?`Too few cells to breed from. Let them recover: brighten the star or send a rain of plenty. ${wait}`
       :st.note==='recovering'?`Survivors are regrowing. ${st.culled.toLocaleString()} cells returned to the soil so far. ${wait}`
       :st.note==='selecting'?`${st.scored.toLocaleString()} of ${st.bodies.toLocaleString()} bodies show the trait. ${st.culled.toLocaleString()} cells returned to the soil so far. ${wait}`

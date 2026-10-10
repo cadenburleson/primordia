@@ -16,10 +16,13 @@ export const CELL_TYPES=[
   {name:'Venom',color:'#c6f03e'},
   {name:'Spines',color:'#8f9bb8'},
   {name:'Mouth',color:'#d6249f'},
-  {name:'Vent feeder',color:'#c98f5a'}
+  {name:'Vent feeder',color:'#c98f5a'},
+  {name:'Walled cell',color:'#4f9e4a'},
+  {name:'Fin',color:'#2f6be0'}
 ] as const;
 export const CHOSEN_COLOR='#ffd27a';
-/** Display flags the engine adds to a role: 64 for the player's chosen lineage, 32 for a complex cell carrying a captured symbiont. */
+/** Display flags the engine adds to a role: 64 for the player's chosen lineage, 32 for a complex cell carrying a captured symbiont, 128 for a cell committed to a fate. */
 export const cellType=(role:number)=>role&31;
 export const isChosen=(role:number)=>(role&64)!==0;
 export const isComplex=(role:number)=>(role&32)!==0;
+export const isCommitted=(role:number)=>(role&128)!==0;

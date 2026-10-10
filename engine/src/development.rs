@@ -53,9 +53,10 @@ impl Cell {
         }
     }
     pub(crate) fn cellular_expression(&self, inputs: [f32; autonomous::INPUTS]) -> [f32; ACTIONS] {
-        let mut expression = self.genome.express(inputs);
+        let fate = self.state.fate;
+        let mut expression = self.genome.express_in(inputs, fate);
         if let Some(other) = &self.lifecycle.homolog {
-            for (a, b) in expression.iter_mut().zip(other.express(inputs)) {
+            for (a, b) in expression.iter_mut().zip(other.express_in(inputs, fate)) {
                 *a = (*a + b) * 0.5;
             }
         }
@@ -340,7 +341,15 @@ impl Habitat {
             self.development.fusion_work += self.spend(&mut e.cells[b], 0.1, false);
             let (ca, cb) = (&e.cells[a], &e.cells[b]);
             let mut embryo = ca.clone();
-            embryo.collection_sources=ca.collection_sources.iter().chain(&cb.collection_sources).cloned().collect::<BTreeSet<_>>().into_iter().take(16).collect();
+            embryo.collection_sources = ca
+                .collection_sources
+                .iter()
+                .chain(&cb.collection_sources)
+                .cloned()
+                .collect::<BTreeSet<_>>()
+                .into_iter()
+                .take(16)
+                .collect();
             embryo.id = e.next_cell;
             e.next_cell += 1;
             embryo.parent = ca.parent;

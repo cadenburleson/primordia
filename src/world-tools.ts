@@ -148,12 +148,14 @@ $<HTMLFieldSetElement>('world-tool-controls').disabled=!enabled;$('world-tools-u
     this.chooseCell();$<HTMLDialogElement>('gene-editor').showModal();
   }
   private chooseCell(){const c=this.editCells.find(c=>c.id===Number($<HTMLSelectElement>('edit-cell').value));if(c){this.genes=structuredClone(c.genes);this.renderGenes();}}
-  private renderGenes(){const actions=this.snapshot?.autonomous?.actions??[];$('gene-rows').innerHTML=this.genes.map((g,i)=>`<div class="gene-edit-row" data-gene-row="${i}"><strong>${i+1}. ${escape(actions[g.action]??String(g.action))}</strong><label>Bias <input data-bias type="number" min="-2" max="2" step="any" value="${g.bias}"></label><label>Strength <input data-strength type="number" min="0" max="2" step="any" value="${g.strength}"></label><button data-remove-gene="${i}" class="text-button">Remove</button><details><summary>Regulatory inputs (${g.promoter.length} weights)</summary><label>Comma-separated promoter weights, each −2 to 2<input data-promoter type="text" value="${g.promoter.join(', ')}"></label></details></div>`).join('');}
+  private renderGenes(){const actions=this.snapshot?.autonomous?.actions??[];$('gene-rows').innerHTML=this.genes.map((g,i)=>`<div class="gene-edit-row" data-gene-row="${i}"><strong>${i+1}. ${escape(actions[g.action]??String(g.action))}</strong><label>Bias <input data-bias type="number" min="-2" max="2" step="any" value="${g.bias}"></label><label>Strength <input data-strength type="number" min="0" max="2" step="any" value="${g.strength}"></label><button data-remove-gene="${i}" class="text-button">Remove</button><span class="gene-fates">Read by ${['Stem cells','Fate A','Fate B','Fate C'].map((name,k)=>`<label><input type="checkbox" data-fate="${k}" ${(g.fates??15)>>k&1?'checked':''}>${name}</label>`).join('')}</span><details><summary>Regulatory inputs (${g.promoter.length} weights)</summary><label>Comma-separated promoter weights, each −2 to 2<input data-promoter type="text" value="${g.promoter.join(', ')}"></label></details></div>`).join('');}
   private readGenes(){
     const next=structuredClone(this.genes);
     for(const row of Array.from($('gene-rows').querySelectorAll<HTMLElement>('[data-gene-row]'))){
       const g=next[Number(row.dataset.geneRow)];g.bias=row.querySelector<HTMLInputElement>('[data-bias]')!.valueAsNumber;g.strength=row.querySelector<HTMLInputElement>('[data-strength]')!.valueAsNumber;
       const raw=row.querySelector<HTMLInputElement>('[data-promoter]')!.value.split(',');g.promoter=raw.map(v=>v.trim()===''?NaN:Number(v));
+      g.fates=Array.from(row.querySelectorAll<HTMLInputElement>('[data-fate]')).reduce((mask,box)=>mask|(box.checked?1<<Number(box.dataset.fate):0),0);
+      if(!g.fates){this.toast('Each gene must be read by at least one kind of cell.');return false;}
       if(!Number.isFinite(g.bias)||Math.abs(g.bias)>2||!Number.isFinite(g.strength)||g.strength<0||g.strength>2||g.promoter.length!==32||g.promoter.some(v=>!Number.isFinite(v)||Math.abs(v)>2)){this.toast('Each gene needs bias −2…2, strength 0…2 and exactly 32 promoter weights −2…2.');return false;}
     }
     this.genes=next;return true;
