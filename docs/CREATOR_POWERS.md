@@ -51,7 +51,7 @@ Under a bright star cells drift toward living alone, so the reliable order is th
 
 ## Life's ascent
 
-Each step is measured from living cells every two cycles. The first version had eleven: living cells, colonies, multicellular bodies, specialised tissues, senses, muscle, skeleton, nerve nets, powered movement, organs, sexual reproduction. There are now eighteen; see the next section.
+Each step is measured from living cells every two cycles. The first version had eleven: living cells, colonies, multicellular bodies, specialised tissues, senses, muscle, skeleton, nerve nets, powered movement, organs, sexual reproduction. There are now nineteen; see the next section.
 
 Each step has four stages: absent, gene in the pool, first working cells, established. A step is established only when cells have built the tissue, for example muscle in 10% of living cells. The first time a world reaches each stage is recorded in the save and announced once.
 
@@ -88,7 +88,7 @@ Rules that hold for every weapon:
 
 **Diets.** Every body is classified from what it has actually taken in. An eater takes a quarter or more of its fuel from other life: a herbivore if its prey mostly feed themselves, a carnivore if they are mostly eaters, an omnivore in between. Other bodies are light feeders, soup feeders (dissolved fuel), decomposers or vent feeders. Life shows the shares as a bar.
 
-**New powers.** Breed for Swimmers or Defences; "Movement" is now "Muscle". The Deep sets how strongly the planet's interior feeds vents (Ember sea starts at Active). The ladder has 18 steps, adding swimming, guided swimming, hunters, carnivores, complex cells, defences and reflex arcs (a sensing cell wired directly to a moving one).
+**New powers.** Breed for Swimmers or Defences; "Movement" is now "Muscle". The Deep sets how strongly the planet's interior feeds vents (Ember sea starts at Active). The ladder has 19 steps, adding swimming, guided swimming, hunters, carnivores, complex cells, guts, defences and reflex arcs (a sensing cell wired directly to a moving one).
 
 **Breeding was reworked** after it was found to stunt every world it touched (about 100 cells against 1,200 unbred):
 
@@ -124,6 +124,19 @@ Measured afterwards, native, 128-unit patchy planets, Bright star, pace of chang
 
 About one hunting body in a hundred is what these worlds sustain, so the ladder counts hunters as established at 1% of bodies. Predation pushed prey toward living as bodies in some runs and toward armour and venom in others.
 
+### Guts
+
+A mouth is plumbed into the body it belongs to. Fuel runs across a mouth cell's bonds toward whichever side is emptier, fast: out to its neighbours after a meal, and back in when there is nothing to catch. Carrying it deeper than a mouth's own neighbours still takes transport tissue. A receiving cell is never filled past its capacity, and the Evidence test that switches transport off switches this off too.
+
+Two things that were destroying hunter bodies were fixed along the way:
+
+- **A mouth could not bond to its own unarmed kin**, because of the rule that stops it gluing itself to prey. That rule now applies to strangers only.
+- **A body's motors tore it apart.** One cell's thrust stretched its bonds far past breaking. A body's thrust is now pooled and shared by mass; motors pointing different ways cancel instead of shearing the body.
+
+The ladder gains a Guts step: a body of four or more whose mouths pass at least a fifth of everything the body takes in to cells with no mouth. Inspect shows a body's mouth cells, its largest mouth, and how much its mouths have passed on.
+
+**No gut-bearing body has evolved in any run.** The sharing itself works and is tested. The obstacle is upstream: hunters live as single cells. In one seeded world 108 of 109 mouth-bearing bodies were a single cell after 1,200 cycles, and bodies seeded as hunters had come apart within 300. Their prey are mostly single cells too, so a lone hunter loses nothing by being small and keeps its full exposure to light. Breeding for bigger bodies did not produce hunter bodies either, and shrank the worlds it was tried on. Mouth material also saturates in every cell of a lineage, so a body does not sort itself into mouth and non-mouth cells.
+
 ### Speed
 
 Terrain under each cell is now sampled on every fourth mechanics substep instead of all twenty. A comparable native run (500–650 cells on a 128-unit sphere) went from 13.2 to 31.6 cycles per second. In the browser the same quick-start world read 13–23 cycles per second with 410–530 cells, on a busy machine; I could not show a clear browser gain from this change.
@@ -131,6 +144,7 @@ Terrain under each cell is now sampled on every fourth mechanics substep instead
 ## Not solved
 
 - Hunters are a real but small guild, about 1% of bodies, and can still die out. A carnivore appeared in one run; a lasting second trophic level has not.
+- Hunters stay single-celled, so guts, and bodies built around a mouth, have not evolved.
 - Limbs, coordinated walking and anything resembling a brain have not been observed to evolve.
 - Most cells that carry a mouth do not hunt; it protects them from armed kin.
 - Horns and image-forming eyes are not modelled. Propulsion is one push per cell, not a visible flagellum.
@@ -141,7 +155,7 @@ Terrain under each cell is now sampled on every fourth mechanics substep instead
 ## Checks
 
 ```sh
-cargo test --profile preview --manifest-path engine/Cargo.toml --lib   # 115 tests
+cargo test --profile preview --manifest-path engine/Cargo.toml --lib   # 117 tests
 npm run check:steering   # the shipped WASM, through the same API the UI uses
 npm run check:scheduler && npm run check:nursery-ui && npm run check:brush-ui
 npm run build

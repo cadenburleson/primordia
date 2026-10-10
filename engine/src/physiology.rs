@@ -286,13 +286,33 @@ impl Habitat {
                 (&mut right[0], &mut left[c])
             };
             let mobility = (x.activity(8) + y.activity(8)) as f64 * 0.5 * b.integrity as f64;
+            // A mouth is plumbed into the body it belongs to. Fuel runs across
+            // its bonds toward whichever side is emptier: out after a meal, and
+            // back in when there is nothing to catch. Carrying it deeper than a
+            // mouth's own neighbours takes transport tissue.
+            let mouths = (
+                x.activity(crate::physical::ENGULF),
+                y.activity(crate::physical::ENGULF),
+            );
+            let gut = mouths.0.max(mouths.1) as f64 * b.integrity as f64;
             let (xm, ym) = (x.material.as_mut().unwrap(), y.material.as_mut().unwrap());
-            let flow =
-                ((xm.fuel / xm.biomass - ym.fuel / ym.biomass) * DT as f64 * 0.04 * mobility)
-                    .clamp(-ym.fuel, xm.fuel);
+            let slope = xm.fuel / xm.biomass - ym.fuel / ym.biomass;
+            let carried = slope * DT as f64 * 0.04 * mobility;
+            // Never past the receiver's capacity: a gut fills, it does not burst.
+            let room = |m: &crate::physical::Inventory| (m.biomass * 1.5 - m.fuel).max(0.);
+            let poured = (slope * DT as f64 * 0.5 * gut).clamp(-room(xm), room(ym));
+            let flow = (carried + poured).clamp(-ym.fuel, xm.fuel);
             xm.fuel -= flow;
             ym.fuel += flow;
             self.physiology.fuel_transported += flow.abs();
+            // What a mouth hands to an unarmed neighbour is how a body is fed.
+            if flow > 0. && mouths.0 > 0.25 && mouths.1 <= 0.25 {
+                x.state.flux.shared += flow;
+                y.state.flux.fed += flow;
+            } else if flow < 0. && mouths.1 > 0.25 && mouths.0 <= 0.25 {
+                y.state.flux.shared -= flow;
+                x.state.flux.fed -= flow;
+            }
             // Transfer existing ATP-like stores, never a colony-wide energy pool.
             let difference = x.energy / xm.biomass as f32 - y.energy / ym.biomass as f32;
             let flow = (difference as f64 * DT as f64 * 0.025 * mobility)

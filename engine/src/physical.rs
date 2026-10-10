@@ -1059,9 +1059,14 @@ impl Habitat {
                     .min(1.)
                     * (e.cells[j].activity(2) + material_affinity(&e.cells[j]) * 0.2).min(1.)
                     * e.cells[i].recognition(&e.cells[j])
-                    // A mouth does not glue itself to its food: engulfers bind
-                    // each other, not the cells they could swallow.
-                    * (1. - (e.cells[i].activity(ENGULF) - e.cells[j].activity(ENGULF)).abs()))
+                    // A mouth does not glue itself to a stranger it could
+                    // swallow. Kin bind whether armed or not, or a body could
+                    // never have a mouth and anything else.
+                    * if armed && !kin(i, j) {
+                        1. - (e.cells[i].activity(ENGULF) - e.cells[j].activity(ENGULF)).abs()
+                    } else {
+                        1.
+                    })
                     as f64;
                 if !bonded.contains(&key)
                     && e.cells[i].lifecycle.phase != crate::development::Phase::Gamete
@@ -1646,6 +1651,21 @@ impl Habitat {
                         site,
                         [-(direction.x as f64) * impulse, -(direction.z as f64) * impulse],
                     );
+                }
+            }
+        }
+        // A body's motors push the whole body. Each cell's thrust is pooled
+        // and shared by mass, so swimmers in one body do not tear it apart;
+        // motors pointing different ways simply cancel, which is wasted work.
+        if thrust.iter().any(|t| t.x != 0. || t.y != 0. || t.z != 0.) {
+            for group in e.groups() {
+                if group.len() < 2 {
+                    continue;
+                }
+                let net = group.iter().fold(V3::default(), |sum, &i| sum.add(thrust[i]));
+                let mass: f64 = group.iter().map(|&i| properties[i].0).sum();
+                for &i in &group {
+                    thrust[i] = net.mul((properties[i].0 / mass) as f32);
                 }
             }
         }

@@ -91,6 +91,35 @@ fn propulsion_moves_a_cell_along_its_heading_and_is_paid_for() {
 }
 
 #[test]
+fn a_bodys_motors_push_the_whole_body_without_tearing_it() {
+    // A swimmer bonded to a passive cell: both travel, and the bond survives.
+    let (mut core, mut e, mut h) = fixture();
+    build(&mut e, 0, PROPEL);
+    e.cells[0].genome.genes.push(always(PROPEL));
+    for c in &mut e.cells {
+        c.material.as_mut().unwrap().proteins[2] = 0.05; // adhesion keeps a bond alive
+    }
+    e.bonds.push(Bond {
+        a: e.cells[0].id,
+        b: e.cells[1].id,
+        rest: 0.4,
+        integrity: 1.,
+        activation: 0.,
+        stiffness: 0.,
+    });
+    let start = (e.cells[0].p.x, e.cells[1].p.x);
+    for _ in 0..40 {
+        h.tick(&mut e, &mut core);
+    }
+    let moved = (e.cells[0].p.x - start.0, e.cells[1].p.x - start.1);
+    assert_eq!(e.bonds.len(), 1, "the body holds together");
+    assert!(e.bonds[0].integrity > 0.9, "bond integrity {}", e.bonds[0].integrity);
+    assert!(moved.0 > 0.1 && moved.1 > 0.1, "both travelled: {moved:?}");
+    assert!((moved.0 - moved.1).abs() < 0.2, "and stayed together: {moved:?}");
+    assert!(e.cells[0].state.injury < 0.05 && e.cells[1].state.injury < 0.05);
+}
+
+#[test]
 fn a_motor_without_its_gene_drive_or_without_energy_does_nothing() {
     let (mut core, mut e, mut h) = fixture();
     e.cells[1].p = V3::new(0., 5., 6.);
@@ -401,11 +430,16 @@ fn a_mouth_grows_larger_than_its_prey_and_does_not_glue_itself_to_it() {
     assert!(biomass(&e, 0) > 0.6, "mouth cell reached {}", biomass(&e, 0));
     assert!(biomass(&e, 1) <= 0.5 + 1e-9, "ordinary cell stays at {}", biomass(&e, 1));
 
-    // Sticky cells bond on contact unless one is a mouth and the other is not.
-    let bonded = |mouth: bool| {
+    // Sticky cells bond on contact. A mouth will not bond to an unarmed
+    // stranger, but it will to unarmed kin: that is how a body gets a mouth.
+    let bonded = |mouth: bool, stranger: bool| {
         let (mut core, mut e, mut h) = fixture();
         for c in &mut e.cells {
             c.material.as_mut().unwrap().proteins[2] = 0.05;
+            c.genome.genes = vec![always(0), always(1), always(7)];
+        }
+        if stranger {
+            e.cells[1].genome.genes = vec![always(3), always(14), always(21)];
         }
         if mouth {
             build(&mut e, 0, ENGULF);
@@ -417,7 +451,9 @@ fn a_mouth_grows_larger_than_its_prey_and_does_not_glue_itself_to_it() {
         }
         !e.bonds.is_empty()
     };
-    assert!(bonded(false) && !bonded(true));
+    assert!(bonded(false, true), "unarmed strangers still stick");
+    assert!(!bonded(true, true), "a mouth does not glue itself to a stranger");
+    assert!(bonded(true, false), "a mouth bonds to its unarmed kin");
 }
 
 #[test]
@@ -432,6 +468,50 @@ fn a_steering_cell_senses_which_side_other_life_is_on() {
     };
     assert!(side(1.) > 0.1 && side(-1.) < -0.1);
     assert_eq!(side(3.), 0., "beyond one field spacing nothing is felt");
+}
+
+#[test]
+fn a_mouth_feeds_the_body_it_is_bonded_to_and_is_fed_by_it_in_turn() {
+    // (mouth's fuel, neighbour's fuel) after sharing, plus what was recorded.
+    let share = |mouth: bool, bonded: bool, mouth_fuel: f64, other_fuel: f64| {
+        let (_, mut e, mut h) = fixture();
+        if mouth {
+            build(&mut e, 0, ENGULF);
+        }
+        if bonded {
+            e.bonds.push(Bond {
+                a: e.cells[0].id,
+                b: e.cells[1].id,
+                rest: 0.4,
+                integrity: 1.,
+                activation: 0.,
+                stiffness: 0.,
+            });
+        }
+        e.cells[0].material.as_mut().unwrap().fuel = mouth_fuel;
+        e.cells[1].material.as_mut().unwrap().fuel = other_fuel;
+        rebase(&mut h, &e);
+        for _ in 0..40 {
+            h.tissue_transport(&mut e);
+        }
+        assert!(balanced(&h, &e), "{:?}", h.errors(&e.cells));
+        let fuel = |i: usize| e.cells[i].material.as_ref().unwrap().fuel;
+        (fuel(0), fuel(1), e.cells[0].state.flux.shared, e.cells[1].state.flux.fed)
+    };
+    // After a meal the mouth pours fuel into its neighbour until they level.
+    let (mouth, fed_cell, shared, fed) = share(true, true, 0.3, 0.);
+    assert!(fed_cell > 0.1 && (mouth - fed_cell).abs() < 0.05, "{mouth} {fed_cell}");
+    assert!((shared - fed).abs() < 1e-12 && fed > 0.1);
+    // Between meals the body keeps its mouth alive; that is not being fed by a mouth.
+    let (mouth, body_cell, shared, fed) = share(true, true, 0., 0.3);
+    assert!(mouth > 0.1 && body_cell < 0.2);
+    assert_eq!((shared, fed), (0., 0.));
+    // No bond, or no mouth and no transport tissue: nothing moves.
+    assert_eq!(share(true, false, 0.3, 0.).1, 0.);
+    assert_eq!(share(false, true, 0.3, 0.).1, 0.);
+    // A gut fills; it does not burst.
+    let (_, full, _, _) = share(true, true, 0.33, 0.32);
+    assert!(full <= 0.22 * 1.5 + 1e-9, "{full}");
 }
 
 #[test]

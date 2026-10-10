@@ -135,7 +135,9 @@ export type ComparisonControl='baseline'|'motors'|'transport'|'signals';
 export interface SpecimenSummary {name:string;cells:number;generation:number;genomes:number;joints:number;bonds:number;synapses:number;sourceBody:number;sourceSeed:number;cycle:number;genes:number[];functions:number[];shape:number[][]}
 export interface SavedSpecimen {id:string;savedAt:string;json:string;summary:SpecimenSummary}
 export interface SpecimenMessage {type:'specimen';action:'capture'|'inspect';json:string;summary:SpecimenSummary}
-export interface Flux {fuel:number;detritus:number;photosynthesis:number;prey:number;lost_to_predators:number;defense_blocked:number;minerals:number;waste:number;organic_waste:number;signal_a:number;signal_b:number;proteins:number;absorbed:number;filtered:number;respiration:number;water_transport:number;solute_transport:number;matrix:number;fibers:number}
+export interface Flux {fuel:number;detritus:number;photosynthesis:number;prey:number;lost_to_predators:number;defense_blocked:number;minerals:number;waste:number;organic_waste:number;signal_a:number;signal_b:number;proteins:number;absorbed:number;filtered:number;respiration:number;water_transport:number;solute_transport:number;matrix:number;fibers:number;chemosynthesis?:number;wounded?:number;prey_animal?:number;
+  /** Fuel a mouth cell passed to unarmed cells of its own body, and what those cells received. */
+  shared?:number;fed?:number}
 export interface BodyObservation {flux:Flux;stocks:number[];functions:number[];centroid:V3;membership:string;members:number;site:number;ambientFlow:V3;localResources:number[]}
 export interface ComparisonResult {control:ComparisonControl;cycles:number;targetCycles:number;body:number;membershipChanged:boolean;bodyLost:boolean;distance:number|null;ambientTravel:number;work:number|null;food:number|null;prey:number|null;soluteTransport:number|null;births:number;deaths:number;cells:number;regions:number}
 export interface Assessment {checkpoint:boolean;running:boolean;control:ComparisonControl|null;elapsed:number;duration:number;results:ComparisonResult[]}

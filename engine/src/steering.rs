@@ -144,7 +144,7 @@ pub struct Rung {
     pub first: [Option<f32>; 3],
 }
 
-const RUNG_NAMES: [(&str, &str); 18] = [
+const RUNG_NAMES: [(&str, &str); 19] = [
     ("cells", "Living cells"),
     ("colonies", "Colonies"),
     ("bodies", "Multicellular bodies"),
@@ -157,6 +157,7 @@ const RUNG_NAMES: [(&str, &str); 18] = [
     ("hunters", "Hunters"),
     ("carnivores", "Carnivores"),
     ("complex", "Complex cells"),
+    ("guts", "Guts"),
     ("defences", "Defences"),
     ("nerves", "Nerve nets"),
     ("movement", "Powered movement"),
@@ -564,6 +565,20 @@ impl Habitat {
             .count();
         let (_, hunters, carnivores) = self.diets(e, &groups);
         let complex = e.cells.iter().filter(|c| c.state.symbiont > 0.).count();
+        // A gut: a body of four or more whose mouths pass on at least a fifth
+        // of everything the body takes in to cells that have no mouth.
+        let guts = groups
+            .iter()
+            .filter(|g| {
+                let (mut shared, mut intake, mut unarmed) = (0., 0., 0);
+                for &i in g.iter() {
+                    shared += e.cells[i].state.flux.shared;
+                    intake += e.cells[i].state.flux.intake();
+                    unarmed += usize::from(!built(&e.cells[i], &[ENGULF]));
+                }
+                g.len() >= 4 && unarmed >= 2 && shared > 0.01 && shared >= 0.2 * intake
+            })
+            .count();
         let arcs = self.reflex_arcs(e);
         let per_any = |count: usize| {
             if groups.is_empty() {
@@ -573,7 +588,7 @@ impl Habitat {
             }
         };
         // key, gene carriers, built measure, measure needed, count, extra gate
-        let rows: [(&'static str, f32, f32, f32, usize, bool); 18] = [
+        let rows: [(&'static str, f32, f32, f32, usize, bool); 19] = [
             ("cells", 1., if e.divisions > 0 { 1. } else { 0.5 }, 1., n, n > 0),
             ("colonies", genes(&[2]), fraction(attached), 0.3, attached, true),
             ("bodies", genes(&[2, 20, 21]), largest as f32 / 24., 1., largest, largest >= 3),
@@ -587,6 +602,7 @@ impl Habitat {
             ("hunters", genes(&[9, ENGULF, TOXIN]), per_any(hunters), 0.01, hunters, hunters >= 3),
             ("carnivores", genes(&[9, ENGULF, TOXIN]), per_any(carnivores), 0.005, carnivores, carnivores >= 3),
             ("complex", genes(&[ENGULF]), fraction(complex), 0.1, complex, true),
+            ("guts", genes(&[ENGULF]), per_body(guts), 0.05, guts, guts >= 3),
             ("defences", genes(&[BARRIER, SPINE, TOXIN]), fraction(defended), 0.15, defended, true),
             ("nerves", genes(&[17]), fraction(synapses), 0.05, synapses, synapses >= 8),
             ("movement", genes(&[4]), per_body(moving), 0.1, moving, moving >= 3),
@@ -1074,7 +1090,7 @@ mod tests {
         let e = c.autonomous.as_ref().unwrap();
         let h = e.physical.as_ref().unwrap();
         let ladder = h.ladder(e);
-        assert_eq!(ladder.len(), 18);
+        assert_eq!(ladder.len(), 19);
         assert_eq!(ladder[0].stage, 3, "founders divide");
         assert!(ladder.iter().all(|r| (0.0..=1.).contains(&r.progress) && r.stage <= 3));
         // No founder carries muscle, skeleton or nerve genes.

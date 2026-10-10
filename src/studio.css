@@ -148,7 +148,8 @@ button:hover { color: #edf6e7; }
 .diet-bar span { background: #cae095; }
 .diet-bar [data-diet="Dissolved fuel"] { background: #7fc6c4; }
 .diet-bar [data-diet="Organic remains"] { background: #ba9c75; }
-.diet-bar [data-diet="Living prey / matrix"] { background: #dd9786; }
+.diet-bar [data-diet="Living prey"] { background: #d6249f; }
+.diet-bar [data-diet="Vents"] { background: #c98f5a; }
 .diet-key { display: flex; flex-wrap: wrap; gap: 7px 12px; color: #97b29f; font-size: 10px; }
 .diet-key b { color: #d2dec8; font-weight: 500; }
 .body-story .body-function-note { font-size: 11px; }

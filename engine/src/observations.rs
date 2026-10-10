@@ -28,6 +28,10 @@ pub struct Flux {
     pub wounded: f64,
     /// The part of `prey` taken from cells that were themselves eaters.
     pub prey_animal: f64,
+    /// Fuel a mouth cell passed on to unarmed cells of its own body.
+    pub shared: f64,
+    /// Fuel an unarmed cell received from a mouth cell of its own body.
+    pub fed: f64,
 }
 impl Flux {
     /// Everything this cell has taken in as fuel, from any source.
@@ -63,6 +67,8 @@ impl Flux {
         self.chemosynthesis += b.chemosynthesis;
         self.wounded += b.wounded;
         self.prey_animal += b.prey_animal;
+        self.shared += b.shared;
+        self.fed += b.fed;
     }
     pub fn valid(&self) -> bool {
         [
@@ -88,6 +94,8 @@ impl Flux {
             self.chemosynthesis,
             self.wounded,
             self.prey_animal,
+            self.shared,
+            self.fed,
         ]
         .iter()
         .all(|x| x.is_finite() && *x >= 0.)

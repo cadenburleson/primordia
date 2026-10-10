@@ -94,12 +94,14 @@ fn run() -> Result<(), String> {
                 .filter(|c| c.activity(primordia_engine::physical::ENGULF) > 0.25)
                 .count();
             let eating = e.cells.iter().filter(|c| c.state.flux.eater()).count();
+            let fed = e.cells.iter().filter(|c| c.state.flux.fed > 0.01).count();
             eprintln!(
-                "{:.1} cycles, {} cells · mouths {} eating {} · energy {:.2} biomass {:.3} injury {:.2} exposure {:.2} age {:.0} · lost [starved, wasted, injured] {:?}",
+                "{:.1} cycles, {} cells · mouths {} eating {} fed {} · energy {:.2} biomass {:.3} injury {:.2} exposure {:.2} age {:.0} · lost [starved, wasted, injured] {:?}",
                 world.time,
                 e.cells.len(),
                 mouths,
                 eating,
+                fed,
                 mean(&|c| c.energy),
                 mean(&|c| c.material.as_ref().map_or(0., |m| m.biomass as f32)),
                 mean(&|c| c.state.injury),
