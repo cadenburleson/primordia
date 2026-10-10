@@ -1,0 +1,85 @@
+/* Compact painting workspace. No backdrop blur, filters, shadows or GPU effects. */
+.brush-toolbar { position:absolute; z-index:7; bottom:171px; left:50%; transform:translateX(-50%); width:540px; max-width:calc(100% - 40px); padding:16px 18px 12px; border:1px solid #b1d9c745; border-radius:18px; background:linear-gradient(130deg,#193338f5,#122429f5); color:#dfeadd; }
+.brush-toolbar[hidden] { display:none; }
+.brush-topline { display:flex; align-items:center; gap:12px; margin-bottom:16px; }
+.brush-topline .eyebrow { color:#abcfae; font-size:8px; letter-spacing:1.5px; }
+#brush-status { font-size:10px; color:#a2b8b3; flex:1; }
+#brush-done { color:#d9eacb; font-size:11px; padding:6px 9px; border-radius:7px; border:1px solid #abcfae36; white-space:nowrap; }
+.brush-toolbar kbd { font:9px var(--sans); opacity:.65; padding:2px; }
+.brush-toolbar fieldset { padding:0; margin:0; border:0; min-width:0; }
+.brush-swatches { display:grid; grid-template-columns:repeat(7,1fr); gap:7px; }
+.brush-swatches button { display:flex; flex-direction:column; align-items:center; gap:7px; padding:10px 2px 8px; font-size:10px; color:#adc6bf; border:1px solid transparent; border-radius:10px; background:#ffffff05; }
+.brush-swatches svg { width:23px; height:23px; }
+.brush-swatches button.active { background:#c7dda9; border-color:#e0efc8; color:#26372d; }
+.brush-swatches button:hover { border-color:#b1d9c758; }
+.brush-swatches [data-brush-tool="water"]:not(.active) { color:#9ac9ec; }
+.brush-swatches [data-brush-tool="fuel"]:not(.active) { color:#e3c888; }
+.brush-sliders { display:flex; gap:17px; align-items:center; padding-top:17px; }
+.brush-sliders > label { display:block; flex:1; min-width:0; color:#aac2b9; font-size:11px; }
+.brush-sliders output { float:right; font-size:10px; color:#e0ead8; font-variant-numeric:tabular-nums; }
+.brush-toolbar input[type="range"],.season-controls input[type="range"] { width:100%; height:18px; margin:9px 0 0; padding:0; accent-color:#c7dda9; border:none; background:none; }
+#brush-undo,.brush-transform summary { padding:7px 8px; font-size:10px; color:#c9dccd; white-space:nowrap; border:1px solid #c7dda92d; border-radius:7px; cursor:pointer; }
+.brush-transform { position:relative; }
+.brush-transform > div { position:absolute; bottom:42px; right:0; width:230px; background:#1b3237; border:1px solid #afcdbb4d; border-radius:12px; padding:17px; }
+.brush-transform label { display:block; font-size:11px; color:#c9dbcd; margin-top:8px; }
+.brush-transform small { display:block; font-size:10px; line-height:1.6; color:#98b4aa; margin-top:12px; }
+#brush-reset-shape { font-size:11px; color:#cadbb4; padding:10px 0 0; }
+.brush-hints { display:flex; justify-content:space-between; gap:7px; font-size:9px; color:#93b3a8; padding-top:13px; margin-top:10px; border-top:1px solid #abcfae1c; }
+.brush-hints i { display:inline-block; width:5px; height:5px; border-radius:50%; background:#c7dda9; margin-right:4px; }
+.brush-mode .guide-hint,.brush-mode .world-coordinate,.brush-mode .orbit-hint { display:none; }
+.brush-mode .timeline { opacity:.6; }
+.brush-toolbar fieldset:disabled { opacity:.55; }
+.brush-toolbar fieldset:disabled summary { pointer-events:none; }
+.brush-toolbar button:disabled { opacity:.35; cursor:default; }
+.world-tool-section .surface-palette { margin:14px 0; }
+.surface-palette > div { gap:8px; }
+.surface-palette button { min-height:44px; border-radius:10px; }
+.season-controls { margin:22px 0 16px; padding:14px; border:1px solid #b7cfaa29; border-radius:10px; background:#c7dbad06; }
+.season-controls summary { font-size:12px; color:#d5e4ca; cursor:pointer; }
+#season-summary { float:right; font-size:10px; color:#8fac9b; }
+.season-controls p,.season-controls small { font-size:11px; line-height:1.7; color:#9fb7a9; }
+.season-controls small { display:block; }
+.season-controls label { display:block; font-size:11px; color:#bfd3b6; margin-top:16px; }
+.season-controls output { float:right; color:#dae6cd; }
+.season-controls select { width:100%; margin-top:9px; background:#1a302c; border:1px solid #c7dbad30; padding:9px; border-radius:7px; color:#d6e4cc; }
+.season-presets { display:flex; gap:6px; }
+.season-presets button { flex:1; padding:8px 5px; border:1px solid #bdd6b926; border-radius:7px; font-size:10px; color:#b3cbb0; }
+.season-presets button.active { background:#bdd6b9; color:#1d302c; }
+@media(max-width:640px) { .brush-toolbar { bottom:154px; left:12px; right:12px; width:auto; max-width:none; transform:none; padding:12px; border-radius:13px; } .brush-topline { gap:6px; margin-bottom:9px; } .brush-topline .eyebrow { display:none; } #brush-status { font-size:9px; } .brush-swatches { gap:3px; } .brush-swatches button { font-size:8px; padding:8px 1px; gap:5px; } .brush-swatches svg { width:19px; height:19px; } .brush-sliders { gap:8px; padding-top:12px; } .brush-sliders>label { font-size:10px; } .brush-sliders output { float:none; display:block; margin-top:4px; } .brush-sliders input { margin-top:4px!important; } #brush-undo,.brush-transform summary { padding:7px 5px; font-size:9px; } .brush-hints { font-size:8px; } .brush-hints span:last-child { display:none; } }
+@media(max-height:650px) and (min-width:641px) { .brush-toolbar { bottom:162px; padding:11px 15px 8px; } .brush-topline { margin-bottom:9px; } .brush-swatches button { padding:7px 2px; gap:4px; } .brush-sliders { padding-top:10px; } .brush-hints { padding-top:8px; margin-top:4px; } }
+/* The guide offers a single visible experiment, with details on demand. */
+.guide-aim[hidden] { display:none; }
+.guide-panel .guide-advice { padding:15px; border-color:#bdd6b92e; background:linear-gradient(145deg,#bfdda610,#bfdda602); }
+.guide-panel .guide-advice h3 { font-size:21px; margin:11px 0; }
+.guide-panel .guide-advice p { font-size:11px; line-height:1.7; }
+.guide-panel .guide-advice .eyebrow { font-size:8px; }
+.guide-vitals { display:flex; justify-content:space-between; padding:18px 0 13px; gap:8px; }
+.guide-vitals strong { font:20px var(--serif); color:#dce9cf; }
+.guide-vitals span { display:block; font-size:9px; color:#8fa99b; margin-top:6px; }
+.experiment-heading-small { display:flex; justify-content:space-between; align-items:center; margin:25px 0 12px; gap:8px; }
+.experiment-heading-small .eyebrow { font-size:8px; letter-spacing:1px; }
+.experiment-heading-small small { font-size:8px; color:#8ca998; }
+.experiment-picker { display:grid; grid-template-columns:1fr 1fr; gap:7px; }
+.experiment-picker button { display:flex; align-items:center; gap:9px; padding:12px 9px; text-align:left; font-size:11px; color:#9bb9a8; background:#bfd9c205; border:1px solid #a8ceb421; border-radius:9px; }
+.experiment-picker button > span { font-size:9px; color:#749184; }
+.experiment-picker button.active { background:#b8d3a419; color:#e0eacc; border-color:#c7dbad65; }
+.experiment-picker button.active > span { color:#c7dbad; }
+.experiment-recipe h3 { font:23px/1.25 var(--serif); color:#dce8cf; margin:22px 0 9px; }
+.experiment-recipe p,.guide-course p { font-size:11px; color:#a1bbaa; line-height:1.75; }
+.experiment-recipe ol { counter-reset:step; list-style:none; padding:0; margin:20px 0; }
+.experiment-recipe li { position:relative; padding:0 0 22px 31px; counter-increment:step; border-left:1px solid #bad4b225; margin-left:9px; }
+.experiment-recipe li:last-child { border-left-color:transparent; padding-bottom:0; }
+.experiment-recipe li:before { content:counter(step); position:absolute; top:0; left:-10px; width:19px; height:19px; display:grid; place-items:center; background:#1c3336; border:1px solid #bdd3b336; border-radius:50%; color:#c9dab8; font-size:9px; }
+.experiment-recipe li strong { font-size:12px; font-weight:500; color:#d2e0c6; }
+.experiment-recipe li p { margin:7px 0 10px; }
+.experiment-recipe li button { display:flex; align-items:center; justify-content:space-between; width:100%; font-size:10px; color:#cddfb9; border:1px solid #c7dbad24; background:#c7dbad06; padding:9px 10px; border-radius:6px; text-align:left; }
+.experiment-recipe li button:hover { background:#c7dbad16; }
+.experiment-watch { border-left:2px solid #c4d5a173; padding:3px 0 3px 13px; margin-bottom:24px; }
+.experiment-watch .eyebrow { font-size:8px; color:#c7dbad; }
+.experiment-watch p { margin:8px 0 0; }
+.guide-course p a { color:#bcd6b1; text-decoration:none; border-bottom:1px solid #bcd6b144; }
+.capability-guide p strong { color:#dbdfbb; margin-top:15px; }
+.brush-effect { font-size:10px; color:#bfd0bc; margin:7px 0 0; line-height:1.5; }
+.brush-hints { margin-top:8px; padding-top:9px; }
+.season-controls .season-phase { padding:9px 0; border-bottom:1px solid #b7cfaa24; color:#c3d8b1; font-size:10px; }
+@media(max-width:640px) { .brush-effect { font-size:9px; } }

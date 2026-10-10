@@ -1,0 +1,362 @@
+{
+  "protocol": "Three populations of 64 ordinary four-gene founders; 250 cycles each, unchanged mutation protocol, autonomous planetary forcing. Conservation, finite render buffers, no mutation during observation, exact continuation, shared assays and old-save migration. Observed functions are not claims of organs, gait, intelligence or stable trophic specialization.",
+  "results": [
+    {
+      "seed": 8042,
+      "temperature": 0.48,
+      "kind": "tidal",
+      "cycles": 250,
+      "cells": 609,
+      "bodies": 83,
+      "colonies": 54,
+      "divisions": 811,
+      "generation": 8,
+      "genomes": 120,
+      "innovations": 59,
+      "peakCells": 722,
+      "peakMixed": 1,
+      "peakJoints": 6,
+      "peakStorage": 0,
+      "peakExcited": 0,
+      "detritus": 357.6206448707767,
+      "physiology": {
+        "excited": 0,
+        "grounded": 270,
+        "injured": 126,
+        "ledger": {
+          "contact_changes": 3141,
+          "decomposed": 19.707009195886776,
+          "digested": 0.8504146557860076,
+          "energy_transported": 32.2198620531708,
+          "excreted": 280.1949998210005,
+          "fuel_transported": 0.28282160067064144,
+          "lipid_stored": 0,
+          "lipid_used": 0,
+          "repairs": 0.026057437739303493,
+          "signal_work": 0.051101770834065974,
+          "spikes": 0
+        },
+        "lipid": 0,
+        "mixedBodies": 0,
+        "regions": [
+          {
+            "cells": 5,
+            "function": "Mineral support",
+            "largest": 4,
+            "regions": 1
+          },
+          {
+            "cells": 4,
+            "function": "Contractile",
+            "largest": 0,
+            "regions": 0
+          },
+          {
+            "cells": 0,
+            "function": "Storage",
+            "largest": 0,
+            "regions": 0
+          },
+          {
+            "cells": 3,
+            "function": "Receptive",
+            "largest": 0,
+            "regions": 0
+          },
+          {
+            "cells": 1,
+            "function": "Excitable",
+            "largest": 0,
+            "regions": 0
+          },
+          {
+            "cells": 1,
+            "function": "Transport",
+            "largest": 0,
+            "regions": 0
+          },
+          {
+            "cells": 1,
+            "function": "Digestive",
+            "largest": 0,
+            "regions": 0
+          },
+          {
+            "cells": 9,
+            "function": "Repair / barrier",
+            "largest": 4,
+            "regions": 1
+          }
+        ]
+      },
+      "planet": {
+        "atmosphere": 465.3244823370616,
+        "day": 5,
+        "eruptions": 1,
+        "evaporation": 231.2830480498892,
+        "mineralInput": 1.2406801772117617,
+        "precipitation": 85.95856571281152,
+        "runoff": 562.1719595253094,
+        "season": 0.041666626930236816,
+        "snow": 10.09349677661884,
+        "snowmelt": 27.791752914271225,
+        "storm": 0,
+        "stormCenter": [
+          -1.1128602027893066,
+          20.68269920349121
+        ],
+        "sunlight": 0.4864027202129364,
+        "temperature": 0.5395282506942749,
+        "terrainVersion": 1,
+        "water": 84.58202088665578,
+        "waterError": 3.362856659805402e-10,
+        "weather": "Clear"
+      },
+      "maxErrors": [
+        3.54702933691442e-10,
+        1.1084466677857563e-12,
+        1.5152181731536984e-8,
+        5.939000402577221e-10
+      ],
+      "meanTickMs": 156.66379396
+    },
+    {
+      "seed": 6219,
+      "temperature": 0.22,
+      "kind": "alien",
+      "cycles": 250,
+      "cells": 708,
+      "bodies": 54,
+      "colonies": 36,
+      "divisions": 688,
+      "generation": 7,
+      "genomes": 138,
+      "innovations": 60,
+      "peakCells": 708,
+      "peakMixed": 0,
+      "peakJoints": 0,
+      "peakStorage": 0.0783073367550969,
+      "peakExcited": 0,
+      "detritus": 249.90301214222254,
+      "physiology": {
+        "excited": 0,
+        "grounded": 429,
+        "injured": 136,
+        "ledger": {
+          "contact_changes": 4061,
+          "decomposed": 0,
+          "digested": 0.9926207651785822,
+          "energy_transported": 20.38443374633789,
+          "excreted": 235.08783165479218,
+          "fuel_transported": 0.06015641809860985,
+          "lipid_stored": 0.09715443942695855,
+          "lipid_used": 0.09715443942695857,
+          "repairs": 0.01799868979703704,
+          "signal_work": 0.009386062622070312,
+          "spikes": 0
+        },
+        "lipid": 0,
+        "mixedBodies": 0,
+        "regions": [
+          {
+            "cells": 2,
+            "function": "Mineral support",
+            "largest": 0,
+            "regions": 0
+          },
+          {
+            "cells": 2,
+            "function": "Contractile",
+            "largest": 0,
+            "regions": 0
+          },
+          {
+            "cells": 0,
+            "function": "Storage",
+            "largest": 0,
+            "regions": 0
+          },
+          {
+            "cells": 2,
+            "function": "Receptive",
+            "largest": 0,
+            "regions": 0
+          },
+          {
+            "cells": 1,
+            "function": "Excitable",
+            "largest": 0,
+            "regions": 0
+          },
+          {
+            "cells": 2,
+            "function": "Transport",
+            "largest": 0,
+            "regions": 0
+          },
+          {
+            "cells": 1,
+            "function": "Digestive",
+            "largest": 0,
+            "regions": 0
+          },
+          {
+            "cells": 25,
+            "function": "Repair / barrier",
+            "largest": 15,
+            "regions": 1
+          }
+        ]
+      },
+      "planet": {
+        "atmosphere": 454.04512115158735,
+        "day": 5,
+        "eruptions": 1,
+        "evaporation": 219.03316975901328,
+        "mineralInput": 1.2329044961929323,
+        "precipitation": 84.98804860746661,
+        "runoff": 598.5907508662143,
+        "season": 0.041666626930236816,
+        "snow": 43.886847840750605,
+        "snowmelt": 7.22938952425677,
+        "storm": 5.915973663330078,
+        "stormCenter": [
+          -9.182290077209473,
+          4.402193546295166
+        ],
+        "sunlight": 0.31616175174713135,
+        "temperature": 0.21952825784683228,
+        "terrainVersion": 1,
+        "water": 62.06803100755608,
+        "waterError": -1.0595613275654614e-10,
+        "weather": "Snow"
+      },
+      "maxErrors": [
+        3.0740920919924974e-10,
+        1.503908109157237e-12,
+        8.321876521222293e-10,
+        3.019522409886122e-10
+      ],
+      "meanTickMs": 74.85718912599995
+    },
+    {
+      "seed": 1197,
+      "temperature": 0.75,
+      "kind": "volcanic",
+      "cycles": 250,
+      "cells": 248,
+      "bodies": 68,
+      "colonies": 31,
+      "divisions": 830,
+      "generation": 10,
+      "genomes": 56,
+      "innovations": 67,
+      "peakCells": 682,
+      "peakMixed": 0,
+      "peakJoints": 0,
+      "peakStorage": 0.16176290070288818,
+      "peakExcited": 0,
+      "detritus": 510.9821037120244,
+      "physiology": {
+        "excited": 0,
+        "grounded": 82,
+        "injured": 75,
+        "ledger": {
+          "contact_changes": 2478,
+          "decomposed": 20.855639774853778,
+          "digested": 0.3095750809740275,
+          "energy_transported": 0,
+          "excreted": 292.0712074166124,
+          "fuel_transported": 0,
+          "lipid_stored": 0.8312267033124551,
+          "lipid_used": 0.8312267033124555,
+          "repairs": 0.1323743187994584,
+          "signal_work": 0.062274044612422585,
+          "spikes": 0
+        },
+        "lipid": 0,
+        "mixedBodies": 0,
+        "regions": [
+          {
+            "cells": 0,
+            "function": "Mineral support",
+            "largest": 0,
+            "regions": 0
+          },
+          {
+            "cells": 0,
+            "function": "Contractile",
+            "largest": 0,
+            "regions": 0
+          },
+          {
+            "cells": 0,
+            "function": "Storage",
+            "largest": 0,
+            "regions": 0
+          },
+          {
+            "cells": 0,
+            "function": "Receptive",
+            "largest": 0,
+            "regions": 0
+          },
+          {
+            "cells": 1,
+            "function": "Excitable",
+            "largest": 0,
+            "regions": 0
+          },
+          {
+            "cells": 0,
+            "function": "Transport",
+            "largest": 0,
+            "regions": 0
+          },
+          {
+            "cells": 1,
+            "function": "Digestive",
+            "largest": 0,
+            "regions": 0
+          },
+          {
+            "cells": 16,
+            "function": "Repair / barrier",
+            "largest": 13,
+            "regions": 1
+          }
+        ]
+      },
+      "planet": {
+        "atmosphere": 392.92617524850095,
+        "day": 5,
+        "eruptions": 3,
+        "evaporation": 232.84043384365867,
+        "mineralInput": 3.672726738452913,
+        "precipitation": 159.91425859513308,
+        "runoff": 622.8196592521626,
+        "season": 0.041666626930236816,
+        "snow": 0,
+        "snowmelt": 0,
+        "storm": 8.889932632446289,
+        "stormCenter": [
+          8.06965160369873,
+          -7.387252330780029
+        ],
+        "sunlight": 0.31616175174713135,
+        "temperature": 0.7495282888412476,
+        "terrainVersion": 3,
+        "water": 167.07382475159403,
+        "waterError": 9.5042196335271e-11,
+        "weather": "Rain"
+      },
+      "maxErrors": [
+        3.4378899727016687e-10,
+        4.718447854656915e-13,
+        1.403122951160185e-8,
+        3.5936409403802827e-10
+      ],
+      "meanTickMs": 42.31722583500005
+    }
+  ]
+}

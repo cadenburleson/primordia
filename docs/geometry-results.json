@@ -1,0 +1,155 @@
+{
+  "protocol": "Six size/shape populations of 16 ordinary founders for six cycles; finite buffers, four chemical/water budgets, geometry dimensions, exact save continuation and invalid geometry rejection. A 64-founder spherical population for 50 cycles, shared assays and pre-globe ecosystem migration. Native tests separately verify seam advection, polar diffusion, hydrostatic rest and radial gravity. No organ, intelligence or directed movement outcome asserted.",
+  "results": [
+    {
+      "worldShape": "planar",
+      "worldSize": 64,
+      "sites": 1600,
+      "cycles": 6,
+      "cells": 16,
+      "divisions": 0,
+      "meanTickMs": 50.836062500000025,
+      "errors": [
+        -7.275957614183426e-11,
+        -1.4210854715202004e-13,
+        -1.4231282818855107e-10,
+        -1.5563728084089234e-10
+      ],
+      "area": 4096.000289916992
+    },
+    {
+      "worldShape": "planar",
+      "worldSize": 128,
+      "sites": 6400,
+      "cycles": 6,
+      "cells": 16,
+      "divisions": 0,
+      "meanTickMs": 160.415824625,
+      "errors": [
+        3.346940502524376e-10,
+        7.844391802791506e-12,
+        1.4505729950542445e-10,
+        1.0595613275654614e-10
+      ],
+      "area": 16384.00115966797
+    },
+    {
+      "worldShape": "planar",
+      "worldSize": 256,
+      "sites": 25600,
+      "cycles": 6,
+      "cells": 16,
+      "divisions": 0,
+      "meanTickMs": 549.440045125,
+      "errors": [
+        -4.540197551250458e-09,
+        7.366907084360719e-11,
+        -1.0007875417272771e-08,
+        1.785883796401322e-08
+      ],
+      "area": 65536.00463867188
+    },
+    {
+      "worldShape": "sphere",
+      "worldSize": 64,
+      "sites": 800,
+      "cycles": 6,
+      "cells": 16,
+      "divisions": 0,
+      "meanTickMs": 135.72484200000022,
+      "errors": [
+        4.547473508864641e-12,
+        1.4210854715202004e-14,
+        5.281552972746795e-12,
+        3.979039320256561e-12
+      ],
+      "area": 1303.79718861306
+    },
+    {
+      "worldShape": "sphere",
+      "worldSize": 128,
+      "sites": 3200,
+      "cycles": 6,
+      "cells": 16,
+      "divisions": 0,
+      "meanTickMs": 394.0978628749999,
+      "errors": [
+        2.1827872842550278e-11,
+        -7.958078640513122e-13,
+        1.384179437735611e-10,
+        2.6830093702301383e-11
+      ],
+      "area": 5215.188754452156
+    },
+    {
+      "worldShape": "sphere",
+      "worldSize": 256,
+      "sites": 12800,
+      "cycles": 6,
+      "cells": 16,
+      "divisions": 0,
+      "meanTickMs": 1647.9256024166668,
+      "errors": [
+        -1.8917489796876907e-10,
+        1.0118128557223827e-11,
+        2.3537065629852805e-09,
+        -2.2864696802571416e-09
+      ],
+      "area": 20860.755017808195
+    }
+  ],
+  "ecosystem": {
+    "cycles": 50,
+    "cells": 319,
+    "colonies": 64,
+    "divisions": 255,
+    "peakGeneration": 3,
+    "innovations": 20,
+    "peakCells": 319,
+    "maxErrors": [
+      5.4569682106375694e-11,
+      8.526512829121202e-13,
+      1.935589466484089e-10,
+      2.0190782379359007e-10
+    ],
+    "waterTransported": 3991.3710709135653
+  },
+  "timingContext": "Measurements were collected under very heavy host load; meanTickMs is diagnostic and not a representative performance benchmark.",
+  "browserObservation": {
+    "circumference": 128,
+    "founders": 256,
+    "cycles": 217.75,
+    "cells": 2850,
+    "colonies": 252,
+    "peakGeneration": 8,
+    "genomes": 648,
+    "divisions": 4491,
+    "organicError": -7.3e-12,
+    "mineralError": -5.7e-13,
+    "chemicalEnergyError": -1.7e-08,
+    "waterError": -8.8e-10,
+    "consoleErrors": 0,
+    "checks": [
+      "Globe overview and resource/current overlay",
+      "Radial camera focus on actual cell positions",
+      "Ordinary population growth and material specialization"
+    ],
+    "screenshot": "screenshots/spherical-planet.png",
+    "inspectionScreenshot": "screenshots/spherical-inspection.png",
+    "limitations": "Single browser run; physical budgets and mechanism observations do not establish complex organs or evolved advanced movement."
+  },
+  "nativeBatchSmoke": {
+    "worldShape": "sphere",
+    "worldSize": 128,
+    "founderSpread": "global",
+    "founders": 16,
+    "cycles": 2,
+    "cells": 16,
+    "balanceErrors": [
+      7.275957614183426e-12,
+      -5.115907697472721e-13,
+      1.288097406515476e-10
+    ],
+    "status": "passed"
+  }
+}

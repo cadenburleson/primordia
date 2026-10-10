@@ -1,0 +1,32 @@
+{
+  "name": "primordia",
+  "version": "0.6.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "vite --host 127.0.0.1 --port 5190 --strictPort",
+    "build": "tsc --noEmit && vite build",
+    "preview": "vite preview --host 127.0.0.1 --port 5191 --strictPort",
+    "test": "cargo test --manifest-path engine/Cargo.toml",
+    "benchmark": "cargo run --release --manifest-path engine/Cargo.toml --bin benchmark",
+    "build:wasm": "node scripts/build-wasm.mjs",
+    "check:wasm": "node tests/wasm-check.mjs",
+    "check:locomotion": "node tests/locomotion-check.mjs",
+    "check:ecology": "node tests/ecology-check.mjs",
+    "check:tissue": "node tests/tissue-check.mjs",
+    "check:population": "node tests/population-check.mjs",
+    "check:joints": "node tests/joint-check.mjs",
+    "check:navigation": "node tests/navigation-check.mjs",
+    "check:autonomous": "node tests/autonomous-check.mjs"
+  },
+  "dependencies": {
+    "lucide": "^0.468.0",
+    "three": "^0.180.0"
+  },
+  "devDependencies": {
+    "@types/node": "^24.6.0",
+    "@types/three": "^0.180.0",
+    "typescript": "^5.9.3",
+    "vite": "^7.1.9"
+  }
+}

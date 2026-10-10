@@ -1,0 +1,38 @@
+{
+  "protocol": "Supplied single-cell precursor; ecosystem growth, local regulation, transport and survival rules; samples every 10 cycles.",
+  "results": [
+    {
+      "seed": 8042,
+      "cycles": 120,
+      "largestSampledBody": 16,
+      "maxSampledFateChanges": 36,
+      "maxSampledRepairEnergy": 0.02388196,
+      "muscleObserved": true,
+      "supportObserved": true,
+      "births": 1351,
+      "feedings": 34
+    },
+    {
+      "seed": 1197,
+      "cycles": 120,
+      "largestSampledBody": 9,
+      "maxSampledFateChanges": 34,
+      "maxSampledRepairEnergy": 0.0063278913,
+      "muscleObserved": true,
+      "supportObserved": true,
+      "births": 1456,
+      "feedings": 40
+    },
+    {
+      "seed": 6219,
+      "cycles": 120,
+      "largestSampledBody": 6,
+      "maxSampledFateChanges": 9,
+      "maxSampledRepairEnergy": 0.020893335,
+      "muscleObserved": false,
+      "supportObserved": true,
+      "births": 1321,
+      "feedings": 31
+    }
+  ]
+}

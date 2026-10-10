@@ -1,0 +1,92 @@
+{
+  "protocol": "Paired identical 48-single-cell founder saves, 120 cycles, three seeds; directional food/prey/mate cues on versus off. Genotypes, sensing maintenance costs, random steering, local tissue regulation and mechanical contact/angle feedback are retained. No optimizer or reward score. Total energy from environmental uptake excludes ingestion.",
+  "results": [
+    {
+      "seed": 8042,
+      "runs": [
+        {
+          "directionalSensing": true,
+          "cycles": 120,
+          "foodEnergy": 13315.723491325974,
+          "births": 137,
+          "mating": 27,
+          "feedings": 14,
+          "survivors": 68,
+          "cells": 275,
+          "generation": 7
+        },
+        {
+          "directionalSensing": false,
+          "cycles": 120,
+          "foodEnergy": 13021.561414465308,
+          "births": 141,
+          "mating": 18,
+          "feedings": 14,
+          "survivors": 54,
+          "cells": 221,
+          "generation": 6
+        }
+      ],
+      "foodEnergyDelta": 294.1620768606663,
+      "birthDelta": -4
+    },
+    {
+      "seed": 1197,
+      "runs": [
+        {
+          "directionalSensing": true,
+          "cycles": 120,
+          "foodEnergy": 15229.416161559522,
+          "births": 154,
+          "mating": 28,
+          "feedings": 12,
+          "survivors": 86,
+          "cells": 358,
+          "generation": 13
+        },
+        {
+          "directionalSensing": false,
+          "cycles": 120,
+          "foodEnergy": 13298.466011464596,
+          "births": 124,
+          "mating": 15,
+          "feedings": 10,
+          "survivors": 70,
+          "cells": 350,
+          "generation": 6
+        }
+      ],
+      "foodEnergyDelta": 1930.9501500949264,
+      "birthDelta": 30
+    },
+    {
+      "seed": 6219,
+      "runs": [
+        {
+          "directionalSensing": true,
+          "cycles": 120,
+          "foodEnergy": 14633.718989782035,
+          "births": 142,
+          "mating": 30,
+          "feedings": 21,
+          "survivors": 56,
+          "cells": 271,
+          "generation": 6
+        },
+        {
+          "directionalSensing": false,
+          "cycles": 120,
+          "foodEnergy": 14243.213432826102,
+          "births": 126,
+          "mating": 13,
+          "feedings": 12,
+          "survivors": 57,
+          "cells": 299,
+          "generation": 6
+        }
+      ],
+      "foodEnergyDelta": 390.50555695593357,
+      "birthDelta": 16
+    }
+  ]
+}

@@ -1,0 +1,41 @@
+{
+  "name": "primordia",
+  "version": "0.12.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "vite --host 127.0.0.1 --port 5194 --strictPort",
+    "build": "tsc --noEmit && vite build",
+    "preview": "vite preview --host 127.0.0.1 --port 5195 --strictPort",
+    "test": "cargo test --manifest-path engine/Cargo.toml",
+    "benchmark": "cargo run --release --manifest-path engine/Cargo.toml --bin benchmark",
+    "build:wasm": "node scripts/build-wasm.mjs",
+    "check:wasm": "node tests/wasm-check.mjs",
+    "check:locomotion": "node tests/locomotion-check.mjs",
+    "check:ecology": "node tests/ecology-check.mjs",
+    "check:tissue": "node tests/tissue-check.mjs",
+    "check:population": "node tests/population-check.mjs",
+    "check:joints": "node tests/joint-check.mjs",
+    "check:navigation": "node tests/navigation-check.mjs",
+    "check:autonomous": "node tests/autonomous-check.mjs",
+    "check:physical": "node tests/physical-check.mjs",
+    "check:organisms": "node tests/organisms-check.mjs",
+    "check:nursery-ui": "node tests/nursery-ui-check.mjs",
+    "check:scheduler": "node tests/scheduler-check.mjs",
+    "check:scale": "node tests/scale-check.mjs",
+    "simulate:fast": "cargo run --profile batch --manifest-path engine/Cargo.toml --bin physical_batch --",
+    "check:development": "node tests/development-check.mjs",
+    "check:geometry": "node tests/geometry-check.mjs",
+    "check:brush-ui": "node tests/brush-ui-check.mjs"
+  },
+  "dependencies": {
+    "lucide": "^0.468.0",
+    "three": "^0.180.0"
+  },
+  "devDependencies": {
+    "@types/node": "^24.6.0",
+    "@types/three": "^0.180.0",
+    "typescript": "^5.9.3",
+    "vite": "^7.1.9"
+  }
+}

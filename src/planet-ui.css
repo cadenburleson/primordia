@@ -1,0 +1,107 @@
+/* Planet-first composition. Translucent CSS panels; no blur or extra GPU passes. */
+html,body,#app { height:100%; overflow:hidden; }
+.topbar { position:fixed; top:16px; left:24px; right:24px; height:46px; padding:0; border:0; background:none; z-index:6; pointer-events:none; }
+.topbar > * { pointer-events:auto; }
+.brand { font-size:30px; text-shadow:0 2px 10px #000; }
+.brand-beta { display:none; }
+.header-actions { padding:4px; border-radius:12px; background:#101c20bd; border:1px solid #d3e2da1f; }
+.header-actions .save-button { border:0; background:none; }
+.studio-menu > div { top:43px; background:#142328f5; }
+.workspace,.workspace.hide-shape,.workspace.hide-observe,.workspace.hide-shape.hide-observe { position:relative; display:block; width:100%; height:100dvh; min-height:0; grid-template-columns:none; }
+.experiment { position:absolute; inset:0; display:block; padding:0; margin:0; height:100%; min-height:0; overflow:hidden; }
+.experiment-heading { display:none; }
+.world-stage { position:absolute; inset:0; min-height:0; height:100%; width:100%; margin:0; padding:0; border:0; border-radius:0; background:#0b1519; }
+.stage-top { top:86px; left:26px; right:26px; z-index:2; }
+.stage-badge { background:#132226bf; border-color:#c7dbad35; padding:8px 10px; border-radius:7px; font-size:9px; }
+.world-name { display:inline; color:#b5cbbf; font-size:11px; letter-spacing:1.3px; text-shadow:0 1px 4px #000; }
+.stage-button { width:38px; height:38px; background:#112126bb; border-radius:9px; border-color:#c9dbd42d; }
+.stage-button svg { width:17px; height:17px; }
+.world-layers { top:139px; left:26px; display:block; padding:0; background:#112126ba; border-color:#c9dbd426; max-width:290px; z-index:2; }
+.world-layers > summary { cursor:pointer; padding:10px 13px; font-size:11px; color:#c5d8c7; }
+.layer-controls { display:grid; grid-template-columns:auto minmax(120px,1fr); gap:10px; padding:0 13px 13px; align-items:center; }
+.world-layers select { max-width:200px; }
+#world-layer-legend { max-width:250px; }
+.world-coordinate { left:26px; bottom:185px; }
+.world-coordinate span { color:#a4baad; font-size:9px; }
+.stage-bottom { bottom:24px; left:26px; right:26px; }
+.orbit-hint { font-size:10px; max-width:245px; flex-wrap:wrap; gap:5px; }
+#perf { font-size:9px; max-width:180px; color:#98afa1; }
+.planet-dock { position:absolute; left:50%; bottom:22px; transform:translateX(-50%); z-index:5; display:flex; gap:6px; padding:6px; border:1px solid #d2e5d32a; border-radius:16px; background:#14252bd9; box-shadow:0 8px 30px #0003; }
+.planet-dock button { display:flex; align-items:center; gap:9px; padding:12px 15px; border-radius:10px; font-size:12px; color:#abc4b6; white-space:nowrap; }
+.planet-dock svg { width:17px; height:17px; }
+.planet-dock button:hover,.planet-dock button.active { background:#c7dbad1d; color:#e2eed6; }
+.timeline { position:absolute; bottom:94px; left:50%; transform:translateX(-50%); z-index:3; width:max-content; max-width:calc(100% - 50px); padding:9px 12px; border:1px solid #d2e5d324; border-radius:12px; background:#112027ca; }
+.timeline-top { flex-wrap:nowrap; gap:18px; }
+.playback { flex-wrap:nowrap; gap:12px; width:auto; }
+.play-button { height:36px; min-width:82px; font-size:11px; }
+.speed-controls { flex-wrap:nowrap; gap:9px; }
+.speed-controls > label { display:none; }
+.speed-controls select { padding:7px 9px; font-size:11px; }
+#achieved-speed { font-size:10px; }
+.cycle { white-space:nowrap; font-size:10px; }
+.cycle strong { font-size:13px; }
+.time-settings { font-size:10px; }
+.time-settings > summary { list-style:none; font-size:0; }
+.time-settings > summary::-webkit-details-marker { display:none; }
+.time-settings > summary:after { content:'•••'; font-size:14px; letter-spacing:1px; }
+.time-settings[open] { position:relative; padding:0; border:0; }
+.time-settings[open] > select { position:absolute; bottom:58px; right:0; width:240px; max-width:240px; z-index:4; background:#1b302b; }
+.time-settings[open] > p { position:absolute; bottom:87px; right:0; width:240px; max-width:240px; padding:13px; margin:0; border:1px solid #c7dbad38; border-radius:9px; background:#142328f8; color:#bdd0bf; }
+.timeline #pulse { display:none; }
+.world-panel,.life-panel,.guide-panel { position:absolute; top:82px; right:24px; bottom:166px; left:auto; width:350px; max-width:calc(100% - 48px); min-width:0; display:block; overflow:auto; margin:0; padding:20px; border:1px solid #d3e3d32b; border-radius:16px; background:#122328f3; z-index:4; box-shadow:0 15px 45px #0003; scrollbar-width:thin; scrollbar-color:#547066 transparent; overscroll-behavior:contain; }
+.world-panel[hidden],.life-panel[hidden],.guide-panel[hidden],.hide-shape .world-panel,.hide-observe .life-panel { display:none!important; }
+.drawer-heading { display:flex; justify-content:space-between; align-items:center; gap:15px; margin-bottom:16px; }
+.drawer-heading .icon-button { width:30px; height:30px; font-size:23px; border:1px solid #c7dbad24; border-radius:7px; color:#aac4b3; }
+.panel-open .stage-top { right:396px; }
+.panel-open #perf { display:none; }
+.panel-open .guide-hint { display:none; }
+.panel-foot,.science-note { display:none; }
+.world-panel .panel-intro > .eyebrow { display:none; }
+#active-world-title { font-size:26px; margin:0 0 8px; }
+.observer-heading > .eyebrow { display:none; }
+.observer-heading { margin-bottom:12px; }
+.observer-more { margin-bottom:20px; }
+.stats-bar { padding:12px 0; border-top:0; grid-template-columns:1fr 1fr; gap:16px; }
+.stats-bar > div,.stats-bar > div:first-child { border:0; padding-left:0; }
+.stats-bar small { display:block; font-size:10px; }
+.guide-hint { position:absolute; bottom:218px; left:26px; z-index:3; display:flex; flex-direction:column; text-align:left; gap:9px; padding:16px 18px; width:265px; border:1px solid #c7dbad30; border-radius:12px; background:#122328c9; }
+.guide-hint > .eyebrow { font-size:8px; color:#b7cca8; }
+.guide-hint strong { font:20px/1.25 var(--serif); color:#e0ead2; }
+#guide-hint-detail { font-size:11px; line-height:1.6; color:#a5bfae; display:-webkit-box; -webkit-line-clamp:3; -webkit-box-orient:vertical; overflow:hidden; }
+.guide-hint:hover { background:#1c3438e8; }
+.guide-panel h2 { font:29px/1.2 var(--serif); letter-spacing:-.6px; margin:0 0 12px; }
+.guide-intro { font-size:12px; line-height:1.7; color:#9fb7a7; }
+.guide-aim { display:block; margin:23px 0; font-size:11px; color:#aec7b2; }
+.guide-aim select { display:block; width:100%; padding:11px; margin-top:8px; border:1px solid #c7dbad35; border-radius:8px; background:#1b302b; color:#dce7d3; font-size:12px; }
+.guide-advice { border:1px solid #c7dbad38; background:#c7dbad08; padding:17px; border-radius:10px; }
+.guide-advice h3 { font:23px/1.2 var(--serif); margin:12px 0; }
+.guide-advice p { color:#b6cbb7; font-size:12px; line-height:1.75; }
+.guide-advice .primary-button { padding:12px; font-size:12px; }
+.guide-advice details { margin-top:15px; }
+.guide-advice summary,.guide-course summary { cursor:pointer; font-size:12px; color:#bbd2b7; }
+.guide-advice details p { font-size:11px; color:#9db5a3; }
+.guide-course { border-top:1px solid #c7dbad21; margin-top:21px; padding-top:17px; }
+.guide-course ol { padding-left:20px; margin:17px 0 0; }
+.guide-course li { padding-bottom:18px; font-size:12px; color:#a7c0ac; line-height:1.8; }
+.guide-course strong { display:block; color:#d4e3c9; }
+.guide-course button { font-size:11px; padding:7px 9px; margin:8px 5px 0 0; color:#d4e3c9; border:1px solid #c7dbad30; border-radius:6px; }
+.guide-course dt { font-size:12px; color:#d1e0c6; margin-top:19px; }
+.guide-course dd { margin:6px 0 0; color:#9eb9a5; font-size:12px; line-height:1.75; }
+.guide-limit { margin:22px 0; font-size:11px; color:#8ea995; line-height:1.75; }
+.guide-nursery { border-top:1px solid #c7dbad24; padding-top:18px; }
+.guide-nursery small { display:block; margin-top:10px; font-size:11px; line-height:1.7; color:#9bb8a1; }
+#nursery-feedback { padding:12px; background:#c7dbad0d; border-radius:7px; color:#d2e3c3; font-size:12px; line-height:1.7; }
+.nursery-status { position:absolute; top:82px; left:50%; transform:translateX(-50%); z-index:3; display:flex; gap:18px; align-items:center; width:max-content; max-width:calc(100% - 52px); padding:12px 16px; background:#23352ef2; border:1px solid #c7dbad59; border-radius:11px; }
+.nursery-status strong { display:block; font-size:12px; font-weight:500; color:#d4e5bd; }
+.nursery-status small { display:block; font-size:10px; color:#acc0a7; margin-top:5px; }
+.nursery-status button { white-space:nowrap; font-size:12px; color:#deedc8; border:1px solid #c7dbad3b; padding:9px; border-radius:6px; }
+.panel-open .nursery-status { left:26px; top:202px; transform:none; max-width:290px; flex-wrap:wrap; }
+.study-status { position:absolute; top:199px; left:26px; z-index:3; width:290px; max-width:calc(100% - 52px); margin:0; flex-wrap:wrap; background:#192e25f2; }
+.placement-status { bottom:165px; left:50%; right:auto; transform:translateX(-50%); width:max-content; max-width:calc(100% - 52px); z-index:5; border-radius:10px; }
+.awaiting-world .world-panel:before { display:none; }
+.awaiting-world .guide-hint,.awaiting-world .timeline { display:none; }
+.setup-empty { padding-top:70px; background:radial-gradient(ellipse at 50% 45%,#1c3833,#0c181e 70%); }
+#creation-dialog { z-index:10; }
+@media(max-width:980px) { .world-panel,.life-panel,.guide-panel { width:330px; top:80px; bottom:170px; right:18px; padding:18px; } .panel-open .stage-top { right:370px; } .progress-grid { grid-template-columns:1fr 1fr; } .life-panel > div,.life-panel > nav,.life-panel > label { max-width:none; } .experiment { min-height:0; } .stage-bottom .orbit-hint { display:none; } .guide-hint { width:225px; bottom:218px; } .timeline { max-width:calc(100% - 36px); } .time-settings { display:block; } .world-name { display:none; } }
+@media(max-width:640px) { .topbar { top:10px; left:14px; right:14px; height:44px; } .brand { font-size:26px; } .workspace,.workspace.hide-observe,.workspace.hide-shape,.workspace.hide-shape.hide-observe { display:block; height:100dvh; } .experiment { padding:0; min-height:0; } .world-stage { min-height:0; } .stage-top { top:73px; left:15px; right:15px; } .stage-badge { font-size:8px; } .world-layers { top:122px; left:15px; } .world-panel,.life-panel,.guide-panel { top:68px; left:12px; right:12px; bottom:165px; width:auto; max-width:none; border-radius:13px; padding:18px; } .panel-open .stage-top,.panel-open .world-layers,.panel-open .world-coordinate,.panel-open #nursery-status { visibility:hidden; } .planet-dock { bottom:max(13px,env(safe-area-inset-bottom)); padding:5px; gap:2px; width:max-content; max-width:calc(100% - 24px); border-radius:13px; } .planet-dock button { padding:10px 13px; font-size:10px; flex-direction:column; gap:5px; } .planet-dock svg { width:18px; height:18px; } .timeline { bottom:90px; left:12px; right:12px; width:auto; max-width:none; transform:none; padding:8px; } .timeline-top { gap:8px; } .playback { width:auto; flex-wrap:nowrap; gap:8px; } .play-button { min-width:68px; padding:0 9px; font-size:10px; } .speed-controls { gap:6px; } .speed-controls select { padding:6px; } #achieved-speed { display:none; } .cycle { font-size:9px; margin-left:auto; } .cycle strong { font-size:12px; } .time-settings[open]>p,.time-settings[open]>select { right:-90px; } .stage-bottom { display:none; } .world-coordinate { left:15px; bottom:146px; } .world-coordinate span { font-size:8px; } .guide-hint { left:15px; bottom:198px; width:220px; padding:12px 14px; } .guide-hint strong { font-size:18px; } #guide-hint-detail { -webkit-line-clamp:2; font-size:10px; } .guide-hint>.eyebrow { font-size:7px; } .nursery-status { top:178px; left:15px; transform:none; max-width:calc(100% - 30px); padding:10px; gap:10px; } .nursery-status small { display:none; } .nursery-status button { font-size:10px; } .placement-status { bottom:150px; max-width:calc(100% - 30px); font-size:11px; } .study-status { top:178px; left:15px; } }
+@media(max-height:650px) and (min-width:641px) { .world-panel,.life-panel,.guide-panel { top:70px; bottom:150px; } .guide-hint { bottom:175px; } .world-coordinate { bottom:153px; } .stage-top { top:73px; } .world-layers { top:122px; } }

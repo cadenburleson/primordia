@@ -1,0 +1,5 @@
+{
+  "protocol": "20 identical-start updates at approximately 1000 cells. Exact serialized future compared with pre-cache implementation. Timing is a cold wall-clock sample on this machine, affected by other running jobs.",
+  "meanStepMs": 49.36025415,
+  "exactFuture": true
+}

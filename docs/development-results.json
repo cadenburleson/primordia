@@ -1,0 +1,223 @@
+{
+  "protocol": "Two ordinary-founder populations, then a clearly supplied physical-contact fertilization fixture. Checks conserve modeled stores, validate buffers, import old inventories and reproduce exact saved continuation. No organ, intelligence or spontaneous sexual-reproduction outcome is required.",
+  "results": [
+    {
+      "kind": "ordinary founders",
+      "seed": 8042,
+      "cycles": 80,
+      "cells": 222,
+      "colonies": 19,
+      "generation": 5,
+      "development": {
+        "adaptations": 0,
+        "diploidCells": 0,
+        "fusionWork": 0,
+        "gametesProduced": 0,
+        "livingGametes": 0,
+        "meioses": 0,
+        "neuralWork": 0,
+        "recent": [],
+        "sensoryWork": 0,
+        "synapses": 0,
+        "transmissions": 0,
+        "zygotes": 0
+      },
+      "regions": [
+        {
+          "cells": 0,
+          "function": "Mineral support",
+          "largest": 0,
+          "regions": 0
+        },
+        {
+          "cells": 0,
+          "function": "Contractile",
+          "largest": 0,
+          "regions": 0
+        },
+        {
+          "cells": 0,
+          "function": "Storage",
+          "largest": 0,
+          "regions": 0
+        },
+        {
+          "cells": 3,
+          "function": "Receptive",
+          "largest": 0,
+          "regions": 0
+        },
+        {
+          "cells": 0,
+          "function": "Excitable",
+          "largest": 0,
+          "regions": 0
+        },
+        {
+          "cells": 0,
+          "function": "Transport",
+          "largest": 0,
+          "regions": 0
+        },
+        {
+          "cells": 0,
+          "function": "Digestive",
+          "largest": 0,
+          "regions": 0
+        },
+        {
+          "cells": 4,
+          "function": "Repair / barrier",
+          "largest": 0,
+          "regions": 0
+        },
+        {
+          "cells": 0,
+          "function": "Photoreceptive",
+          "largest": 0,
+          "regions": 0
+        },
+        {
+          "cells": 2,
+          "function": "Adaptive signaling",
+          "largest": 0,
+          "regions": 0
+        },
+        {
+          "cells": 2,
+          "function": "Gametic / fusion",
+          "largest": 0,
+          "regions": 0
+        },
+        {
+          "cells": 0,
+          "function": "Polar scaffold",
+          "largest": 0,
+          "regions": 0
+        }
+      ]
+    },
+    {
+      "kind": "ordinary founders",
+      "seed": 12019,
+      "cycles": 80,
+      "cells": 208,
+      "colonies": 19,
+      "generation": 5,
+      "development": {
+        "adaptations": 0,
+        "diploidCells": 0,
+        "fusionWork": 0,
+        "gametesProduced": 0,
+        "livingGametes": 0,
+        "meioses": 0,
+        "neuralWork": 0,
+        "recent": [],
+        "sensoryWork": 0.03913569450378418,
+        "synapses": 0,
+        "transmissions": 0,
+        "zygotes": 0
+      },
+      "regions": [
+        {
+          "cells": 0,
+          "function": "Mineral support",
+          "largest": 0,
+          "regions": 0
+        },
+        {
+          "cells": 0,
+          "function": "Contractile",
+          "largest": 0,
+          "regions": 0
+        },
+        {
+          "cells": 0,
+          "function": "Storage",
+          "largest": 0,
+          "regions": 0
+        },
+        {
+          "cells": 0,
+          "function": "Receptive",
+          "largest": 0,
+          "regions": 0
+        },
+        {
+          "cells": 0,
+          "function": "Excitable",
+          "largest": 0,
+          "regions": 0
+        },
+        {
+          "cells": 0,
+          "function": "Transport",
+          "largest": 0,
+          "regions": 0
+        },
+        {
+          "cells": 0,
+          "function": "Digestive",
+          "largest": 0,
+          "regions": 0
+        },
+        {
+          "cells": 4,
+          "function": "Repair / barrier",
+          "largest": 0,
+          "regions": 0
+        },
+        {
+          "cells": 3,
+          "function": "Photoreceptive",
+          "largest": 3,
+          "regions": 1
+        },
+        {
+          "cells": 2,
+          "function": "Adaptive signaling",
+          "largest": 0,
+          "regions": 0
+        },
+        {
+          "cells": 1,
+          "function": "Gametic / fusion",
+          "largest": 0,
+          "regions": 0
+        },
+        {
+          "cells": 1,
+          "function": "Polar scaffold",
+          "largest": 0,
+          "regions": 0
+        }
+      ]
+    },
+    {
+      "kind": "supplied mechanism fixture",
+      "cycles": 2,
+      "development": {
+        "adaptations": 0,
+        "diploidCells": 1,
+        "fusionWork": 0.19999980926513672,
+        "gametesProduced": 0,
+        "livingGametes": 0,
+        "meioses": 0,
+        "neuralWork": 0,
+        "recent": [
+          {
+            "child": 5,
+            "generation": 1,
+            "mate": 2,
+            "parent": 1,
+            "time": 1.25
+          }
+        ],
+        "sensoryWork": 0,
+        "synapses": 0,
+        "transmissions": 0,
+        "zygotes": 1
+      }
+    }
+  ]
+}

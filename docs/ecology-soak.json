@@ -1,0 +1,44 @@
+[
+  {
+    "world": "tidal",
+    "seed": 8042,
+    "cycles": 3000,
+    "survivors": 258,
+    "births": 7311,
+    "feedings": 137,
+    "mating": 1,
+    "largestSampledBody": 3,
+    "contractileObserved": false,
+    "supportObserved": false,
+    "maxSampledWork": 0,
+    "elapsedMs": 43989
+  },
+  {
+    "world": "volcanic",
+    "seed": 1197,
+    "cycles": 3000,
+    "survivors": 161,
+    "births": 6140,
+    "feedings": 32,
+    "mating": 3,
+    "largestSampledBody": 3,
+    "contractileObserved": false,
+    "supportObserved": false,
+    "maxSampledWork": 0,
+    "elapsedMs": 24465
+  },
+  {
+    "world": "alien",
+    "seed": 6219,
+    "cycles": 3000,
+    "survivors": 119,
+    "births": 4056,
+    "feedings": 43,
+    "mating": 23,
+    "largestSampledBody": 3,
+    "contractileObserved": false,
+    "supportObserved": false,
+    "maxSampledWork": 0,
+    "elapsedMs": 13527
+  }
+]

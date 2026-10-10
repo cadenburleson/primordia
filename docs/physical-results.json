@@ -1,0 +1,113 @@
+{
+  "protocol": "64 identical supplied replicators. Finite initial pools, tracked light input, no resource renewal. 300 cycles per seed; 30 conservation/save/render samples per run. Exact continuation. Model units, not calibrated real chemistry.",
+  "results": [
+    {
+      "seed": 8042,
+      "cycles": 300,
+      "cells": 998,
+      "peakCells": 1000,
+      "bodies": 77,
+      "divisions": 1282,
+      "peakGeneration": 7,
+      "peakBody": 192,
+      "genomes": 210,
+      "innovations": 103,
+      "meals": 21393,
+      "motorWork": 0.010159123223274946,
+      "physics": {
+        "boundEvents": 8387,
+        "boundMineral": 0.9339389783155257,
+        "chemicalEnergy": 32952.13353783761,
+        "dissociations": 5927,
+        "energyError": -6.759364623576403e-9,
+        "fluidSpeed": 0.008549303444452542,
+        "heat": 21935.457292035688,
+        "massError": 3.128661774098873e-10,
+        "mechanicalInput": 0.010159123223274946,
+        "mineral": 193.8219824671743,
+        "mineralError": 2.8421709430404007e-13,
+        "organic": 13244.468062927239,
+        "photonEnergy": 16274.196800221536,
+        "proteinMass": 112.7360162376097
+      },
+      "maxErrors": [
+        3.54702933691442e-10,
+        8.526512829121202e-13,
+        6.759364623576403e-9
+      ],
+      "meanStepMs": 50.36893239333334
+    },
+    {
+      "seed": 1197,
+      "cycles": 300,
+      "cells": 999,
+      "peakCells": 1000,
+      "bodies": 86,
+      "divisions": 1294,
+      "peakGeneration": 6,
+      "peakBody": 196,
+      "genomes": 207,
+      "innovations": 118,
+      "meals": 8133,
+      "motorWork": 0.050841471180319786,
+      "physics": {
+        "boundEvents": 8209,
+        "boundMineral": 0.5637845379076466,
+        "chemicalEnergy": 30622.964806275966,
+        "dissociations": 5809,
+        "energyError": -2.8830982046201825e-9,
+        "fluidSpeed": 0.009915868561434293,
+        "heat": 21701.231809157453,
+        "massError": 2.346496330574155e-10,
+        "mechanicalInput": 0.050841471180319786,
+        "mineral": 189.36623868942246,
+        "mineralError": -5.684341886080802e-14,
+        "organic": 12523.313128997746,
+        "photonEnergy": 15874.308069914072,
+        "proteinMass": 96.95680974742794
+      },
+      "maxErrors": [
+        3.2378011383116245e-10,
+        3.410605131648481e-13,
+        3.5961420508101583e-9
+      ],
+      "meanStepMs": 21.630371004166662
+    },
+    {
+      "seed": 6219,
+      "cycles": 300,
+      "cells": 1000,
+      "peakCells": 1000,
+      "bodies": 73,
+      "divisions": 1293,
+      "peakGeneration": 7,
+      "peakBody": 222,
+      "genomes": 204,
+      "innovations": 94,
+      "meals": 13989,
+      "motorWork": 0.002538160770200193,
+      "physics": {
+        "boundEvents": 8049,
+        "boundMineral": 1.0844300991938138,
+        "chemicalEnergy": 33667.85182370235,
+        "dissociations": 5526,
+        "energyError": -6.5592757891863585e-9,
+        "fluidSpeed": 0.01203932092947207,
+        "heat": 21024.11381584712,
+        "massError": 3.1650415621697903e-10,
+        "mechanicalInput": 0.002538160770200193,
+        "mineral": 184.65430600643168,
+        "mineralError": 1.2221335055073723e-12,
+        "organic": 13265.870212127713,
+        "photonEnergy": 16014.357541333735,
+        "proteinMass": 84.15484345060902
+      },
+      "maxErrors": [
+        3.2014213502407074e-10,
+        1.5916157281026244e-12,
+        6.884874892421067e-9
+      ],
+      "meanStepMs": 25.442920661666612
+    }
+  ]
+}

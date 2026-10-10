@@ -1,0 +1,30 @@
+[package]
+name = "primordia-engine"
+version = "0.1.0"
+edition = "2021"
+description = "Deterministic artificial life simulation for Primordia"
+
+[lib]
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+wasm-bindgen = "=0.2.114"
+serde = { version = "1", features = ["derive"] }
+serde_json = { version = "1", features = ["float_roundtrip"] }
+
+[profile.release]
+lto = true
+opt-level = 3
+codegen-units = 1
+
+[[bin]]
+name = "benchmark"
+path = "src/benchmark.rs"
+
+# Native long-run experiments: avoid whole-program LTO on the first build.
+# Browser/WASM release builds retain their existing optimization profile.
+[profile.batch]
+inherits = "release"
+lto = false
+opt-level = 2
+codegen-units = 8

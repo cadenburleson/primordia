@@ -1,0 +1,37 @@
+{
+  "protocol": "Short eight-tick throughput samples plus four-tick exact continuation; all use a 64000 cell budget. Upper capacity is a guardrail, not a long-run 64000-cell performance claim.",
+  "results": [
+    {
+      "initialCells": 256,
+      "ceiling": 64000,
+      "cycles": 3,
+      "finalCells": 256,
+      "stepMs": 15.414473874999999,
+      "actualSpeed": 16.218523060035352
+    },
+    {
+      "initialCells": 1536,
+      "ceiling": 64000,
+      "cycles": 3,
+      "finalCells": 1536,
+      "stepMs": 53.26032812499999,
+      "actualSpeed": 4.69392526860254
+    },
+    {
+      "initialCells": 4096,
+      "ceiling": 64000,
+      "cycles": 3,
+      "finalCells": 4096,
+      "stepMs": 194.28782299999995,
+      "actualSpeed": 1.286750739906124
+    },
+    {
+      "initialCells": 8192,
+      "ceiling": 64000,
+      "cycles": 3,
+      "finalCells": 8192,
+      "stepMs": 491.05771874999994,
+      "actualSpeed": 0.5091051223802804
+    }
+  ]
+}

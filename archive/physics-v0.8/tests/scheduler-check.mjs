@@ -1,0 +1,14 @@
+import assert from 'node:assert/strict';
+import {readFile} from 'node:fs/promises';
+import ts from 'typescript';
+const source=await readFile(new URL('../src/sim/scheduler.ts',import.meta.url),'utf8');
+const js=ts.transpileModule(source,{compilerOptions:{target:ts.ScriptTarget.ES2022,module:ts.ModuleKind.ES2022}}).outputText;
+const {SimulationClock,requestedSpeed}=await import(`data:text/javascript;base64,${Buffer.from(js).toString('base64')}`);
+assert.equal(requestedSpeed(1000),1000);assert.equal(requestedSpeed(0),0);assert.equal(requestedSpeed(1e9),10000);
+assert.throws(()=>requestedSpeed(NaN));assert.throws(()=>requestedSpeed(Infinity));
+const c=new SimulationClock();c.reset(0);c.accrue(250,1);assert.equal(c.take(1),true);assert.equal(c.take(1),false);c.record();
+c.accrue(500,1);assert.equal(c.take(1),true);c.record();assert.equal(c.measure(500),1);
+c.accrue(1000,10000);assert.equal(c.take(10000),true);c.reset(1000);assert.equal(c.take(1),false);assert.equal(c.measure(1500),0);
+for(let i=0;i<100;i++)assert.equal(c.take(0),true);
+c.reset(0);for(let i=1;i<=100;i++)c.accrue(i*250,10000);let count=0;while(c.take(10000))count++;assert.equal(count,4096);
+console.log('Scheduler checks passed: fixed ticks, speeds above 100x, Max mode, achieved rate, bounded debt, reset and invalid input.');
