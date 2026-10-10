@@ -38,6 +38,8 @@ pub struct CellState {
     pub turn: f32,
     /// Whether the last tick's contacts and fluid let the cell push itself.
     pub wet: f32,
+    /// Which side other life lies on, close by: positive is left.
+    pub nearby: f32,
     /// Light-harvesting capacity of a cell swallowed and kept alive inside
     /// this one. Inherited at division: the step that made complex cells.
     pub symbiont: f32,
@@ -79,6 +81,8 @@ impl CellState {
             && self.turn.abs() <= 1.
             && self.wet.is_finite()
             && (0.0..=1.).contains(&self.wet)
+            && self.nearby.is_finite()
+            && self.nearby.abs() <= 1.
             && self.symbiont.is_finite()
             && (0.0..=1.).contains(&self.symbiont)
     }

@@ -72,7 +72,7 @@ A second round added six genes (38 in all) and four directional senses (32 promo
 | --- | --- |
 | Propulsion | Push itself along its heading. It swims in water and crawls at half strength on ground it touches. The water gets the opposite push, and the work against drag is paid in energy. |
 | Steering | Turn its heading by left-minus-right differences it senses: dissolved fuel, light, the waste living cells give off, and remains. Each steering gene's own weights decide what attracts and what repels. It carries a crude chemical sense; receptors sharpen it. |
-| Engulfing | Swallow a touching cell from another body whose bulk is at most 80% of its own, taking the prey's fuel store too. A cell built for this takes up little dissolved fuel and harvests little light. |
+| Engulfing | Swallow a touching cell from another body, one cell at a time, taking its fuel store too. Size is living structure, not carried fuel: nothing against prey a quarter larger than the whole hunter, full speed at half again its size. A cell built for this grows to twice normal size before dividing, gives up 85% of its own feeding, and does not bond to cells that lack a mouth. |
 | Venom | Wound any other body it touches. Skin blunts it. |
 | Spines | Cut what an engulfer can take, and wound it for trying. |
 | Chemosynthesis | Make fuel from waste using mineral chemistry, with no light. The energy comes from the planet's interior and is tracked like sunlight. |
@@ -80,7 +80,9 @@ A second round added six genes (38 in all) and four directional senses (32 promo
 Rules that hold for every weapon:
 
 - **A body does not attack itself.** Contact digestion used to eat a cell's own attached neighbours; it, engulfing and venom now act only between bodies.
-- **A cell is immune to the weapon it makes.** Without this, weapons also hit unattached relatives nearby, and in every run a silent copy of the gene outcompeted a working one.
+- **A weapon spares armed kin.** Kin are cells sharing at least four-fifths of their working genes. Without any immunity, weapons hit unattached relatives and a silent copy of the gene outcompeted a working one. With immunity for anyone carrying the weapon, the mouth spread as a shield until nothing was edible.
+- **A body is a refuge from small hunters.** A cell held by its neighbours is hard for a hunter its own size to pull off and easy for one eight times its bulk; a body's interior cannot be reached at all.
+- **Steering cells feel nearby life.** Within one field spacing they sense which side other bodies are on, and this counts for more than the far-off scent of waste, which mostly points at a cell's own colony.
 
 **Complex cells.** Each time an engulfer swallows a light-feeder there is a 1% chance per feeding tick that it keeps the prey alive inside instead. The host then harvests light through its captive regardless of its own membrane, pays a small upkeep for it, and passes it to its daughters. This is one event from the origin of eukaryotes, not nuclei or organelle biology.
 
@@ -99,10 +101,28 @@ Rules that hold for every weapon:
 
 - **Swimmers spread on their own.** Guided swimmers seeded into 8% of an unbred world reached 42–48% of cells in 1,500 cycles. Bred for, motors were built by every cell within 2,500 cycles on two native seeds, and by 445 of about 500 cells by cycle 1,620 in the browser, where they visibly spread across the planet.
 - **Defences respond to breeding** in every run, reaching between a fifth and all of the cells depending on seed.
-- **Hunters stay rare.** In a seeded test an engulfer was touching another body about 8% of the time, and about one in five of those was small enough to swallow, which is roughly 5% of what a lone hunter needs to live on. Eaters were under 1% of cells in the browser run. Bodies pass the size test every time, so the workable order is bodies, then swimmers, then hunters. A dimmer star makes prey worth more.
-- **Carnivores** were not observed.
-- **A complex cell** arose unprompted in the browser quick-start run by about cycle 1,300.
+- **Hunters arise on their own and persist.** This took a second pass; see "Making hunters viable" below.
+- **Complex cells** arise unprompted wherever hunters feed; see below.
 - **Reflex arcs** reached "gene appeared" and no further.
+
+### Making hunters viable
+
+The first version left hunters under 1% of cells and dying out. A benchmark of three prey worlds seeded with swimming engulfers, instrumented tick by tick, found five separate causes. Each fix exposed the next:
+
+1. **Colonies were immune.** Size was compared against the prey's whole body, so any attached cell was safe from a lone hunter. A hunter now swallows a cell.
+2. **Lean hunters were smaller than fat prey**, because size counted carried fuel. It now counts living structure, and the cutoff is graded.
+3. **Wounded hunters ate each other.** Injury halved their immunity to their own kind. Immunity now saturates.
+4. **The mouth became a shield.** With immunity for any mouth-carrier, the neighbourhood armed itself and nothing was edible. Immunity is now for kin only.
+5. **Hunters wiped out their prey**, then stagnated. The body refuge above lets prey persist.
+
+Measured afterwards, native, 128-unit patchy planets, Bright star, pace of change 3×:
+
+- **Unbred:** hunters arose within about 500 cycles in all three worlds and were still feeding 3,500 cycles later. Between 1 and 26 cells at a time lived mainly on prey, about 1% of bodies. Herbivores appeared in every run; an omnivore and a carnivore appeared in separate runs.
+- **Mouths outnumber hunters.** Up to 40% of cells carried a mouth while about 1% hunted, because a mouth also protects a cell from its armed kin.
+- **Breeding for hunters** originally made things worse by culling the prey they need. It now judges only bodies that carry a weapon, on what they catch, and never removes the unarmed. Bred worlds kept 1–8 mouths with most of them feeding. Hunters still died out in one of three bred runs.
+- **Browser, quick-start planet, pace of change Restless, no breeding:** "Hunters established" by about cycle 1,400; herbivores at 2% and the first omnivores by 2,340; complex cells established (14% of cells) by 2,850. At cycle 3,900 twelve cell types were alive, with mouths, venom, digesters and mineral armour all common.
+
+About one hunting body in a hundred is what these worlds sustain, so the ladder counts hunters as established at 1% of bodies. Predation pushed prey toward living as bodies in some runs and toward armour and venom in others.
 
 ### Speed
 
@@ -110,7 +130,9 @@ Terrain under each cell is now sampled on every fourth mechanics substep instead
 
 ## Not solved
 
-- Hunters that live mainly on prey, carnivores, limbs, coordinated walking and anything resembling a brain have not been observed to evolve.
+- Hunters are a real but small guild, about 1% of bodies, and can still die out. A carnivore appeared in one run; a lasting second trophic level has not.
+- Limbs, coordinated walking and anything resembling a brain have not been observed to evolve.
+- Most cells that carry a mouth do not hunt; it protects them from armed kin.
 - Horns and image-forming eyes are not modelled. Propulsion is one push per cell, not a visible flagellum.
 - A cell's heading is not carried round when its body rotates, so a body's swimmers can end up pulling against each other.
 - How much life a planet holds depends sharply on the star. On the default patchy-resource planet (128 units, 3,000 cycles, native runs) the population ended at 84 cells at 1×, about 220 at 3× and 4×, and passed 2,000 and was still growing at 6×. New planets therefore default to Bright (6×); with evenly spread resources the same star fills the cell limit.
@@ -119,7 +141,7 @@ Terrain under each cell is now sampled on every fourth mechanics substep instead
 ## Checks
 
 ```sh
-cargo test --profile preview --manifest-path engine/Cargo.toml --lib   # 110 tests
+cargo test --profile preview --manifest-path engine/Cargo.toml --lib   # 115 tests
 npm run check:steering   # the shipped WASM, through the same API the UI uses
 npm run check:scheduler && npm run check:nursery-ui && npm run check:brush-ui
 npm run build

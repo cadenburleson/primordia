@@ -93,6 +93,10 @@ pub const ENGULF: usize = 34;
 pub const TOXIN: usize = 35;
 pub const SPINE: usize = 36;
 pub const CHEMO: usize = 37;
+/// Share of a cell's own feeding (light, vents, dissolved fuel) given up by a
+/// fully built engulfing membrane. Low enough that a hunter between meals can
+/// limp along on light, as many single-celled hunters do.
+const MOUTH_COST: f64 = 0.85;
 /// Thrust of a fully built, fully driven propulsion motor.
 const THRUST: f64 = 2.5;
 /// Fastest turn of a fully built steering apparatus, radians per cycle.
@@ -707,7 +711,12 @@ impl Habitat {
         [
             contrast(level(l, 0), level(r, 0), 0.5) * receptor,
             contrast(light(l), light(r), 0.05) * photic,
-            contrast(level(l, 1), level(r, 1), 0.5) * receptor,
+            // The scent of other life: the waste it gives off across the
+            // field, and whatever is alive close by.
+            // A cell's own colony is the strongest source of waste around it,
+            // so the far field counts for less than what is close by.
+            ((0.3 * contrast(level(l, 1), level(r, 1), 0.5) + c.state.nearby) * receptor)
+                .clamp(-1., 1.),
             contrast(level(l, 5), level(r, 5), 0.5) * receptor,
         ]
     }
@@ -766,7 +775,7 @@ impl Habitat {
             // A membrane given over to swallowing prey has little room left for
             // soaking up dissolved fuel, harvesting light or vent chemistry: a
             // cell is mostly a feeder or mostly a hunter.
-            let autotrophy = 1. - 0.85 * activity[ENGULF];
+            let autotrophy = 1. - MOUTH_COST * activity[ENGULF];
             let uptake = (dt
                 * 0.35
                 * activity[1]
@@ -853,7 +862,12 @@ impl Habitat {
                 m.proteins[k] -= turnover;
                 m.fuel += turnover;
             }
-            let growth = (dt * 0.04 * activity[7] * (1. - m.biomass / 0.5).max(0.))
+            // An engulfing cell grows up to twice the size of an ordinary one,
+            // and has to before it divides: bigger than its prey, slower to breed.
+            let growth = (dt
+                * 0.04
+                * activity[7]
+                * (1. - m.biomass / (0.5 * (1. + activity[ENGULF]))).max(0.))
                 .min(m.fuel)
                 .min(c.energy as f64 / 0.4);
             m.fuel -= growth;
@@ -916,17 +930,44 @@ impl Habitat {
         // moves matter. Broad-phase candidates need not repeatedly compute cbrt.
         let mut radii: Vec<_> = e.cells.iter().map(Cell::radius).collect();
         // Attacks act between bodies: a body does not eat or sting itself.
-        // Bulk (summed cell volume) decides who can swallow whom.
+        // Bulk is living structure (summed biomass), not the fuel a cell happens
+        // to be carrying: a lean hunter is still bigger than a fat prey cell.
         let armed = e
             .cells
             .iter()
             .any(|c| c.activity(9) > 0. || c.activity(ENGULF) > 0. || c.activity(TOXIN) > 0.);
+        // Kin are cells whose sets of working genes are at least four-fifths
+        // the same. Weapons spare armed kin; they do not spare a stranger just
+        // because it carries the same weapon.
+        let steering = e.cells.iter().any(|c| c.activity(STEER) > 0.01);
+        let genes: Vec<u64> = if armed || steering {
+            e.cells
+                .iter()
+                .map(|c| {
+                    std::iter::once(&c.genome)
+                        .chain(c.lifecycle.homolog.as_ref())
+                        .flat_map(|g| &g.genes)
+                        .filter(|g| g.strength > 0.05)
+                        .fold(0u64, |set, g| set | 1 << g.action)
+                })
+                .collect()
+        } else {
+            Vec::new()
+        };
+        let kin = |a: usize, b: usize| {
+            (genes[a] & genes[b]).count_ones() * 5 >= (genes[a] | genes[b]).count_ones() * 4
+        };
         let mut body = Vec::new();
         let mut bulk = Vec::new();
         if armed {
             body = vec![0usize; e.cells.len()];
             for (g, members) in e.groups().iter().enumerate() {
-                bulk.push(members.iter().map(|&i| radii[i].powi(3)).sum::<f32>());
+                bulk.push(
+                    members
+                        .iter()
+                        .map(|&i| e.cells[i].material.as_ref().unwrap().biomass)
+                        .sum::<f64>(),
+                );
                 for &i in members {
                     body[i] = g;
                 }
@@ -958,6 +999,7 @@ impl Habitat {
             let (x, y, z) = bin(e.cells[i].p);
             // Flatten the 27 adjacent Cartesian bins into a deterministic list.
             let mut neighbors = Vec::new();
+            e.cells[i].state.nearby = 0.;
             for yy in y - 1..=y + 1 {
                 for zz in z - 1..=z + 1 {
                     for xx in x - 1..=x + 1 {
@@ -966,6 +1008,32 @@ impl Habitat {
                         }
                     }
                 }
+            }
+            // A cell that can steer feels which side other life is on, within
+            // one field spacing: close-range scent. Engulfers ignore their kin.
+            if e.cells[i].activity(STEER) > 0.01 {
+                let me = &e.cells[i];
+                let left = self
+                    .domain
+                    .tangent(me.p, me.heading + std::f32::consts::FRAC_PI_2);
+                let mouth = me.activity(ENGULF);
+                let mut pull = 0.;
+                for &j in &neighbors {
+                    let other = &e.cells[j];
+                    let key = (me.id.min(other.id), me.id.max(other.id));
+                    if j == i || bonded.contains(&key) {
+                        continue;
+                    }
+                    let delta = other.p.sub(me.p);
+                    let d = delta.len();
+                    if d < 1.6 && d > 1e-4 {
+                        let own = mouth > 0.25 && other.activity(ENGULF) > 0.25 && kin(i, j);
+                        if !own {
+                            pull += delta.dot(left) / d * (1. - d / 1.6);
+                        }
+                    }
+                }
+                e.cells[i].state.nearby = (pull / (1. + pull.abs())).clamp(-1., 1.);
             }
             for j in neighbors {
                 if j <= i {
@@ -990,7 +1058,11 @@ impl Habitat {
                 let adhesion = ((e.cells[i].activity(2) + material_affinity(&e.cells[i]) * 0.2)
                     .min(1.)
                     * (e.cells[j].activity(2) + material_affinity(&e.cells[j]) * 0.2).min(1.)
-                    * e.cells[i].recognition(&e.cells[j])) as f64;
+                    * e.cells[i].recognition(&e.cells[j])
+                    // A mouth does not glue itself to its food: engulfers bind
+                    // each other, not the cells they could swallow.
+                    * (1. - (e.cells[i].activity(ENGULF) - e.cells[j].activity(ENGULF)).abs()))
+                    as f64;
                 if !bonded.contains(&key)
                     && e.cells[i].lifecycle.phase != crate::development::Phase::Gamete
                     && e.cells[j].lifecycle.phase != crate::development::Phase::Gamete
@@ -1070,7 +1142,11 @@ impl Habitat {
                         let barrier = e.cells[b].activity(crate::physiology::BARRIER) as f64;
                         // A cell is protected from the enzyme it makes itself, so
                         // digesters can live beside their own kind and eat others.
-                        let immune = e.cells[b].activity(9) as f64;
+                        let immune = if kin(a, b) {
+                            (e.cells[b].activity(9) as f64 * 4.).min(1.)
+                        } else {
+                            0.
+                        };
                         let capacity = (e.cells[a].material.as_ref().unwrap().biomass * 1.5
                             - e.cells[a].material.as_ref().unwrap().fuel)
                             .max(0.);
@@ -1116,29 +1192,45 @@ impl Habitat {
                             e.cells[a].state.meals += 1;
                         }
                     }
-                    // Engulfing is fast but only works on something smaller. Skin
-                    // does not help once swallowed; spines and mineral armour do,
-                    // and spines wound whatever tries.
+                    // Engulfing is fast and takes one cell at a time. A cell held
+                    // by its neighbours is hard for a hunter its own size to
+                    // pull off and easy for a much bigger one, so living as a
+                    // body is a refuge from small hunters and a body's interior
+                    // is out of reach altogether. Skin does not help once
+                    // swallowed; spines and mineral armour do, and spines wound
+                    // whatever tries.
                     let mouth = e.cells[a].activity(ENGULF) as f64;
                     if mouth > 0.
                         && e.cells[a].energy > 0.1
                         && body[a] != body[b]
-                        && bulk[body[a]] >= 1.25 * bulk[body[b]]
+                        && bulk[body[a]] > 0.8 * e.cells[b].material.as_ref().unwrap().biomass
                     {
+                        // The bigger the hunter is than its prey, the faster it
+                        // gets it down: nothing against prey a quarter larger
+                        // than itself, full speed at half again its size.
+                        let outsize =
+                            bulk[body[a]] / e.cells[b].material.as_ref().unwrap().biomass;
+                        let advantage = ((outsize - 0.8) / 0.7).clamp(0., 1.);
+                        let grip = degree[b] as f64 * 1.5 / outsize.clamp(1., 8.);
                         let spines = e.cells[b].activity(SPINE) as f64;
                         // Engulfers recognise and spare other engulfers.
-                        let kin = e.cells[b].activity(ENGULF) as f64;
+                        // Engulfers spare armed kin, even wounded or half-built.
+                        let spared = if kin(a, b) {
+                            (e.cells[b].activity(ENGULF) as f64 * 4.).min(1.)
+                        } else {
+                            0.
+                        };
                         let capacity = (e.cells[a].material.as_ref().unwrap().biomass * 1.5
                             - e.cells[a].material.as_ref().unwrap().fuel)
                             .max(0.);
                         let available = e.cells[a].energy as f64 / 0.2;
                         let prey = e.cells[b].material.as_mut().unwrap();
-                        let potential = (DT as f64 * 0.3 * mouth * (1. - kin))
+                        let potential = (DT as f64 * 0.3 * mouth * advantage * (1. - spared))
                             .min((prey.biomass - 0.005).max(0.))
                             .min(capacity / 0.85)
                             .min(available);
                         let extracted =
-                            potential / (1. + spines * 6. + prey.mineral / prey.biomass * 4.);
+                            potential / (1. + spines * 6. + prey.mineral / prey.biomass * 4. + grip);
                         // Swallowing takes the prey's fuel store along with its body.
                         let swallowed = (prey.fuel * extracted / prey.biomass.max(1e-9))
                             .min(prey.fuel)
@@ -1214,7 +1306,11 @@ impl Habitat {
                         let paid = self.spend(&mut e.cells[a], wanted, false);
                         let skin = e.cells[b].activity(crate::physiology::BARRIER) as f64;
                         // Venomous cells are immune to venom.
-                        let immune = e.cells[b].activity(TOXIN) as f64;
+                        let immune = if kin(a, b) {
+                            (e.cells[b].activity(TOXIN) as f64 * 4.).min(1.)
+                        } else {
+                            0.
+                        };
                         let dose = (DT as f64 * 0.03 * venom * (1. - immune) * (paid / wanted).min(1.)
                             / (1. + skin * 4.)) as f32;
                         e.cells[b].state.injury = (e.cells[b].state.injury + dose).min(1.);
@@ -1743,7 +1839,7 @@ impl Habitat {
             }
             let c = &e.cells[i];
             if c.lifecycle.phase == crate::development::Phase::Gamete
-                || c.material.as_ref().unwrap().biomass < 0.38
+                || c.material.as_ref().unwrap().biomass < 0.38 * (1. + c.activity(ENGULF)) as f64
                 || c.energy < 5.5
                 || c.cooldown > 0.
                 || core.random() > c.activity(7) * DT * 0.5

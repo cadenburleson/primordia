@@ -365,15 +365,33 @@ impl Habitat {
         };
         let top = |f: fn(&(f32, f32)) -> f32| raw.iter().map(f).fold(0f32, f32::max);
         let (best_measure, best_material) = (top(|r| r.0), top(|r| r.1));
+        // A hunter needs prey. Once any body is really eating, hunters are judged
+        // on what they catch alone; rewarding the weapon as well would arm the
+        // whole world and leave nothing to hunt.
+        let material_weight = if goal == "hunting" && best_measure > 0. { 0. } else { 0.25 };
         let scores: Vec<f32> = raw
             .iter()
             .map(|r| {
                 (if best_measure > 0. { r.0 / best_measure } else { 0. })
-                    + 0.25 * (if best_material > 0. { r.1 / best_material } else { 0. })
+                    + material_weight * (if best_material > 0. { r.1 / best_material } else { 0. })
             })
             .collect();
-        let best = scores.iter().copied().fold(0f32, f32::max);
-        let worst = scores.iter().copied().fold(f32::INFINITY, f32::min);
+        // Breeding hunters never touches their prey: only bodies that carry a
+        // weapon compete, and the ones that catch least are removed. Culling
+        // the unarmed would starve the hunters it was meant to favour.
+        let exempt: Vec<bool> = groups
+            .iter()
+            .map(|g| goal == "hunting" && !g.iter().any(|&i| built(&e.cells[i], &[9, ENGULF, TOXIN])))
+            .collect();
+        let judged = || scores.iter().zip(&exempt).filter(|(_, x)| !**x).map(|(v, _)| *v);
+        let best = judged().fold(0f32, f32::max);
+        let worst = judged().fold(f32::INFINITY, f32::min);
+        let contenders: usize = groups
+            .iter()
+            .zip(&exempt)
+            .filter(|(_, x)| !**x)
+            .map(|(g, _)| g.len())
+            .sum();
         let s = &mut self.steering;
         s.rounds += 1;
         s.round_bodies = groups.len() as u32;
@@ -383,7 +401,8 @@ impl Habitat {
         // world's own turnover instead of shrinking it.
         let births = e.divisions.saturating_sub(s.round_births);
         s.round_births = e.divisions;
-        let quota = (births as f32 * 1.2 * s.goal_strength).min(total as f32 * s.goal_strength);
+        let quota =
+            (births as f32 * 1.2 * s.goal_strength).min(contenders as f32 * s.goal_strength);
         if total < 48 {
             s.round_note = "too-few".into();
             return;
@@ -399,6 +418,7 @@ impl Habitat {
         let mut order: Vec<(f32, usize)> = scores
             .iter()
             .enumerate()
+            .filter(|(i, _)| !exempt[*i])
             .map(|(i, v)| (v + core.random() * 1e-5, i))
             .collect();
         order.sort_by(|a, b| a.0.total_cmp(&b.0));
@@ -563,8 +583,9 @@ impl Habitat {
             ("steering", genes(&[STEER]), fraction(guided), 0.05, guided, true),
             ("muscle", genes(&[4]), makers(&[4]), 0.1, 0, true),
             ("skeleton", genes(&[3, 29]), mineral, 0.1, 0, true),
-            ("hunters", genes(&[9, ENGULF, TOXIN]), per_any(hunters), 0.05, hunters, hunters >= 3),
-            ("carnivores", genes(&[9, ENGULF, TOXIN]), per_any(carnivores), 0.02, carnivores, carnivores >= 3),
+            // Eaters are about one body in a hundred of a food web that lasts.
+            ("hunters", genes(&[9, ENGULF, TOXIN]), per_any(hunters), 0.01, hunters, hunters >= 3),
+            ("carnivores", genes(&[9, ENGULF, TOXIN]), per_any(carnivores), 0.005, carnivores, carnivores >= 3),
             ("complex", genes(&[ENGULF]), fraction(complex), 0.1, complex, true),
             ("defences", genes(&[BARRIER, SPINE, TOXIN]), fraction(defended), 0.15, defended, true),
             ("nerves", genes(&[17]), fraction(synapses), 0.05, synapses, synapses >= 8),
@@ -994,6 +1015,34 @@ mod tests {
         assert!(e.valid());
         let h = e.physical.as_ref().unwrap();
         assert!(h.errors(&e.cells).iter().all(|v| v.abs() < 1e-4), "{:?}", h.errors(&e.cells));
+    }
+
+    #[test]
+    fn breeding_hunters_prunes_armed_bodies_that_catch_nothing_and_spares_prey() {
+        let mut c = world(96);
+        let mut e = c.autonomous.take().unwrap();
+        let mut h = e.physical.take().unwrap();
+        // Twenty-one founders carry a built mouth; only the first has eaten.
+        for cell in e.cells.iter_mut().take(21) {
+            cell.material.as_mut().unwrap().proteins[ENGULF] = 0.02;
+        }
+        e.cells[0].state.flux.prey = 5.;
+        h.steering.goal = "hunting".into();
+        e.divisions = 1000; // plenty of recent births to draw the quota from
+        h.selection_round(&mut e, &mut c);
+        let culled: Vec<usize> = (0..e.cells.len()).filter(|&i| e.cells[i].state.culled).collect();
+        assert!((1..=6).contains(&culled.len()), "{culled:?}");
+        assert!(culled.iter().all(|&i| (1..21).contains(&i)), "only idle armed cells: {culled:?}");
+        assert_eq!(h.steering.round_note, "selecting");
+        // With no armed body at all there is nobody to judge.
+        for cell in &mut e.cells {
+            cell.material.as_mut().unwrap().proteins[ENGULF] = 0.;
+            cell.state.culled = false;
+        }
+        e.divisions = 2000;
+        h.selection_round(&mut e, &mut c);
+        assert!(e.cells.iter().all(|cell| !cell.state.culled));
+        assert_eq!(h.steering.round_note, "no-variation");
     }
 
     #[test]

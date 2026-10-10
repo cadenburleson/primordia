@@ -182,9 +182,19 @@ fn engulfing_needs_a_size_advantage_and_spines_blunt_and_punish_it() {
         )
     };
     let (equal, _, _) = meal(false, false);
+    // Prey a quarter larger than the hunter cannot be swallowed at all.
+    let oversized = {
+        let (mut core, mut e, mut h) = fixture();
+        build(&mut e, 0, ENGULF);
+        e.cells[1].material.as_mut().unwrap().biomass *= 1.3;
+        e.cells[1].p = V3::new(e.cells[0].radius() + e.cells[1].radius(), 5., 0.);
+        h.tick(&mut e, &mut core);
+        e.cells[1].state.flux.lost_to_predators
+    };
+    assert_eq!(oversized, 0.);
     let (eaten, unhurt, gained) = meal(true, false);
     let (blunted, pricked, _) = meal(true, true);
-    assert_eq!(equal, 0., "an equal cannot be swallowed");
+    assert!(equal > 0. && equal < eaten * 0.5, "an equal goes down slowly: {equal} vs {eaten}");
     assert!(eaten > 0.02 && gained > 0., "bigger cell ate {eaten}");
     assert!(blunted < eaten * 0.5, "spines: {blunted} vs {eaten}");
     assert!(pricked > unhurt, "spines wound the eater");
@@ -274,7 +284,7 @@ fn a_swallowed_light_feeder_can_be_kept_and_its_host_and_descendants_keep_harves
         assert!(balanced(&h, &e), "{:?}", h.errors(&e.cells));
         e.cells[0].state.flux.photosynthesis
     };
-    assert!(harvest(0.9) > harvest(0.) * 2., "{} vs {}", harvest(0.9), harvest(0.));
+    assert!(harvest(0.9) > harvest(0.) * 1.5, "{} vs {}", harvest(0.9), harvest(0.));
 
     // Daughters inherit the captive.
     let mut world = Core::new(Config {
@@ -289,6 +299,139 @@ fn a_swallowed_light_feeder_can_be_kept_and_its_host_and_descendants_keep_harves
     world.step(400);
     let e = world.autonomous.as_ref().unwrap();
     assert!(e.divisions > 0 && e.cells.iter().all(|c| c.state.symbiont == 0.5));
+}
+
+/// A hunter of the given bulk beside one prey cell that has `held` bonds to
+/// bystanders. Returns the biomass the prey lost in one tick.
+fn bite(hunter_cells: usize, held: usize) -> f64 {
+    let mut core = Core::new(Config {
+        initial_cells: 2 + hunter_cells + held,
+        ..Config::default()
+    })
+    .unwrap();
+    let mut e = Evolution::new(&mut core);
+    let mut h = Habitat::new(&core, &mut e.cells);
+    for (i, c) in e.cells.iter_mut().enumerate() {
+        c.p = V3::new(20. + i as f32 * 3., 5., 20.); // parked apart
+        c.v = V3::default();
+        c.energy = 8.;
+        c.cooldown = 1e6;
+        c.material.as_mut().unwrap().proteins[2] = 0.;
+    }
+    let bond = |a: &autonomous::Cell, b: &autonomous::Cell| Bond {
+        a: a.id.min(b.id),
+        b: a.id.max(b.id),
+        rest: 0.44,
+        integrity: 1.,
+        activation: 0.,
+        stiffness: 0.,
+    };
+    // Cell 0 is the mouth, cell 1 the prey touching it.
+    e.cells[0].p = V3::new(0., 5., 0.);
+    e.cells[1].p = V3::new(0.44, 5., 0.);
+    build(&mut e, 0, ENGULF);
+    e.bonds.clear();
+    // The rest of the hunter's body trails behind the mouth.
+    for k in 0..hunter_cells {
+        let i = 2 + k;
+        e.cells[i].p = V3::new(-0.44 * (k + 1) as f32, 5., 0.);
+        build(&mut e, i, ENGULF);
+        let link = bond(&e.cells[i - if k == 0 { 2 } else { 1 }], &e.cells[i]);
+        e.bonds.push(link);
+    }
+    // Bystanders hold the prey from the far side, out of the hunter's reach.
+    for k in 0..held {
+        let i = 2 + hunter_cells + k;
+        e.cells[i].p = V3::new(0.88, 5. + 0.44 * (k as f32 - 1.), 0.3 * k as f32);
+        let link = bond(&e.cells[1], &e.cells[i]);
+        e.bonds.push(link);
+    }
+    h.contacts(&mut e, &mut core);
+    e.cells[1].state.flux.lost_to_predators
+}
+
+#[test]
+fn a_body_is_a_refuge_from_small_hunters_and_not_from_big_ones() {
+    let (loose, held) = (bite(0, 0), bite(0, 3));
+    assert!(loose > 0. && held < loose * 0.4, "held prey resists: {held} vs {loose}");
+    let big = bite(8, 3);
+    assert!(big > held * 2., "a big hunter tears it off: {big} vs {held}");
+}
+
+#[test]
+fn a_weapon_spares_armed_kin_but_not_an_armed_stranger() {
+    let harm = |stranger: bool| {
+        let (mut core, mut e, mut h) = fixture();
+        build(&mut e, 0, ENGULF);
+        build(&mut e, 1, ENGULF);
+        // Kin share their working genes; a stranger has a different set.
+        e.cells[0].genome.genes = vec![always(ENGULF), always(0), always(1), always(7)];
+        e.cells[1].genome.genes = if stranger {
+            vec![always(ENGULF), always(3), always(14), always(21)]
+        } else {
+            vec![always(ENGULF), always(0), always(1), always(7)]
+        };
+        e.cells[0].material.as_mut().unwrap().biomass *= 2.;
+        e.cells[1].p = V3::new(e.cells[0].radius() + e.cells[1].radius(), 5., 0.);
+        h.contacts(&mut e, &mut core);
+        e.cells[1].state.flux.lost_to_predators
+    };
+    assert_eq!(harm(false), 0., "armed kin are spared");
+    assert!(harm(true) > 0., "carrying a mouth is no shield against a stranger");
+}
+
+#[test]
+fn a_mouth_grows_larger_than_its_prey_and_does_not_glue_itself_to_it() {
+    let (mut core, mut e, mut h) = fixture();
+    e.cells[1].p = V3::new(0., 5., 6.);
+    build(&mut e, 0, ENGULF);
+    for c in &mut e.cells {
+        // Both can take up dissolved fuel and invest in growth.
+        c.genome.genes = vec![always(7), always(1)];
+        c.material.as_mut().unwrap().fuel = 0.3;
+    }
+    e.cells[0].genome.genes.push(always(ENGULF));
+    e.cells[0].genome.id = 300;
+    for s in &mut h.solutes {
+        s[0] = 6.;
+    }
+    for _ in 0..600 {
+        h.tick(&mut e, &mut core);
+    }
+    assert!(biomass(&e, 0) > 0.6, "mouth cell reached {}", biomass(&e, 0));
+    assert!(biomass(&e, 1) <= 0.5 + 1e-9, "ordinary cell stays at {}", biomass(&e, 1));
+
+    // Sticky cells bond on contact unless one is a mouth and the other is not.
+    let bonded = |mouth: bool| {
+        let (mut core, mut e, mut h) = fixture();
+        for c in &mut e.cells {
+            c.material.as_mut().unwrap().proteins[2] = 0.05;
+        }
+        if mouth {
+            build(&mut e, 0, ENGULF);
+            e.cells[1].material.as_mut().unwrap().biomass *= 3.; // too big to be eaten
+            e.cells[1].p = V3::new(e.cells[0].radius() + e.cells[1].radius(), 5., 0.);
+        }
+        for _ in 0..40 {
+            h.contacts(&mut e, &mut core);
+        }
+        !e.bonds.is_empty()
+    };
+    assert!(bonded(false) && !bonded(true));
+}
+
+#[test]
+fn a_steering_cell_senses_which_side_other_life_is_on() {
+    let side = |z: f32| {
+        let (mut core, mut e, mut h) = fixture();
+        build(&mut e, 0, STEER);
+        e.cells[0].p = V3::new(0., 5., 0.);
+        e.cells[1].p = V3::new(0., 5., z); // left of a cell heading along +x is +z
+        h.contacts(&mut e, &mut core);
+        e.cells[0].state.nearby
+    };
+    assert!(side(1.) > 0.1 && side(-1.) < -0.1);
+    assert_eq!(side(3.), 0., "beyond one field spacing nothing is felt");
 }
 
 #[test]

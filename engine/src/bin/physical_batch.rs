@@ -88,10 +88,18 @@ fn run() -> Result<(), String> {
             let mean = |f: &dyn Fn(&primordia_engine::autonomous::Cell) -> f32| {
                 e.cells.iter().map(f).sum::<f32>() / n
             };
+            let mouths = e
+                .cells
+                .iter()
+                .filter(|c| c.activity(primordia_engine::physical::ENGULF) > 0.25)
+                .count();
+            let eating = e.cells.iter().filter(|c| c.state.flux.eater()).count();
             eprintln!(
-                "{:.1} cycles, {} cells · energy {:.2} biomass {:.3} injury {:.2} exposure {:.2} age {:.0} · lost [starved, wasted, injured] {:?}",
+                "{:.1} cycles, {} cells · mouths {} eating {} · energy {:.2} biomass {:.3} injury {:.2} exposure {:.2} age {:.0} · lost [starved, wasted, injured] {:?}",
                 world.time,
                 e.cells.len(),
+                mouths,
+                eating,
                 mean(&|c| c.energy),
                 mean(&|c| c.material.as_ref().map_or(0., |m| m.biomass as f32)),
                 mean(&|c| c.state.injury),
@@ -133,6 +141,10 @@ fn run() -> Result<(), String> {
             rung["built"].as_f64().unwrap() * 100.
         );
     }
+    eprintln!(
+        "diet [light, soup, remains, vents, herbivore, omnivore, carnivore] {} · complex-cell captures {}",
+        view["diet"], view["captures"]
+    );
     eprintln!(
         "breeding: {} rounds, {} cells removed, last round '{}'",
         view["rounds"], view["culled"], view["note"].as_str().unwrap()
