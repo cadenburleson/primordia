@@ -3,11 +3,11 @@ import type {BreedingGoal,Command,Snapshot,SteerAction} from './sim/types';
 const $=<T extends HTMLElement=HTMLElement>(id:string)=>document.getElementById(id) as T;
 
 const dial=(id:string,key:string,label:string,choices:[number|string,string][])=>`<div class="segmented" id="${id}" role="group" aria-label="${label}">${choices.map(([value,name])=>`<button data-${key}="${value}" aria-pressed="false">${name}</button>`).join('')}</div>`;
-const GOALS:[BreedingGoal|'',string,string][]=[['bodies','Bigger bodies','Size and mixed tissues'],['movement','Movement','Muscle that does real work'],['support','Skeleton','Mineral support'],['senses','Senses & nerves','Receptors and signals'],['hunting','Hunters','Bodies that eat others'],['','Let nature decide','No breeding']];
+const GOALS:[BreedingGoal|'',string,string][]=[['bodies','Bigger bodies','Size and mixed tissues'],['swimming','Swimmers','Motors that get somewhere'],['movement','Muscle','Bodies that contract'],['support','Skeleton','Mineral support'],['senses','Senses & nerves','Receptors and signals'],['hunting','Hunters','Bodies that eat others'],['defence','Defences','Skin, spines and venom'],['','Let nature decide','No breeding']];
 const INTENSITY={gentle:{strength:.15,period:40},firm:{strength:.25,period:30},ruthless:{strength:.4,period:20}} as const;
 type Intensity=keyof typeof INTENSITY;
 const ACTS:[string,string,string][]=[['nourish','Rain of plenty','Fuel falls where life already is'],['storm','Mutation storm','8× variation for 60 cycles'],['winter','Ice age','Deep cold for 120 cycles'],['meteor','Meteor strike','Click the planet to aim'],['dying','Great dying','Half of all cells perish']];
-const GOAL_NAMES:Record<string,string>={bodies:'Bigger bodies',movement:'Movement',support:'Skeleton',senses:'Senses & nerves',hunting:'Hunters'};
+const GOAL_NAMES:Record<string,string>={bodies:'Bigger bodies',swimming:'Swimmers',movement:'Muscle',support:'Skeleton',senses:'Senses & nerves',hunting:'Hunters',defence:'Defences'};
 
 export const powersHTML=`<aside id="powers-panel" class="guide-panel powers-panel" aria-label="Creator powers" hidden>
 <div class="drawer-heading"><span class="eyebrow">CREATOR POWERS</span><button data-close-panel class="icon-button" aria-label="Close powers">×</button></div>
@@ -22,7 +22,10 @@ ${dial('mutation-choices','mutation','Mutation rate',[[0,'Still'],[.5,'Calm'],[1
 <p class="power-note" id="mutation-note">How often a copied gene comes out different. Faster brings more new ideas, and more broken ones.</p></section>
 <section class="power"><div class="power-head"><span class="eyebrow">THE STAR</span><strong id="light-readout">Natural</strong></div>
 ${dial('light-choices','light','Star brightness',[[.5,'Dim'],[1,'Natural'],[3,'Warm'],[6,'Bright'],[8,'Blazing']])}
-<p class="power-note">Light is the only income a world has. A brighter star feeds more cells, which means more births and more chances to change.</p></section>
+<p class="power-note">Light is a world’s main income. A brighter star feeds more cells, which means more births and more chances to change. It also makes hunting less worthwhile.</p></section>
+<section class="power"><div class="power-head"><span class="eyebrow">THE DEEP</span><strong id="vents-readout">Natural</strong></div>
+${dial('vents-choices','vents','Vent activity',[[.5,'Quiet'],[1,'Natural'],[4,'Active'],[8,'Violent']])}
+<p class="power-note">The planet’s interior feeds vent chemistry that needs no light. Cells must evolve the catalyst to use it.</p></section>
 <section class="power"><div class="power-head"><span class="eyebrow">THE OCEANS</span><strong id="mixing-readout">Natural</strong></div>
 ${dial('mixing-choices','mixing','Ocean mixing',[[.5,'Still'],[1,'Natural'],[3,'Stirred'],[8,'Churning']])}
 <p class="power-note">Currents carry fuel, waste and minerals to cells that cannot yet go and find them.</p></section>
@@ -42,6 +45,7 @@ export class Powers {
       if(d.mutation!==undefined)this.steer({kind:'mutation',scale:Number(d.mutation)});
       else if(d.light!==undefined)this.steer({kind:'light',scale:Number(d.light)});
       else if(d.mixing!==undefined)this.steer({kind:'mixing',scale:Number(d.mixing)});
+      else if(d.vents!==undefined)this.steer({kind:'vents',scale:Number(d.vents)});
       else if(d.intensity!==undefined){this.intensity=d.intensity as Intensity;const goal=this.snapshot?.autonomous?.steering?.goal;if(goal)this.breed(goal);else this.render();}
       else if(d.goal!==undefined)this.breed(d.goal as BreedingGoal|'');
       else if(d.act!==undefined)this.act(d.act);
@@ -63,7 +67,7 @@ export class Powers {
     const s=this.snapshot,st=s?.autonomous?.steering;
     const available=!!st&&!s!.assessment?.control&&!s!.assessment?.running&&(s!.config.physicalAssay??'full')==='full';
     $('powers-unavailable').hidden=available||!s;
-    const signature=JSON.stringify([available,this.intensity,this.selected(),st&&[st.mutation,st.light,st.mixing,st.goal,st.strength,st.rounds,st.note,st.scored,st.bodies,st.culled,Math.ceil(st.nextRound),st.favoured,st.favourPressure,Math.ceil(st.storm),Math.ceil(st.winter),s!.stats.cells]]);
+    const signature=JSON.stringify([available,this.intensity,this.selected(),st&&[st.mutation,st.light,st.vents,st.mixing,st.goal,st.strength,st.rounds,st.note,st.scored,st.bodies,st.culled,Math.ceil(st.nextRound),st.favoured,st.favourPressure,Math.ceil(st.storm),Math.ceil(st.winter),s!.stats.cells]]);
     if(signature===this.signature)return;this.signature=signature;
     document.querySelectorAll<HTMLButtonElement>('#powers-panel .power button').forEach(b=>b.disabled=!available);
     if(!st)return;
@@ -71,6 +75,7 @@ export class Powers {
     $('mutation-readout').textContent=`${press('mutation-choices','mutation',String(st.mutation))} · ${st.mutation}×${st.storm>0?` · storm ×${(st.mutationFactor/Math.max(st.mutation,1e-6)).toFixed(0)} for ${Math.ceil(st.storm)} more`:''}`;
     $('light-readout').textContent=`${press('light-choices','light',String(st.light))} · ${st.light}×`;
     $('mixing-readout').textContent=`${press('mixing-choices','mixing',String(st.mixing))} · ${st.mixing}×`;
+    $('vents-readout').textContent=`${press('vents-choices','vents',String(st.vents))} · ${st.vents}×`;
     press('goal-choices','goal',st.goal);
     const strength=Object.entries(INTENSITY).find(([,v])=>Math.abs(v.strength-st.strength)<1e-3&&v.period===st.period)?.[0];
     if(st.goal&&strength)this.intensity=strength as Intensity;

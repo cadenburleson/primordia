@@ -8,6 +8,8 @@ pub mod body;
 pub mod development;
 #[cfg(test)]
 mod development_tests;
+#[cfg(test)]
+mod foodweb_tests;
 pub mod domain;
 pub mod experiment;
 pub mod observations;

@@ -51,7 +51,7 @@ Under a bright star cells drift toward living alone, so the reliable order is th
 
 ## Life's ascent
 
-Eleven steps, each measured from living cells every two cycles: living cells, colonies, multicellular bodies, specialised tissues, senses, muscle, skeleton, nerve nets, powered movement, organs, sexual reproduction.
+Each step is measured from living cells every two cycles. The first version had eleven: living cells, colonies, multicellular bodies, specialised tissues, senses, muscle, skeleton, nerve nets, powered movement, organs, sexual reproduction. There are now eighteen; see the next section.
 
 Each step has four stages: absent, gene in the pool, first working cells, established. A step is established only when cells have built the tissue, for example muscle in 10% of living cells. The first time a world reaches each stage is recorded in the save and announced once.
 
@@ -64,17 +64,63 @@ The panel also names what is holding life back, from deaths over a recent window
 - Cell types have distinct colours on the planet and in the specimen view, with a live legend: red muscle, ivory skeleton, blue senses and nerves, violet digestive, and so on (`src/sim/roles.ts`).
 - The chosen lineage is tinted gold.
 
+## Movement, the food web, vents and complex cells
+
+A second round added six genes (38 in all) and four directional senses (32 promoter inputs). Founders carry none of them. Older saves load with the new slots padded with zeros, then evolve under the new rules.
+
+| Gene | What a cell with it can do |
+| --- | --- |
+| Propulsion | Push itself along its heading. It swims in water and crawls at half strength on ground it touches. The water gets the opposite push, and the work against drag is paid in energy. |
+| Steering | Turn its heading by left-minus-right differences it senses: dissolved fuel, light, the waste living cells give off, and remains. Each steering gene's own weights decide what attracts and what repels. It carries a crude chemical sense; receptors sharpen it. |
+| Engulfing | Swallow a touching cell from another body whose bulk is at most 80% of its own, taking the prey's fuel store too. A cell built for this takes up little dissolved fuel and harvests little light. |
+| Venom | Wound any other body it touches. Skin blunts it. |
+| Spines | Cut what an engulfer can take, and wound it for trying. |
+| Chemosynthesis | Make fuel from waste using mineral chemistry, with no light. The energy comes from the planet's interior and is tracked like sunlight. |
+
+Rules that hold for every weapon:
+
+- **A body does not attack itself.** Contact digestion used to eat a cell's own attached neighbours; it, engulfing and venom now act only between bodies.
+- **A cell is immune to the weapon it makes.** Without this, weapons also hit unattached relatives nearby, and in every run a silent copy of the gene outcompeted a working one.
+
+**Complex cells.** Each time an engulfer swallows a light-feeder there is a 1% chance per feeding tick that it keeps the prey alive inside instead. The host then harvests light through its captive regardless of its own membrane, pays a small upkeep for it, and passes it to its daughters. This is one event from the origin of eukaryotes, not nuclei or organelle biology.
+
+**Diets.** Every body is classified from what it has actually taken in. An eater takes a quarter or more of its fuel from other life: a herbivore if its prey mostly feed themselves, a carnivore if they are mostly eaters, an omnivore in between. Other bodies are light feeders, soup feeders (dissolved fuel), decomposers or vent feeders. Life shows the shares as a bar.
+
+**New powers.** Breed for Swimmers or Defences; "Movement" is now "Muscle". The Deep sets how strongly the planet's interior feeds vents (Ember sea starts at Active). The ladder has 18 steps, adding swimming, guided swimming, hunters, carnivores, complex cells, defences and reflex arcs (a sensing cell wired directly to a moving one).
+
+**Breeding was reworked** after it was found to stunt every world it touched (about 100 cells against 1,200 unbred):
+
+- A round now removes a share of the births since the last round, so the population keeps growing.
+- A removed cell returns to the world as dissolved fuel rather than as remains only a decomposer can use.
+- A low-scoring body larger than the remaining quota loses that many cells instead of escaping. Before, breeding for anything bred big bodies.
+- Carrying a silent gene earns almost nothing; expressing it does.
+
+### What was measured
+
+- **Swimmers spread on their own.** Guided swimmers seeded into 8% of an unbred world reached 42–48% of cells in 1,500 cycles. Bred for, motors were built by every cell within 2,500 cycles on two native seeds, and by 445 of about 500 cells by cycle 1,620 in the browser, where they visibly spread across the planet.
+- **Defences respond to breeding** in every run, reaching between a fifth and all of the cells depending on seed.
+- **Hunters stay rare.** In a seeded test an engulfer was touching another body about 8% of the time, and about one in five of those was small enough to swallow, which is roughly 5% of what a lone hunter needs to live on. Eaters were under 1% of cells in the browser run. Bodies pass the size test every time, so the workable order is bodies, then swimmers, then hunters. A dimmer star makes prey worth more.
+- **Carnivores** were not observed.
+- **A complex cell** arose unprompted in the browser quick-start run by about cycle 1,300.
+- **Reflex arcs** reached "gene appeared" and no further.
+
+### Speed
+
+Terrain under each cell is now sampled on every fourth mechanics substep instead of all twenty. A comparable native run (500–650 cells on a 128-unit sphere) went from 13.2 to 31.6 cycles per second. In the browser the same quick-start world read 13–23 cycles per second with 410–530 cells, on a busy machine; I could not show a clear browser gain from this change.
+
 ## Not solved
 
-- Coordinated walking, limbs and intelligence have still not been observed to evolve.
-- Flagella, horns and image-forming eyes are not modelled.
+- Hunters that live mainly on prey, carnivores, limbs, coordinated walking and anything resembling a brain have not been observed to evolve.
+- Horns and image-forming eyes are not modelled. Propulsion is one push per cell, not a visible flagellum.
+- A cell's heading is not carried round when its body rotates, so a body's swimmers can end up pulling against each other.
 - How much life a planet holds depends sharply on the star. On the default patchy-resource planet (128 units, 3,000 cycles, native runs) the population ended at 84 cells at 1×, about 220 at 3× and 4×, and passed 2,000 and was still growing at 6×. New planets therefore default to Bright (6×); with evenly spread resources the same star fills the cell limit.
 - The legacy labs are untouched.
 
 ## Checks
 
 ```sh
-cargo test --profile preview --manifest-path engine/Cargo.toml --lib   # 100 tests, 7 for steering
+cargo test --profile preview --manifest-path engine/Cargo.toml --lib   # 110 tests
+npm run check:steering   # the shipped WASM, through the same API the UI uses
 npm run check:scheduler && npm run check:nursery-ui && npm run check:brush-ui
 npm run build
 ```

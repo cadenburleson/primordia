@@ -17,7 +17,7 @@ import {WorldTools,worldToolsHTML,geneEditorHTML,brushToolbarHTML,type EditorMes
 import {progressHTML,updateProgress} from './progress';
 import {Ladder,ladderHTML,ladderHUD,milestoneHTML,type LadderAction} from './ladder';
 import {Powers,powersHTML} from './powers';
-import {CELL_TYPES,CHOSEN_COLOR,cellType,isChosen} from './sim/roles';
+import {CELL_TYPES,CHOSEN_COLOR,cellType,isChosen,isComplex} from './sim/roles';
 import {CELL_STRIDE} from './sim/types';
 
 const icons={Orbit,Dna,Sun,Droplets,Mountain,Thermometer,Zap,Play,Pause,RotateCcw,Plus,Focus,Layers,ArrowUpRight,Download,Upload,X,FlaskConical,Leaf,Settings2,CircleHelp,Volume2,VolumeX,ChevronRight,Activity,Bone,Microscope,Maximize2,Sprout,Globe};
@@ -62,7 +62,7 @@ document.querySelector('#app')!.innerHTML=`
       <section class="panel-section" id="habitat-setup"><div class="section-label"><span>01</span> HABITAT</div>
         <div class="world-options">
           <button class="world-option active" data-world="tidal" aria-pressed="true"><span class="planet tidal"></span><span><strong>Tidal garden</strong><small>Water-rich · abundant light</small><small class="habitat-effect">A gentler start for replication</small></span>${icon('chevron-right')}</button>
-          <button class="world-option" data-world="volcanic" aria-pressed="false"><span class="planet volcanic"></span><span><strong>Ember sea</strong><small>Mineral-rich · dim light</small><small class="habitat-effect">More building material, less light energy</small></span>${icon('chevron-right')}</button>
+          <button class="world-option" data-world="volcanic" aria-pressed="false"><span class="planet volcanic"></span><span><strong>Ember sea</strong><small>Mineral-rich · dim light · active vents</small><small class="habitat-effect">Less sunlight; life can learn to feed on vent chemistry</small></span>${icon('chevron-right')}</button>
           <button class="world-option" data-world="alien" aria-pressed="false"><span class="planet alien"></span><span><strong>Violet frontier</strong><small>Less solvent · moderate light</small><small class="habitat-effect">Cooler, with less water available</small></span>${icon('chevron-right')}</button>
         </div>
       </section>
@@ -87,7 +87,7 @@ document.querySelector('#app')!.innerHTML=`
       </div>
       <details class="panel-section engine-card"><summary>What can evolve · population limit</summary>
         <strong id="engine-name">Autonomous evolution</strong><p id="engine-description">Cell heredity, physical bodies and ecology run together in this world.</p>
-        <details class="setup-details" id="engine-capabilities"><summary>What can evolve here?</summary><ul class="engine-capabilities"><li>Division, mutation and attached cell colonies</li><li>Specialized material and tissue functions</li><li>Mineral support, contraction and joints</li><li>Sensing and adaptive cell signals</li><li>Digestion, fluid transport and gas exchange</li><li>Gametes, chromosome recombination and fusion</li></ul><p class="setup-note">None of it is handed out. Each ability starts as a mutation and is built from real material and energy. Use Powers to decide which inventions get a future.</p></details>
+        <details class="setup-details" id="engine-capabilities"><summary>What can evolve here?</summary><ul class="engine-capabilities"><li>Division, mutation and attached cell colonies</li><li>Specialized material and tissue functions</li><li>Mineral support, contraction and joints</li><li>Swimming, crawling and steering by sense</li><li>Engulfing prey, venom, spines and armour</li><li>Feeding on vent chemistry without light</li><li>Sensing and adaptive cell signals</li><li>Digestion, fluid transport and gas exchange</li><li>Gametes, chromosome recombination and fusion</li></ul><p class="setup-note">None of it is handed out. Each ability starts as a mutation and is built from real material and energy. Use Powers to decide which inventions get a future.</p></details>
         <details class="setup-details" id="run-options"><summary>View &amp; run settings</summary>
           <div class="capacity-row"><label for="run-cell-budget">Current cell limit</label><input id="run-cell-budget" type="number" min="100" max="64000" step="1" value="8192"></div>
           <button id="apply-budget" class="observe-button">Update current limit</button><p class="setup-note">More room means more cells and more chances to change, at a cost in speed.</p>
@@ -272,7 +272,7 @@ function scaleDescription(){updateSetupSummary();const size=Number($<HTMLSelectE
 
 for(const id of ['world-size','world-shape','initial-cells','cell-budget','founder-spread','resource-layout','setup-pace'])$(id).addEventListener('change',scaleDescription);
 for(const id of ['initial-cells','cell-budget'])$(id).addEventListener('input',updateSetupSummary);
-function createPhysical(){if(creatingWorld)return;const next=physicalSetup();clearCreationFeedback();if(!validSetup(next))return;setCreatingWorld(true);creationFeedback(`Creating your planet with ${fmt(next.initialCells!)} starting cells. Loading the engine and preparing the world…`);setupConfig={...next};speed=Number($<HTMLSelectElement>('setup-pace').value);$<HTMLSelectElement>('simulation-speed').value=String(speed);$<HTMLSelectElement>('run-priority').value=speed===0?'evolution':'live';send({type:'display-priority',mode:speed===0?'evolution':'live'});selectedId=null;autoselect=true;paused=false;view.select(null);specimen.update(null);$('loading').hidden=false;$('loading').classList.add('preparing-world');const star=Number($<HTMLSelectElement>('setup-star').value);send({type:'init',config:next,steering:star===1?[]:[{kind:'light',scale:star}]});send({type:'control',speed});updatePause();}
+function createPhysical(){if(creatingWorld)return;const next=physicalSetup();clearCreationFeedback();if(!validSetup(next))return;setCreatingWorld(true);creationFeedback(`Creating your planet with ${fmt(next.initialCells!)} starting cells. Loading the engine and preparing the world…`);setupConfig={...next};speed=Number($<HTMLSelectElement>('setup-pace').value);$<HTMLSelectElement>('simulation-speed').value=String(speed);$<HTMLSelectElement>('run-priority').value=speed===0?'evolution':'live';send({type:'display-priority',mode:speed===0?'evolution':'live'});selectedId=null;autoselect=true;paused=false;view.select(null);specimen.update(null);$('loading').hidden=false;$('loading').classList.add('preparing-world');const star=Number($<HTMLSelectElement>('setup-star').value);send({type:'init',config:next,steering:[...(star===1?[]:[{kind:'light' as const,scale:star}]),...(next.kind==='volcanic'?[{kind:'vents' as const,scale:4}]:[])]});send({type:'control',speed});updatePause();}
 $('create-physical').addEventListener('click',createPhysical);
 $('creation-panel').addEventListener('input',()=>{if(!creatingWorld)clearCreationFeedback();});
 $('fast-setup').addEventListener('click',()=>{setupConfig={...PRESETS.tidal,worldSize:128,initialCells:64,capacity:4096};syncSetupControls();$<HTMLSelectElement>('setup-pace').value='0';clearCreationFeedback();creationFeedback('Quick start ready: a small planet, 64 starting cells, room for 4,096. Create your planet to begin.');});
@@ -402,11 +402,11 @@ function physicsPanel(p:import('./sim/types').PhysicsView){
 function updateLegend(s:Snapshot){
   const host=$('cell-legend'),cells=s.cellData;
   if(!s.autonomous?.physics||!cells.length){host.hidden=true;return;}
-  const counts=new Array<number>(CELL_TYPES.length).fill(0);let chosen=0;
-  for(let p=5;p<cells.length;p+=CELL_STRIDE){const raw=cells[p],type=cellType(raw);if(type<counts.length)counts[type]++;if(isChosen(raw))chosen++;}
+  const counts=new Array<number>(CELL_TYPES.length).fill(0);let chosen=0,complex=0;
+  for(let p=5;p<cells.length;p+=CELL_STRIDE){const raw=cells[p],type=cellType(raw);if(type<counts.length)counts[type]++;if(isChosen(raw))chosen++;if(isComplex(raw))complex++;}
   const row=(color:string,name:string,count:number)=>`<span><i style="background:${color}"></i>${name}<b>${fmt(count)}</b></span>`;
   host.hidden=false;
-  host.innerHTML=`<span class="eyebrow">CELL TYPES ALIVE</span>${CELL_TYPES.map((t,i)=>counts[i]?row(i?t.color:'linear-gradient(135deg,#7fd6a0,#8f9be0)',t.name,counts[i]):'').join('')}${chosen?row(CHOSEN_COLOR,'Chosen lineage',chosen):''}`;
+  host.innerHTML=`<span class="eyebrow">CELL TYPES ALIVE</span>${CELL_TYPES.map((t,i)=>counts[i]?row(i?t.color:'linear-gradient(135deg,#7fd6a0,#8f9be0)',t.name,counts[i]):'').join('')}${complex?row('radial-gradient(circle,#ffffff 35%,#9fb7a7 40%)','Complex cells',complex):''}${chosen?row(CHOSEN_COLOR,'Chosen lineage',chosen):''}`;
 }
 function updateUI(s:Snapshot){
   const technicalOpen=$<HTMLDetailsElement>('technical-details').open;
@@ -481,7 +481,7 @@ document.querySelector('.lineage-heading > span')!.textContent=auto?'BODIES ALIV
     const traitDefs:[string,number][]=[['Light harvesting',GI.photo],['Chemosynthesis',GI.chemo],['Cell adhesion',GI.adhesion],['Contractile potential',GI.muscle],['Structural support',GI.skeleton],['Specialization',GI.specialization],['Cell digestion',GI.predation],['Resource sensing',GI.sensing],['Gene exchange',GI.sex]];
     if(technicalOpen&&!auto)$('traits').innerHTML=traitDefs.map(([label,index])=>`<div class="trait-row"><span>${label}</span><div><b style="width:${Math.round(o.genes[index]*100)}%"></b></div><small>${Math.round(o.genes[index]*100)}%</small></div>`).join('');
     const roles=o.body.nodes.some(n=>n.role===0)||o.cells===1?['Metabolic']:[];if(o.body.nodes.some(n=>n.role===1))roles.push('Support tissue');if(o.body.links.some(l=>l.kind===2)||o.body.joints.some(j=>j.enabled&&j.work>0))roles.push('Contractile tissue');if(o.body.nodes.some(n=>n.role===3))roles.push('Sensory');if(o.body.nodes.some(n=>n.role===4))roles.push('Digestive tissue');if(o.body.nodes.some(n=>n.role===5))roles.push('Reproductive tissue');if(o.genes[GI.sex]>.5)roles.push('Gene exchange');if(o.cells>1&&o.genes[GI.predation]>.02)roles.push('Cell ingestion');
-    if(auto?.physics){roles.length=0;for(const role of new Set(o.body.nodes.map(n=>cellType(n.role))))roles.push(CELL_TYPES[role]?.name??CELL_TYPES[0].name);if(o.body.nodes.some(n=>isChosen(n.role)))roles.push('Chosen lineage');}
+    if(auto?.physics){roles.length=0;for(const role of new Set(o.body.nodes.map(n=>cellType(n.role))))roles.push(CELL_TYPES[role]?.name??CELL_TYPES[0].name);if(o.body.nodes.some(n=>isComplex(n.role)))roles.push('Complex cells');if(o.body.nodes.some(n=>isChosen(n.role)))roles.push('Chosen lineage');}
     $('roles').innerHTML=roles.map(r=>`<span>${r}</span>`).join('');
     const support=o.body.links.filter(l=>l.kind===1).length,motors=o.body.links.filter(l=>l.kind===2).length;
     if(technicalOpen)$('body-mechanics').innerHTML=o.body.nodes.length||competition?`<span class="eyebrow">LIVE BODY MECHANICS</span><div><span>${o.body.joints.length?'Support links / linear motors':'Support / motor links'}</span><strong>${support} / ${motors}</strong></div><div><span>Ground contacts</span><strong>${o.body.contacts} cells</strong></div><div><span>Foot contact transitions</span><strong>${o.body.steps}</strong></div><div><span>Contraction work</span><strong>${o.body.work.toFixed(2)}</strong></div>${competition?`<div><span>Independent offspring</span><strong>${fmt(o.offspring)}</strong></div><div><span>Parents</span><strong>${o.parent?`#${o.parent}`:'Supplied founder'}${o.mate?` + #${o.mate}`:''}</strong></div>`:''}${!lab?`<div><span>Cells consumed</span><strong>${fmt(o.meals)}</strong></div><div><span>Digestion</span><strong>${o.feedingCooldown>0?`${o.feedingCooldown.toFixed(1)} cycles`:'Ready'}</strong></div>`:''}<small>Contacts, strain and joint flexion are measured from the body as it moves.</small>`:'';

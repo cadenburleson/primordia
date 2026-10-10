@@ -162,7 +162,7 @@ impl Specimen {
                 }
             }
         }
-        serde_json::json!({"name":self.name,"cells":self.cells.len(),"generation":self.cells.iter().map(|c|c.generation).max().unwrap_or(0),"genomes":genomes,"joints":self.joints.len(),"bonds":self.bonds.len(),"synapses":self.synapses.len(),"sourceBody":self.source_body,"sourceSeed":self.source_seed,"cycle":self.captured_cycle,"genes":genes.to_vec(),"functions":functions.to_vec(),"shape":self.cells.iter().take(128).map(|c|[c.p.x,c.p.y,c.p.z,c.radius()]).collect::<Vec<_>>()})
+        serde_json::json!({"name":self.name,"cells":self.cells.len(),"generation":self.cells.iter().map(|c|c.generation).max().unwrap_or(0),"genomes":genomes,"joints":self.joints.len(),"bonds":self.bonds.len(),"synapses":self.synapses.len(),"sourceBody":self.source_body,"sourceSeed":self.source_seed,"cycle":self.captured_cycle,"genes":genes.to_vec(),"functions":functions.as_slice().to_vec(),"shape":self.cells.iter().take(128).map(|c|[c.p.x,c.p.y,c.p.z,c.radius()]).collect::<Vec<_>>()})
     }
 }
 pub fn inspect(json: &str) -> Result<String, String> {

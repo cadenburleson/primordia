@@ -5,12 +5,12 @@ import { habitatY, noise } from '../sim/random';
 import { STRIDE, CELL_STRIDE, LINK_STRIDE, JOINT_STRIDE, MAX_BODY_CELLS, type Snapshot, type WorldConfig } from '../sim/types';
 import {geometry,ground,point,position,coordinates,sample} from '../sim/geometry';
 import {jointGeometry} from './joints';
-import {CELL_TYPES,CHOSEN_COLOR,cellType,isChosen} from '../sim/roles';
+import {CELL_TYPES,CHOSEN_COLOR,cellType,isChosen,isComplex} from '../sim/roles';
 import {resourceValues,resourceRGB,type ResourceLayer} from '../sim/resource-view';
 
 const MAX_CELLS = 65000;
 const temp = new THREE.Object3D(), color = new THREE.Color();
-const chosenColor=new THREE.Color(CHOSEN_COLOR),injuryColor=new THREE.Color('#653e48'),mineralColor=new THREE.Color('#b7c9bd'),snowColor=new THREE.Color('#e5ece1');
+const chosenColor=new THREE.Color(CHOSEN_COLOR),complexColor=new THREE.Color('#ffffff'),injuryColor=new THREE.Color('#653e48'),mineralColor=new THREE.Color('#b7c9bd'),snowColor=new THREE.Color('#e5ece1');
 export function bodyOffset(cell: number, count: number, shape: number, branching: number): THREE.Vector3 {
   if (count === 1) return new THREE.Vector3();
   if (shape < .34) {
@@ -305,10 +305,10 @@ export class WorldView {
       const displayed=snapshot.autonomous?actual:detail?Math.min(actual,MAX_BODY_CELLS):Math.min(actual,6),start=starts[i];
       quat.setFromAxisAngle(axis,-heading);
       for(let c=0;c<displayed&&count<MAX_CELLS;c++){
-        const isPhysical=start>=0&&c<sizes[i];let role=0,health=1,chosen=false;
+        const isPhysical=start>=0&&c<sizes[i];let role=0,health=1,chosen=false,complex=false;
         const r=isPhysical?physical[(start+c)*CELL_STRIDE+4]:.25+shape*.10;
         if(isPhysical){
-          const p=(start+c)*CELL_STRIDE;role=cellType(physical[p+5]);chosen=isChosen(physical[p+5]);health=physical[p+7];
+          const p=(start+c)*CELL_STRIDE;role=cellType(physical[p+5]);chosen=isChosen(physical[p+5]);complex=isComplex(physical[p+5]);health=physical[p+7];
           temp.position.set(physical[p+1],physical[p+2],physical[p+3]);
           nodeKeys[start+c]=count;
         }else{
@@ -317,7 +317,7 @@ export class WorldView {
         }
         if(snapshot.ids[i]===this.selectedId){this.selectedBounds.box.expandByPoint(temp.position);selectedRadius=Math.max(selectedRadius,r);}
         color.setHSL(.30+pigment*.42,.35+chemo*.3,.48+photo*.16);
-        if(materialTypes){if(role>0&&role<CELL_TYPES.length)color.set(CELL_TYPES[role].color);if(chosen)color.lerp(chosenColor,.5);}
+        if(materialTypes){if(role>0&&role<CELL_TYPES.length)color.set(CELL_TYPES[role].color);if(complex)color.lerp(complexColor,.3);if(chosen)color.lerp(chosenColor,.5);}
         else{if(role===1)color.set('#d8e5c4');if(role===2)color.set('#d88e72');if(role===3)color.set('#83c7d1');if(role===4)color.set('#ddb76b');if(role===5)color.set('#b5a2d9');}
         color.lerp(injuryColor,(1-health)*.8);
         this.cells.setColorAt(count,color);this.overviewPositions.setXYZ(count,temp.position.x,temp.position.y,temp.position.z);

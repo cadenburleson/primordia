@@ -99,7 +99,7 @@ self.onmessage = (event: MessageEvent<Command>) => {
               next.start_physical();
               // A new nursery inherits the planet's star, oceans and pace of change.
               const dials=meta.autonomous.steering;
-              if(dials)for(const action of [{kind:'light',scale:dials.light},{kind:'mixing',scale:dials.mixing},{kind:'mutation',scale:dials.mutation}])next.steer(JSON.stringify(action));
+              if(dials)for(const action of [{kind:'light',scale:dials.light},{kind:'vents',scale:dials.vents},{kind:'mixing',scale:dials.mixing},{kind:'mutation',scale:dials.mutation}])next.steer(JSON.stringify(action));
             }
           }catch(error){next.free();throw error;}
           nursery.begin(backup,meta.config.name);world.free();world=next;speed=0;displayPriority='evolution';paused=false;

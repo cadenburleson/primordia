@@ -13,9 +13,9 @@ function inspect(w){
 }
 for(const seed of [8042,12019]){
  const w=new World(JSON.stringify({...config,seed}));w.start_physical();
- const initial=JSON.parse(w.save());assert.ok(initial.autonomous.cells.every(c=>c.genome.genes.length===4&&c.material.proteins.length===32&&c.material.proteins.slice(16).every(x=>x===0)&&!c.lifecycle.homolog));
+ const initial=JSON.parse(w.save());assert.ok(initial.autonomous.cells.every(c=>c.genome.genes.length===4&&c.material.proteins.length===38&&c.material.proteins.slice(16).every(x=>x===0)&&!c.lifecycle.homolog));
  for(let i=0;i<8;i++){w.step(40);inspect(w);}
- const m=inspect(w);assert.equal(m.autonomous.actions.length,32);assert.ok(m.autonomous.divisions>0);
+ const m=inspect(w);assert.equal(m.autonomous.actions.length,38);assert.ok(m.autonomous.divisions>0);
  const saved=w.save(),copy=new World(JSON.stringify(config));
  if(seed===12019)await writeFile(new URL('../examples/ordinary-development-12019.json',import.meta.url),saved+'\n');
  copy.load(saved);assert.equal(copy.save(),saved);w.step(4);copy.step(4);assert.equal(w.save(),copy.save());
@@ -36,7 +36,7 @@ const result=inspect(assay);assert.ok(result.autonomous.development.zygotes>0,'c
 const save=assay.save();await writeFile(new URL('../examples/controlled-reproduction.json',import.meta.url),save+'\n');const copy=new World(JSON.stringify(config));copy.load(save);assay.step(4);copy.step(4);assert.equal(assay.save(),copy.save());
 const cell=JSON.parse(save).autonomous.cells.find(c=>c.lifecycle.homolog);assert.ok(cell.lifecycle.mate>0);assert.equal(cell.lifecycle.depth,0);
 assert.ok(cell.lifecycle.homolog.genes.some(g=>g.action===4));
-const broken=JSON.parse(save);broken.autonomous.cells.find(c=>c.lifecycle.homolog).lifecycle.homolog.genes[0].action=32;assert.throws(()=>copy.load(JSON.stringify(broken)));
+const broken=JSON.parse(save);broken.autonomous.cells.find(c=>c.lifecycle.homolog).lifecycle.homolog.genes[0].action=38;assert.throws(()=>copy.load(JSON.stringify(broken)));
 results.push({kind:'supplied mechanism fixture',cycles:result.stats.time,development:result.autonomous.development});console.log(JSON.stringify(results.at(-1)));
 copy.free();
 // Follow the fertilized cell through real paid division in the shared engine.
@@ -49,7 +49,7 @@ assay.free();
 // Old same-world snapshots preserve actual molecules and gene lists, padding zeros.
 const old=JSON.parse(await readFile(new URL('../examples/natural-ecosystem-8042.json',import.meta.url),'utf8'));
 const migrated=new World(JSON.stringify(config));migrated.load(JSON.stringify(old));const state=JSON.parse(migrated.save());
-state.autonomous.cells.forEach((c,i)=>{assert.deepEqual(c.material.proteins.slice(0,old.autonomous.cells[i].material.proteins.length),old.autonomous.cells[i].material.proteins);assert.ok(c.material.proteins.slice(16).every(x=>x===0));assert.equal(c.genome.genes.length,old.autonomous.cells[i].genome.genes.length);assert.ok(c.genome.genes.every(g=>g.promoter.length===28));assert.equal(c.lifecycle.phase,'somatic');assert.equal(c.lifecycle.homolog,null);});
+state.autonomous.cells.forEach((c,i)=>{assert.deepEqual(c.material.proteins.slice(0,old.autonomous.cells[i].material.proteins.length),old.autonomous.cells[i].material.proteins);assert.ok(c.material.proteins.slice(16).every(x=>x===0));assert.equal(c.genome.genes.length,old.autonomous.cells[i].genome.genes.length);assert.ok(c.genome.genes.every(g=>g.promoter.length===32));assert.equal(c.lifecycle.phase,'somatic');assert.equal(c.lifecycle.homolog,null);});
 assert.equal(state.autonomous.physical.development.zygotes,0);migrated.step(4);inspect(migrated);migrated.free();
 await writeFile(new URL('../docs/development-results.json',import.meta.url),JSON.stringify({protocol:'Two ordinary-founder populations, then a clearly supplied physical-contact fertilization fixture. Checks conserve modeled stores, validate buffers, import old inventories and reproduce exact saved continuation. No organ, intelligence or spontaneous sexual-reproduction outcome is required.',results},null,2)+'\n');
 console.log('Development WASM integration passed. Supplied mechanism fixtures are separate from evolutionary observations.');

@@ -10,15 +10,23 @@ export const RUNGS:Record<string,RungCopy>={
   bodies:{name:'Multicellular bodies',blurb:'Two dozen cells or more holding together as one body.',hint:'Breed for bigger bodies.',goal:'bodies'},
   tissues:{name:'Specialised tissues',blurb:'Cells in one body take on different jobs.',hint:'Breed for bigger bodies: mixed tissues score higher.',goal:'bodies'},
   senses:{name:'Senses',blurb:'Cells that detect light, touch and chemistry.',hint:'Breed for senses.',goal:'senses'},
-  muscle:{name:'Muscle',blurb:'Contractile fibres that pull on their neighbours.',hint:'Breed for movement.',goal:'movement'},
+  swimming:{name:'Swimming',blurb:'Cells with a motor that pushes them through water, or crawls them over ground.',hint:'Breed for swimmers.',goal:'swimming'},
+  steering:{name:'Guided swimming',blurb:'Swimmers that turn toward food, light or the scent of other life.',hint:'Breed for swimmers: steering scores higher.',goal:'swimming'},
+  muscle:{name:'Muscle',blurb:'Contractile fibres that pull on their neighbours.',hint:'Breed for muscle. It only counts inside bodies.',goal:'movement'},
   skeleton:{name:'Skeleton',blurb:'Mineral laid down as stiff support.',hint:'Breed for skeleton. Mineral-rich worlds help.',goal:'support'},
+  hunters:{name:'Hunters',blurb:'Bodies that get a quarter or more of their fuel by eating other life. Those that eat light-feeders are herbivores.',hint:'Breed for hunters. Big, mobile bodies catch far more than lone cells.',goal:'hunting'},
+  carnivores:{name:'Carnivores',blurb:'Hunters whose prey are mostly other hunters: a second link in the food chain.',hint:'Needs herbivores in numbers first. Keep breeding for hunters.',goal:'hunting'},
+  complex:{name:'Complex cells',blurb:'A hunter swallowed a light-feeder and kept it alive inside. On Earth that one event made eukaryotes: every plant, animal and fungus.',hint:'Breed for hunters. Each swallowed light-feeder has a small chance of being kept.',goal:'hunting'},
+  defences:{name:'Defences',blurb:'Skin, armour, spines and venom that make a cell hard to eat.',hint:'Breed for defences.',goal:'defence'},
   nerves:{name:'Nerve nets',blurb:'Cells wired together, passing signals body-wide.',hint:'Breed for senses once bodies exist.',goal:'senses'},
-  movement:{name:'Powered movement',blurb:'Bodies that spend energy to move themselves.',hint:'Breed for movement.',goal:'movement'},
-  organs:{name:'Organs',blurb:'Bodies running four or more tissues at once: guts, pumps, gas exchange.',hint:'Breed for hunters or bigger bodies.',goal:'hunting'},
+  movement:{name:'Powered movement',blurb:'Bodies that spend energy to move themselves.',hint:'Breed for swimmers or muscle.',goal:'swimming'},
+  reflexes:{name:'Reflex arcs',blurb:'A sensing cell wired straight to a moving one: the first step toward a brain.',hint:'Breed for senses in bodies that already move.',goal:'senses'},
+  organs:{name:'Organs',blurb:'Bodies running four or more tissues at once: guts, pumps, gas exchange.',hint:'Breed for bigger bodies.',goal:'bodies'},
   sex:{name:'Sexual reproduction',blurb:'Two parents mix their genes in one offspring.',hint:'Raise the pace of change and keep lineages close together.'}
 };
 const STAGES=['Not yet','Gene appeared','First working cells','Established'] as const;
 const MARKS=['○','◔','◑','●'];
+const DIETS=[{name:'Light feeders',color:'#e8cf6a'},{name:'Soup feeders',color:'#6fb8a8'},{name:'Decomposers',color:'#a08a6c'},{name:'Vent feeders',color:'#c98f5a'},{name:'Herbivores',color:'#8fd15a'},{name:'Omnivores',color:'#f08a4b'},{name:'Carnivores',color:'#d6249f'}];
 
 export type LadderAction={kind:'steer';action:SteerAction;note:string}|{kind:'powers'};
 
@@ -44,12 +52,12 @@ export function diagnose(s:Snapshot,recent:{births:number;starved:number}|null=n
 }
 
 export const ladderHUD=`<span class="eyebrow" id="hud-eyebrow">LIFE HAS REACHED</span><strong id="guide-hint-title">A waiting world</strong><span id="guide-hint-detail">Create a planet to begin.</span><span class="hud-bar" aria-hidden="true"><b id="hud-progress"></b></span>`;
-export const ladderHTML=`<section class="ascent" aria-label="Life's ascent"><div class="ascent-head"><span class="eyebrow">LIFE’S ASCENT</span><span id="ascent-summary"></span></div><article id="ascent-now" class="ascent-now" hidden><span class="eyebrow">HOLDING LIFE BACK</span><h3 id="ascent-now-title"></h3><p id="ascent-now-detail"></p><button id="ascent-now-action" class="primary-button"></button></article><ol id="ascent-rungs" class="ascent-rungs"></ol><p class="setup-note">Every step is measured from living cells: which genes they carry and which materials they have actually built. Nothing is awarded.</p></section>`;
+export const ladderHTML=`<section class="ascent" aria-label="Life's ascent"><div class="ascent-head"><span class="eyebrow">LIFE’S ASCENT</span><span id="ascent-summary"></span></div><article id="ascent-now" class="ascent-now" hidden><span class="eyebrow">HOLDING LIFE BACK</span><h3 id="ascent-now-title"></h3><p id="ascent-now-detail"></p><button id="ascent-now-action" class="primary-button"></button></article><div id="diet" class="diet" hidden><span class="eyebrow">HOW LIFE FEEDS</span><div id="diet-bar" class="diet-track" role="img"></div><div id="diet-key" class="diet-legend"></div></div><ol id="ascent-rungs" class="ascent-rungs"></ol><p class="setup-note">Every step is measured from living cells: which genes they carry and which materials they have actually built. Nothing is awarded.</p></section>`;
 export const milestoneHTML=`<div id="milestone" class="milestone" role="status" aria-live="polite" hidden><span class="eyebrow" id="milestone-eyebrow"></span><strong id="milestone-title"></strong><span id="milestone-detail"></span></div>`;
 
 export class Ladder {
   private world='';private seen=new Set<string>();private queue:{eyebrow:string;title:string;detail:string}[]=[];private showing=false;
-  private advice:ReturnType<typeof diagnose>=null;private signature='';
+  private advice:ReturnType<typeof diagnose>=null;private signature='';private dietSignature='';
   private anchor={time:0,births:0,starved:0};private recent:{births:number;starved:number}|null=null;
   constructor(private act:(action:LadderAction)=>void){
     $('ascent-now-action').onclick=()=>{if(this.advice)this.act(this.advice.action);};
@@ -57,7 +65,7 @@ export class Ladder {
   }
   update(s:Snapshot|null){
     const st=s?.autonomous?.steering;
-    if(!s||!st){$('hud-eyebrow').textContent='YOUR WORLD';$('guide-hint-title').textContent=s?'Outside the main world':'A waiting world';$('guide-hint-detail').textContent=s?'Return to your planet to follow life’s ascent.':'Create a planet to begin.';$('hud-progress').style.width='0';$('ascent-rungs').innerHTML='';$('ascent-summary').textContent='';$('ascent-now').hidden=true;this.signature='';return;}
+    if(!s||!st){$('hud-eyebrow').textContent='YOUR WORLD';$('guide-hint-title').textContent=s?'Outside the main world':'A waiting world';$('guide-hint-detail').textContent=s?'Return to your planet to follow life’s ascent.':'Create a planet to begin.';$('hud-progress').style.width='0';$('ascent-rungs').innerHTML='';$('ascent-summary').textContent='';$('ascent-now').hidden=true;$('diet').hidden=true;this.signature='';this.dietSignature='';return;}
     this.announce(s);
     const {era,next}=standing(st.ladder.filter(r=>Object.hasOwn(RUNGS,r.key))),extinct=!s.stats.cells;
     $('hud-eyebrow').textContent=extinct?'YOUR WORLD':'LIFE HAS REACHED';
@@ -66,6 +74,7 @@ export class Ladder {
     $('hud-progress').style.width=`${next?Math.round(next.progress*100):100}%`;
     const established=st.ladder.filter(r=>r.stage===3).length;
     $('ascent-summary').textContent=`${established} of ${st.ladder.length} established`;
+    this.feeding(st.diet??[]);
     // Compare births with starvation over a rolling window of at least 30 cycles.
     const t=s.stats.time,now={time:t,births:s.stats.births,starved:st.losses[0]};
     if(t<this.anchor.time||this.anchor.time===0&&this.anchor.births===0){this.anchor=now;this.recent=null;}
@@ -82,6 +91,15 @@ export class Ladder {
       const breeding=c.goal&&st.goal===c.goal;
       return `<li class="rung stage-${r.stage}${isNext?' next':''}"><span class="rung-mark" aria-hidden="true">${MARKS[r.stage]}</span><div><div class="rung-top"><strong>${c.name}</strong><em>${STAGES[r.stage]}</em></div>${isNext||r.stage===2?`<p>${c.blurb}</p>`:''}${r.stage<3?`<span class="rung-bar"><b style="width:${Math.round(r.progress*100)}%"></b></span>`:''}${facts?`<small>${facts}</small>`:''}${isNext&&r.key!=='cells'?(c.goal?`<button data-breed="${c.goal}" data-rung="${r.key}" ${breeding?'disabled':''}>${breeding?'Breeding for this now':c.hint.replace(/\.$/,'')} <span>↗</span></button>`:`<small class="rung-hint">${c.hint}</small>`):''}</div></li>`;
     }).join('');
+  }
+  /** Share of living cells by what their body mostly eats. */
+  private feeding(diet:number[]){
+    const total=diet.reduce((a,b)=>a+b,0),host=$('diet');host.hidden=!total;if(!total)return;
+    const rows=DIETS.map((d,i)=>({...d,share:(diet[i]??0)/total})).filter(d=>d.share>0);
+    const signature=rows.map(d=>`${d.name}${Math.round(d.share*200)}`).join();if(signature===this.dietSignature)return;this.dietSignature=signature;
+    $('diet-bar').setAttribute('aria-label',rows.map(d=>`${d.name} ${pct(d.share)}`).join(', '));
+    $('diet-bar').innerHTML=rows.map(d=>`<span style="flex:${d.share};background:${d.color}" title="${d.name}: ${pct(d.share)}"></span>`).join('');
+    $('diet-key').innerHTML=rows.map(d=>`<span><i style="background:${d.color}"></i>${d.name} <b>${pct(d.share)}</b></span>`).join('');
   }
   /** Celebrate each step the first time this world reaches it. */
   private announce(s:Snapshot){

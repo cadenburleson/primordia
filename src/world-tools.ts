@@ -69,7 +69,7 @@ export class WorldTools {
     $('edit-organism').onclick=()=>this.openEditor();
     $('close-gene-editor').onclick=()=>$<HTMLDialogElement>('gene-editor').close();
     $('edit-cell').onchange=()=>this.chooseCell();
-    $('add-gene').onclick=()=>{if(!this.readGenes())return;if(this.genes.length>=48){this.toast('A chromosome supports up to 48 genes.');return;}this.genes.push({action:Number($<HTMLSelectElement>('new-gene-action').value),bias:0,strength:.1,promoter:Array(28).fill(0)});this.renderGenes();};
+    $('add-gene').onclick=()=>{if(!this.readGenes())return;if(this.genes.length>=48){this.toast('A chromosome supports up to 48 genes.');return;}this.genes.push({action:Number($<HTMLSelectElement>('new-gene-action').value),bias:0,strength:.1,promoter:Array(32).fill(0)});this.renderGenes();};
     $('gene-rows').onclick=e=>{const b=(e.target as HTMLElement).closest<HTMLButtonElement>('[data-remove-gene]');if(b&&this.readGenes()){this.genes.splice(Number(b.dataset.removeGene),1);this.renderGenes();}};
     $('apply-genes').onclick=()=>{if(!this.readGenes())return;if(!this.genes.length){this.toast('Keep at least one gene in the chromosome.');return;}this.apply({kind:'genes',body:this.body,cell:Number($<HTMLSelectElement>('edit-cell').value),genes:this.genes});};
   }
@@ -154,7 +154,7 @@ $<HTMLFieldSetElement>('world-tool-controls').disabled=!enabled;$('world-tools-u
     for(const row of Array.from($('gene-rows').querySelectorAll<HTMLElement>('[data-gene-row]'))){
       const g=next[Number(row.dataset.geneRow)];g.bias=row.querySelector<HTMLInputElement>('[data-bias]')!.valueAsNumber;g.strength=row.querySelector<HTMLInputElement>('[data-strength]')!.valueAsNumber;
       const raw=row.querySelector<HTMLInputElement>('[data-promoter]')!.value.split(',');g.promoter=raw.map(v=>v.trim()===''?NaN:Number(v));
-      if(!Number.isFinite(g.bias)||Math.abs(g.bias)>2||!Number.isFinite(g.strength)||g.strength<0||g.strength>2||g.promoter.length!==28||g.promoter.some(v=>!Number.isFinite(v)||Math.abs(v)>2)){this.toast('Each gene needs bias −2…2, strength 0…2 and exactly 28 promoter weights −2…2.');return false;}
+      if(!Number.isFinite(g.bias)||Math.abs(g.bias)>2||!Number.isFinite(g.strength)||g.strength<0||g.strength>2||g.promoter.length!==32||g.promoter.some(v=>!Number.isFinite(v)||Math.abs(v)>2)){this.toast('Each gene needs bias −2…2, strength 0…2 and exactly 32 promoter weights −2…2.');return false;}
     }
     this.genes=next;return true;
   }

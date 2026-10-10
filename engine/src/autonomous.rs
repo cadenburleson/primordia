@@ -5,8 +5,13 @@ use body::{Cell as RenderCell, Link, V3};
 pub const MAX_CELLS: usize = 64000;
 pub const MAX_FOUNDERS: usize = 8192;
 pub const MAX_GENES: usize = 48;
-pub const ACTIONS: usize = 32;
-pub const INPUTS: usize = 28;
+pub const ACTIONS: usize = 38;
+pub const INPUTS: usize = 32;
+/// Vocabulary sizes of earlier engine versions, padded with zeros on load.
+const OLD_ACTIONS: [usize; 4] = [10, 16, 21, 32];
+const OLD_INPUTS: [usize; 4] = [8, 16, 20, 28];
+/// The last promoter inputs are signed left-minus-right senses.
+pub const LATERAL: usize = 4;
 // Accept precisely the old vocabulary or the new one. Padding is a migration,
 // not permission to silently truncate a malformed genome or material store.
 fn migrated_array<
@@ -16,11 +21,10 @@ fn migrated_array<
     const N: usize,
 >(
     d: D,
-    old: usize,
-    previous: usize,
+    earlier: &[usize],
 ) -> Result<[T; N], D::Error> {
     let values = Vec::<T>::deserialize(d)?;
-    if values.len() != old && values.len() != 16 && values.len() != previous && values.len() != N {
+    if values.len() != N && !earlier.contains(&values.len()) {
         return Err(serde::de::Error::custom(
             "Invalid cellular vocabulary length",
         ));
@@ -29,18 +33,25 @@ fn migrated_array<
     result[..values.len()].copy_from_slice(&values);
     Ok(result)
 }
+/// serde implements arrays only up to 32 entries; the gene vocabulary is larger.
+pub(crate) fn as_list<S: serde::Serializer, T: Serialize, const N: usize>(
+    values: &[T; N],
+    s: S,
+) -> Result<S::Ok, S::Error> {
+    values.as_slice().serialize(s)
+}
 fn promoter_array<'de, D: serde::Deserializer<'de>>(d: D) -> Result<[f32; INPUTS], D::Error> {
-    migrated_array(d, 8, 20)
+    migrated_array(d, &OLD_INPUTS)
 }
 pub(crate) fn expression_array<'de, D: serde::Deserializer<'de>>(
     d: D,
 ) -> Result<[f32; ACTIONS], D::Error> {
-    migrated_array(d, 10, 21)
+    migrated_array(d, &OLD_ACTIONS)
 }
 pub(crate) fn protein_array<'de, D: serde::Deserializer<'de>>(
     d: D,
 ) -> Result<[f64; ACTIONS], D::Error> {
-    migrated_array(d, 10, 21)
+    migrated_array(d, &OLD_ACTIONS)
 }
 // Physical/chemical primitives, not tissue identities.
 pub const ACTION_NAMES: [&str; ACTIONS] = [
@@ -76,6 +87,12 @@ pub const ACTION_NAMES: [&str; ACTIONS] = [
     "Mineral remodeling",
     "Polymer assembly",
     "Membrane lysis",
+    "Propulsion",
+    "Steering",
+    "Engulfing",
+    "Venom",
+    "Spines",
+    "Chemosynthesis",
 ];
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
 pub struct Gene {
@@ -111,7 +128,7 @@ pub struct Cell {
     pub age: f32,
     pub cooldown: f32,
     pub chemicals: [f32; 2],
-    #[serde(deserialize_with = "expression_array")]
+    #[serde(deserialize_with = "expression_array", serialize_with = "as_list")]
     pub expression: [f32; ACTIONS],
     pub heading: f32,
 }
@@ -231,6 +248,23 @@ impl Genome {
             *x = x.clamp(0., 1.);
         }
         out
+    }
+    /// Signed turn command: each steering gene weighs the left-minus-right
+    /// senses with its own promoter weights. Positive turns left.
+    pub fn steer(&self, lateral: [f32; LATERAL]) -> f32 {
+        self.genes
+            .iter()
+            .filter(|g| g.action == crate::physical::STEER)
+            .map(|g| {
+                g.strength
+                    * g.promoter[INPUTS - LATERAL..]
+                        .iter()
+                        .zip(lateral)
+                        .map(|(w, x)| w * x)
+                        .sum::<f32>()
+            })
+            .sum::<f32>()
+            .clamp(-1., 1.)
     }
     pub(crate) fn valid(&self) -> bool {
         self.id > 0
@@ -866,8 +900,11 @@ impl Evolution {
                         rest: c.p,
                         radius: c.radius(),
                         role: if c.material.is_some() {
-                            // Bit 6 marks the player's chosen lineage for display.
-                            c.material_role() | if c.state.favoured { 64 } else { 0 }
+                            // Display flags: bit 6 the player's chosen lineage,
+                            // bit 5 a complex cell carrying a symbiont.
+                            c.material_role()
+                                | if c.state.favoured { 64 } else { 0 }
+                                | if c.state.symbiont > 0. { 32 } else { 0 }
                         } else if c.activity(4) > 0.1 {
                             2
                         } else if c
@@ -1008,7 +1045,7 @@ impl Evolution {
                 .map_or(0, |c| c.lifecycle.mate)
                 .into();
         }
-        let programs:Vec<_>=selected_cells.iter().take(64).map(|&i|{let c=&self.cells[i];serde_json::json!({"id":c.id,"parent":c.parent,"genome":c.genome.id,"generation":c.generation,"genes":c.genome.genes,"energy":c.energy,"chemicals":c.chemicals,"expression":c.expression,"material":c.material,"state":c.state,"lifecycle":c.lifecycle})}).collect();
+        let programs:Vec<_>=selected_cells.iter().take(64).map(|&i|{let c=&self.cells[i];serde_json::json!({"id":c.id,"parent":c.parent,"genome":c.genome.id,"generation":c.generation,"genes":c.genome.genes,"energy":c.energy,"chemicals":c.chemicals,"expression":c.expression.as_slice(),"material":c.material,"state":c.state,"lifecycle":c.lifecycle})}).collect();
         if let Some(v) = &mut selected_value {
             v["programCells"] = serde_json::json!(programs);
             v["collectionSources"]=serde_json::json!(selected_cells.iter().flat_map(|&i|self.cells[i].collection_sources.iter()).collect::<BTreeSet<_>>());
@@ -1033,7 +1070,7 @@ impl Evolution {
         let expressed: Vec<_> = (0..ACTIONS)
             .map(|k| self.cells.iter().filter(|c| c.expression[k] > 0.1).count())
             .collect();
-        let mut metadata = serde_json::json!({"config":core.config,"lab":null,"study":false,"competition":null,"autonomous":{"actions":if self.physical.is_some(){crate::physical::SYNTHESIS_NAMES}else{ACTION_NAMES},"physics":self.physical.as_ref().map(|h|h.view(&self.cells)),"expressed":expressed,"divisions":self.divisions,"attachedDivisions":self.attached_divisions,"pointEdits":self.point_edits,"duplications":self.duplications,"deletions":self.deletions,"innovations":self.innovations,"exchanges":self.exchanges,"foodEnergy":self.food_energy,"motorWork":self.motor_work,"peakBody":self.peak_body,"peakGeneration":self.peak_generation,"genomeMin":gene_counts.iter().min().copied().unwrap_or(0),"genomeMax":gene_counts.iter().max().copied().unwrap_or(0),"genomes":genomes,"recent":self.history.iter().rev().take(8).collect::<Vec<_>>()},"selected":selected_value,"lineages":lineages.into_values().collect::<Vec<_>>(),"events":core.events,"history":core.history,"stats":{"time":core.time,"population":projections.len(),"cells":self.cells.len(),"colonies":projections.iter().filter(|o|o.cells>1).count(),"diversity":genomes,"generation":self.peak_generation,"births":self.divisions,"deaths":self.deaths,"mating":self.physical.as_ref().map_or(self.exchanges,|h|h.development.zygotes),"feedings":self.meals,"meanGenes":vec![0.;GENE_COUNT],"nutrient":core.field.iter().sum::<f32>()/core.field.len()as f32,"capped":self.cells.len()>=MAX_CELLS.min(core.config.capacity),"computeMs":0.,"cellBudget":MAX_CELLS.min(core.config.capacity),"cellBudgetReached":self.cells.len()>=MAX_CELLS.min(core.config.capacity),"regulated":projections.len(),"injured":self.cells.iter().filter(|c|c.state.injury>0.05).count(),"articulated":projections.iter().filter(|o|!o.body.joints.is_empty()).count(),"jointed":projections.iter().filter(|o|!o.body.joints.is_empty()).count(),"contractile":projections.iter().filter(|o|o.body.links.iter().any(|b|b.activation>0.01)).count()}});
+        let mut metadata = serde_json::json!({"config":core.config,"lab":null,"study":false,"competition":null,"autonomous":{"actions":if self.physical.is_some(){crate::physical::SYNTHESIS_NAMES.as_slice()}else{ACTION_NAMES.as_slice()},"physics":self.physical.as_ref().map(|h|h.view(&self.cells)),"expressed":expressed,"divisions":self.divisions,"attachedDivisions":self.attached_divisions,"pointEdits":self.point_edits,"duplications":self.duplications,"deletions":self.deletions,"innovations":self.innovations,"exchanges":self.exchanges,"foodEnergy":self.food_energy,"motorWork":self.motor_work,"peakBody":self.peak_body,"peakGeneration":self.peak_generation,"genomeMin":gene_counts.iter().min().copied().unwrap_or(0),"genomeMax":gene_counts.iter().max().copied().unwrap_or(0),"genomes":genomes,"recent":self.history.iter().rev().take(8).collect::<Vec<_>>()},"selected":selected_value,"lineages":lineages.into_values().collect::<Vec<_>>(),"events":core.events,"history":core.history,"stats":{"time":core.time,"population":projections.len(),"cells":self.cells.len(),"colonies":projections.iter().filter(|o|o.cells>1).count(),"diversity":genomes,"generation":self.peak_generation,"births":self.divisions,"deaths":self.deaths,"mating":self.physical.as_ref().map_or(self.exchanges,|h|h.development.zygotes),"feedings":self.meals,"meanGenes":vec![0.;GENE_COUNT],"nutrient":core.field.iter().sum::<f32>()/core.field.len()as f32,"capped":self.cells.len()>=MAX_CELLS.min(core.config.capacity),"computeMs":0.,"cellBudget":MAX_CELLS.min(core.config.capacity),"cellBudgetReached":self.cells.len()>=MAX_CELLS.min(core.config.capacity),"regulated":projections.len(),"injured":self.cells.iter().filter(|c|c.state.injury>0.05).count(),"articulated":projections.iter().filter(|o|!o.body.joints.is_empty()).count(),"jointed":projections.iter().filter(|o|!o.body.joints.is_empty()).count(),"contractile":projections.iter().filter(|o|o.body.links.iter().any(|b|b.activation>0.01)).count()}});
         metadata["autonomous"]["development"] = serde_json::json!(development);
         if let Some(h) = &self.physical {
             metadata["autonomous"]["systems"] = h.systems_view(self);

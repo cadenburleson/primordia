@@ -34,6 +34,16 @@ pub struct CellState {
     pub flux: crate::observations::Flux,
     /// Member of a lineage the player chose to favour; inherited at division.
     pub favoured: bool,
+    /// Signed steering command from the lateral senses; positive turns left.
+    pub turn: f32,
+    /// Whether the last tick's contacts and fluid let the cell push itself.
+    pub wet: f32,
+    /// Light-harvesting capacity of a cell swallowed and kept alive inside
+    /// this one. Inherited at division: the step that made complex cells.
+    pub symbiont: f32,
+    /// Removed by the player's selection: its body returns to the world as
+    /// fuel the survivors can use, rather than as remains.
+    pub culled: bool,
 }
 impl CellState {
     pub fn valid(&self) -> bool {
@@ -65,6 +75,12 @@ impl CellState {
             && (0.0..=1.).contains(&self.germline)
             && self.light_contrast.is_finite()
             && self.light_contrast.abs() <= 1.
+            && self.turn.is_finite()
+            && self.turn.abs() <= 1.
+            && self.wet.is_finite()
+            && (0.0..=1.).contains(&self.wet)
+            && self.symbiont.is_finite()
+            && (0.0..=1.).contains(&self.symbiont)
     }
 }
 #[derive(Clone, Debug, Default, Serialize, Deserialize)]
@@ -157,6 +173,11 @@ impl Cell {
             self.state.light_contrast * self.activity(crate::development::PHOTIC),
             self.state.germline,
             self.state.pressure_gradient,
+            // Left-minus-right senses, filled by the habitat where fields are known.
+            0.,
+            0.,
+            0.,
+            0.,
         ]
     }
     pub(crate) fn motor_signals(&self) -> [f32; 2] {
@@ -170,7 +191,16 @@ impl Cell {
     }
     pub(crate) fn material_role(&self) -> u8 {
         let Some(m) = &self.material else { return 0 };
-        if m.mineral / m.mass() > 0.025 {
+        use crate::physical::{CHEMO, ENGULF, PROPEL, SPINE, TOXIN};
+        if self.activity(ENGULF) > 0.25 {
+            15
+        } else if self.activity(TOXIN) > 0.25 {
+            13
+        } else if self.activity(SPINE) > 0.25 {
+            14
+        } else if self.activity(PROPEL) > 0.25 {
+            12
+        } else if m.mineral / m.mass() > 0.025 {
             1
         } else if self.activity(4) > 0.25 {
             2
@@ -196,6 +226,8 @@ impl Cell {
             10
         } else if m.body.matrix / m.organic() > 0.02 {
             11
+        } else if self.activity(CHEMO) > 0.25 {
+            16
         } else {
             0
         }

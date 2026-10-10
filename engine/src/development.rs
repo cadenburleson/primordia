@@ -380,6 +380,7 @@ impl Habitat {
             embryo.cooldown = 3.;
             embryo.state = physiology::CellState {
                 favoured: ca.state.favoured || cb.state.favoured,
+                symbiont: ca.state.symbiont.max(cb.state.symbiont),
                 ..Default::default()
             };
             embryo.chemicals = [0.; 2];

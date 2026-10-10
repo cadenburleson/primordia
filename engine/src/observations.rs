@@ -22,6 +22,22 @@ pub struct Flux {
     pub solute_transport: f64,
     pub matrix: f64,
     pub fibers: f64,
+    /// Fuel made from mineral chemistry at vents, without light.
+    pub chemosynthesis: f64,
+    /// Injury dealt to other bodies by venom or spines.
+    pub wounded: f64,
+    /// The part of `prey` taken from cells that were themselves eaters.
+    pub prey_animal: f64,
+}
+impl Flux {
+    /// Everything this cell has taken in as fuel, from any source.
+    pub fn intake(&self) -> f64 {
+        self.photosynthesis + self.fuel + self.absorbed + self.detritus + self.prey + self.chemosynthesis
+    }
+    /// A quarter or more of its fuel came from eating other life.
+    pub fn eater(&self) -> bool {
+        self.prey > 0.01 && self.prey >= 0.25 * self.intake()
+    }
 }
 impl Flux {
     pub fn add(&mut self, b: &Self) {
@@ -44,6 +60,9 @@ impl Flux {
         self.solute_transport += b.solute_transport;
         self.matrix += b.matrix;
         self.fibers += b.fibers;
+        self.chemosynthesis += b.chemosynthesis;
+        self.wounded += b.wounded;
+        self.prey_animal += b.prey_animal;
     }
     pub fn valid(&self) -> bool {
         [
@@ -66,6 +85,9 @@ impl Flux {
             self.solute_transport,
             self.matrix,
             self.fibers,
+            self.chemosynthesis,
+            self.wounded,
+            self.prey_animal,
         ]
         .iter()
         .all(|x| x.is_finite() && *x >= 0.)
@@ -151,7 +173,7 @@ impl Habitat {
         }
         center = center.mul(1. / group.len().max(1) as f32);
         let site = self.domain.locate(center);
-        serde_json::json!({"flux":flux,"stocks":stocks,"functions":functions,"centroid":center,"membership":signature.to_string(),"members":group.len(),"site":site,"ambientFlow":if let Some(flow)=&self.fluid.surface {flow.velocities[site]}else{let v=self.fluid.velocity(site);body::V3::new(v[0] as f32,0.,v[1] as f32)},"localResources":self.solutes[site].map(|v|v*2.56/self.domain.area(site))})
+        serde_json::json!({"flux":flux,"stocks":stocks,"functions":functions.as_slice(),"centroid":center,"membership":signature.to_string(),"members":group.len(),"site":site,"ambientFlow":if let Some(flow)=&self.fluid.surface {flow.velocities[site]}else{let v=self.fluid.velocity(site);body::V3::new(v[0] as f32,0.,v[1] as f32)},"localResources":self.solutes[site].map(|v|v*2.56/self.domain.area(site))})
     }
     /// Spatial resource differences are environmental forcing, not a trait reward.
     pub(crate) fn light_fraction(&self, site: usize) -> f64 {

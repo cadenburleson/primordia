@@ -169,3 +169,10 @@ html,body,#app { height:100%; overflow:hidden; }
 .milestone strong { font:27px/1.15 var(--serif); font-weight:400; color:#f1f5e6; }
 .milestone span:last-child { font-size:10px; color:#a9bfad; }
 @media (prefers-reduced-motion:reduce){ .milestone,.hud-bar b,.rung-bar b { transition:none; } }
+.diet { margin:0 0 14px; }
+.diet-track { display:flex; height:8px; margin:9px 0 8px; border-radius:4px; overflow:hidden; background:#c7dbad14; }
+.diet-track span { min-width:2px; }
+.diet-legend { display:flex; flex-wrap:wrap; gap:5px 12px; font-size:10px; color:#a5bfae; }
+.diet-legend span { display:flex; align-items:center; gap:6px; }
+.diet-legend i { width:8px; height:8px; border-radius:50%; }
+.diet-legend b { font-weight:400; color:#dce7d3; }

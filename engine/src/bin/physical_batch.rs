@@ -104,6 +104,19 @@ fn run() -> Result<(), String> {
     let seconds = start.elapsed().as_secs_f64();
     let e = world.autonomous.as_ref().unwrap();
     if !e.valid() {
+        // Keep the evidence: write the invalid state where asked, then fail.
+        if let Some(path) = &output {
+            let _ = fs::write(path, serde_json::to_string(&world).unwrap_or_default());
+        }
+        let h = e.physical.as_ref().unwrap();
+        eprintln!(
+            "invalid: balance {:?} · steering {} · ledger {} · stores {} · flux {}",
+            h.errors(&e.cells),
+            h.steering.valid(),
+            h.physiology.valid(),
+            e.cells.iter().all(|c| c.material.as_ref().is_some_and(|m| m.proteins.iter().all(|p| p.is_finite() && *p >= 0.) && m.biomass >= 0. && m.fuel >= 0.)),
+            e.cells.iter().all(|c| c.state.valid())
+        );
         return Err("Final simulation state failed validation".into());
     }
     println!(
