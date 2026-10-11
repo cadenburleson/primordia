@@ -14,7 +14,27 @@ let visible = true, snapshotDirty = false;
 let ecosystemBackup:string|null=null;
 let previousWorld:string|null=null;
 let editUndo:string|null=null,editUndoSelection=0;
-let brushStroke:{id:number;settings:string}|null=null;
+let brushStroke:{id:number;settings:string;placed:number}|null=null;
+/** The organism the life brush paints, registered once so strokes carry only points. */
+let lifeSource:{token:string;json:string;name:string}|null=null;
+/** Best score kept so far in each record slot of this world. */
+let records=new Map<string,number>(),recordWorld='',lastRecords=0;
+function keepChampions(){
+  if(!world||assessment.running||assessment.control)return;
+  const meta=JSON.parse(world.metadata(0)) as Snapshot;
+  if(!meta.autonomous?.physics||(meta.config.physicalAssay??'full')!=='full')return;
+  const key=`${meta.config.seed}/${meta.config.kind}/${nursery.active?'nursery':'planet'}`;
+  if(key!==recordWorld){recordWorld=key;records=new Map();}
+  for(const c of JSON.parse(world.champions()) as {slot:string;title:string;body:number;cells:number;score:number;note:string}[]){
+    // A record has to be beaten clearly, or the same body is copied again and again.
+    if(c.score<=(records.get(c.slot)??0)*1.1)continue;
+    try{
+      const json=world.capture_specimen(c.body,c.title),summary=JSON.parse(world.inspect_specimen(json));
+      records.set(c.slot,c.score);
+      postMessage({type:'champion',slot:c.slot,title:c.title,note:c.note,score:c.score,seed:meta.config.seed,time:meta.stats.time,json,summary});
+    }catch{/* the body died between the census and the copy */}
+  }
+}
 let checkpoint:string|null=null,checkpointSelection=0,assessmentDeadline:number|null=null;
 const assessment=new AssessmentRecorder();
 const nursery=new NurserySession();
@@ -65,16 +85,20 @@ self.onmessage = (event: MessageEvent<Command>) => {
             if(assessment.running||assessment.control||!meta.autonomous?.physics||(meta.config.physicalAssay??'full')!=='full'||meta.autonomous.observationControl)throw new Error('Return to the main cellular world before painting.');
             before=world.save();
           }else if(!brushStroke||brushStroke.id!==cmd.id||brushStroke.settings!==settings)throw new Error('Brush settings changed during the stroke.');
+          let placed=brushStroke?.placed??0;
           if(cmd.points.length){
             const [x,z]=cmd.points[0];
-            world.intervene(JSON.stringify({kind:'brush',...cmd.settings,x,z,points:cmd.points}));
+            if(cmd.settings.tool==='life'){
+              if(!lifeSource||lifeSource.token!==cmd.settings.life)throw new Error('Choose a creature to paint first.');
+              placed+=world.paint_life(lifeSource.json,Float32Array.from(cmd.points.flat()),cmd.settings.radius,Math.max(1,Math.round(cmd.settings.amount)));
+            }else world.intervene(JSON.stringify({kind:'brush',...cmd.settings,x,z,points:cmd.points}));
             if(before!==null){editUndo=before;editUndoSelection=selected;}
           }
           paused=true;checkpoint=null;assessmentDeadline=null;assessment.reset();clock.reset(performance.now());
-          brushStroke=cmd.end?null:{id:cmd.id,settings};
+          brushStroke=cmd.end?null:{id:cmd.id,settings,placed};
           // Render at most four previews per second; final state is always sent.
           if(cmd.end||performance.now()-lastPublish>250)publish();
-          postMessage({type:'brush-ack',id:cmd.id,done:cmd.end});
+          postMessage({type:'brush-ack',id:cmd.id,done:cmd.end,...(cmd.settings.tool==='life'&&cmd.end?{note:placed?`${placed.toLocaleString()} × ${lifeSource?.name??'organism'} released · Undo takes back the whole stroke.`:'No room there. Try open water or bare ground.'}:{})});
         } catch(error){
           brushStroke=null;paused=true;clock.reset(performance.now());
           postMessage({type:'brush-ack',id:cmd.id,done:true,error:String(error instanceof Error?error.message:error)});
@@ -99,7 +123,7 @@ self.onmessage = (event: MessageEvent<Command>) => {
               next.start_physical();
               // A new nursery inherits the planet's star, oceans and pace of change.
               const dials=meta.autonomous.steering;
-              if(dials)for(const action of [{kind:'light',scale:dials.light},{kind:'vents',scale:dials.vents},{kind:'mixing',scale:dials.mixing},{kind:'sharing',scale:dials.sharing??0},{kind:'seasons',depth:dials.seasonDepth??0,length:dials.seasonLength??400},{kind:'mutation',scale:dials.mutation}])next.steer(JSON.stringify(action));
+              if(dials)for(const action of [{kind:'light',scale:dials.light},{kind:'vents',scale:dials.vents},{kind:'mixing',scale:dials.mixing},{kind:'sharing',scale:dials.sharing??0},{kind:'mutation',scale:dials.mutation}])next.steer(JSON.stringify(action));
             }
           }catch(error){next.free();throw error;}
           nursery.begin(backup,meta.config.name);world.free();world=next;speed=0;displayPriority='evolution';paused=false;
@@ -127,11 +151,18 @@ self.onmessage = (event: MessageEvent<Command>) => {
         world=next;selected=0;paused=true;clock.reset(performance.now());postMessage({type:'loaded'});publish();schedulePump();return;
       }
       if(assessment.running&&['config','seed','pulse','cell-budget','specimen','editor','steer'].includes(cmd.type))throw new Error('Resource and population changes are disabled during a matched comparison.');
+      if(cmd.type==='life-source'){
+        if(!world)throw new Error('Create a world first.');
+        const json=cmd.species?world.species_specimen(cmd.species):cmd.json!;
+        const summary=JSON.parse(world.inspect_specimen(json)) as {name:string};
+        if(cmd.species&&cmd.sustain)world.steer(JSON.stringify({kind:'keep',species:cmd.species}));
+        lifeSource={token:cmd.token,json,name:summary.name};return;
+      }
       if(cmd.type==='steer'){
         if(!world)throw new Error('Create a world first.');
         if(assessment.running||assessment.control)throw new Error('Return to the checkpoint before steering evolution.');
         // Disasters can be undone from World → Undo; dials and breeding goals leave time running.
-        const destructive=cmd.action.kind==='meteor'||cmd.action.kind==='dying';
+        const destructive=cmd.action.kind==='meteor'||cmd.action.kind==='dying'||cmd.action.kind==='water';
         const before=destructive?world.save():null;
         const message=world.steer(JSON.stringify(cmd.action));
         if(before!==null){editUndo=before;editUndoSelection=selected;}
@@ -297,6 +328,7 @@ function pump() {
       }
     }
     if (steps) {computeMs = (performance.now() - start) / steps;snapshotDirty=true;}
+    if (steps && performance.now()-lastRecords>4000) {lastRecords=performance.now();keepChampions();}
   }
   if (world && visible && snapshotDirty && performance.now() - lastPublish > (displayPriority==='evolution' ? 2000 : speed === 0 ? 500 : 250)) {
     publish();

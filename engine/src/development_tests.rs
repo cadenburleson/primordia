@@ -24,7 +24,7 @@ fn fixture() -> (Core, Evolution, Habitat) {
     (core, e, h)
 }
 fn rebase(h: &mut Habitat, e: &Evolution) {
-    (h.initial_organic, h.initial_mineral, h.initial_energy) = h.totals(&e.cells);
+    h.rebase(&e.cells);
     h.initial_energy += h.heat + h.mechanical_input - h.photon_energy;
 }
 fn network_fixture() -> (Core, Evolution, Habitat) {

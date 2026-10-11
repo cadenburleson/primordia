@@ -6,6 +6,10 @@ export class World {
     [Symbol.dispose](): void;
     capture_specimen(selected: number, name: string): string;
     cell_data(): Float32Array;
+    /**
+     * The leading living body on each measure, as a JSON list.
+     */
+    champions(): string;
     configure(json: string): void;
     /**
      * Reuse the body projection already prepared for this display snapshot.
@@ -23,6 +27,10 @@ export class World {
     metadata(selected: number): string;
     constructor(json: string);
     observation_control(control: string): void;
+    /**
+     * Scatter copies of an organism around painted points; returns how many fitted.
+     */
+    paint_life(json: string, points: Float32Array, radius: number, per_point: number): number;
     place_specimen(json: string, x: number, z: number): number;
     pulse(): void;
     render_data(): Float32Array;
@@ -37,6 +45,10 @@ export class World {
     set_directional_sensing(enabled: boolean): void;
     set_motors_enabled(enabled: boolean): void;
     simulation_time(): number;
+    /**
+     * One founder of a starter species, as an organism snapshot.
+     */
+    species_specimen(species: string): string;
     start_autonomous(): void;
     start_joint_lab(): void;
     start_lab(): void;
@@ -58,6 +70,7 @@ export interface InitOutput {
     readonly __wbg_world_free: (a: number, b: number) => void;
     readonly world_capture_specimen: (a: number, b: number, c: number, d: number) => [number, number, number, number];
     readonly world_cell_data: (a: number) => [number, number];
+    readonly world_champions: (a: number) => [number, number];
     readonly world_configure: (a: number, b: number, c: number) => [number, number];
     readonly world_display_metadata: (a: number, b: number, c: number) => [number, number];
     readonly world_display_world: (a: number) => number;
@@ -72,6 +85,7 @@ export interface InitOutput {
     readonly world_metadata: (a: number, b: number) => [number, number];
     readonly world_new: (a: number, b: number) => [number, number, number];
     readonly world_observation_control: (a: number, b: number, c: number) => [number, number];
+    readonly world_paint_life: (a: number, b: number, c: number, d: number, e: number, f: number, g: number) => [number, number, number];
     readonly world_place_specimen: (a: number, b: number, c: number, d: number, e: number) => [number, number, number];
     readonly world_pulse: (a: number) => void;
     readonly world_render_data: (a: number) => [number, number];
@@ -83,6 +97,7 @@ export interface InitOutput {
     readonly world_set_directional_sensing: (a: number, b: number) => void;
     readonly world_set_motors_enabled: (a: number, b: number) => void;
     readonly world_simulation_time: (a: number) => number;
+    readonly world_species_specimen: (a: number, b: number, c: number) => [number, number, number, number];
     readonly world_start_autonomous: (a: number) => void;
     readonly world_start_joint_lab: (a: number) => void;
     readonly world_start_lab: (a: number) => void;

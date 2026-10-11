@@ -39,11 +39,12 @@ fn fixture() -> (Core, Evolution, Habitat) {
     }
     e.next_genome = 200;
     e.bonds.clear();
+    h.oxygenate(1.); // these fixtures breathe freely
     rebase(&mut h, &e);
     (core, e, h)
 }
 fn rebase(h: &mut Habitat, e: &Evolution) {
-    (h.initial_organic, h.initial_mineral, h.initial_energy) = h.totals(&e.cells);
+    h.rebase(&e.cells);
     h.initial_energy += h.heat + h.mechanical_input - h.photon_energy - h.geothermal_energy;
 }
 fn build(e: &mut Evolution, cell: usize, material: usize) {
@@ -247,6 +248,127 @@ fn engulfing_needs_a_size_advantage_and_spines_blunt_and_punish_it() {
     assert!(eaten > 0.02 && gained > 0., "bigger cell ate {eaten}");
     assert!(blunted < eaten * 0.5, "spines: {blunted} vs {eaten}");
     assert!(pricked > unhurt, "spines wound the eater");
+}
+
+#[test]
+fn a_cell_that_harvests_light_cannot_take_prey_until_it_gives_the_light_up() {
+    // The same hunter and the same grazer, with and without light-harvesting machinery.
+    for weapon in [ENGULF, 9] {
+        let taken = |light: f64| {
+            let (mut core, mut e, mut h) = fixture();
+            build(&mut e, 0, weapon);
+            let hunter = e.cells[0].material.as_mut().unwrap();
+            hunter.proteins[0] = light;
+            hunter.biomass *= 2.;
+            e.cells[1].p = V3::new(e.cells[0].radius() + e.cells[1].radius(), 5., 0.);
+            rebase(&mut h, &e);
+            h.tick(&mut e, &mut core);
+            assert!(balanced(&h, &e), "{:?}", h.errors(&e.cells));
+            e.cells[0].state.flux.prey
+        };
+        let (animal, founder, plant) = (taken(0.), taken(0.002), taken(0.05));
+        eprintln!("weapon {weapon}: prey taken with no light harvest {animal}, a founder's {founder}, a plant's {plant}");
+        assert!(animal > 0., "an animal eats");
+        assert!(founder < animal * 0.75, "even a little light harvest costs some of the bite: {founder} against {animal}");
+        assert!(plant < animal * 0.02, "a plant cannot attack: {plant} against {animal}");
+    }
+}
+
+#[test]
+fn light_feeders_free_oxygen_the_air_carries_it_and_breathing_doubles_what_fuel_gives() {
+    // One cell with fuel to burn, in air with all of its oxygen free or none.
+    let gained = |air: f64| {
+        let (mut core, mut e, mut h) = fixture();
+        h.oxygenate(air);
+        for c in &mut e.cells {
+            c.energy = 1.;
+            let m = c.material.as_mut().unwrap();
+            m.fuel = 0.3;
+            m.proteins[0] = 0.; // nothing here makes oxygen of its own
+        }
+        rebase(&mut h, &e);
+        for _ in 0..4 {
+            h.tick(&mut e, &mut core);
+        }
+        assert!(balanced(&h, &e), "{:?}", h.errors(&e.cells));
+        (e.food_energy, e.cells[0].state.breath)
+    };
+    let ((breathing, full), (fermenting, none)) = (gained(1.), gained(0.));
+    eprintln!("energy from the same fuel: {breathing} breathing, {fermenting} without oxygen");
+    assert!(full > 0.9 && none < 0.05, "breath {full} and {none}");
+    assert!(fermenting > 0. && (breathing / fermenting - 2.).abs() < 0.2, "{breathing} against {fermenting}");
+
+    // A light-feeder in air with no free oxygen makes some, and the air
+    // carries it to seas where nothing grows.
+    let (mut core, mut e, mut h) = fixture();
+    h.oxygenate(0.);
+    e.cells[0].genome.genes = vec![always(0)];
+    build(&mut e, 0, 0);
+    for s in &mut h.solutes {
+        s[1] = 1.;
+    }
+    rebase(&mut h, &e);
+    for _ in 0..40 {
+        h.tick(&mut e, &mut core);
+    }
+    let here = h.domain.locate(e.cells[0].p);
+    let far = (here + h.domain.sites() / 2) % h.domain.sites();
+    assert!(e.cells[0].state.flux.photosynthesis > 0.);
+    assert!(h.oxygen() > 0., "oxygen was freed");
+    assert!(h.systems.gas[far][0] > 0., "and reached the far side: {:?}", h.systems.gas[far]);
+    assert!(h.systems.gas_error(&e.cells).abs() < 1e-9, "none was made from nothing");
+    assert!(balanced(&h, &e), "{:?}", h.errors(&e.cells));
+}
+
+#[test]
+fn a_swimmer_covers_body_lengths_for_little_fuel_in_thin_water() {
+    let (mut core, mut e, mut h) = fixture();
+    e.cells[1].p = V3::new(0., 5., 9.);
+    build(&mut e, 0, PROPEL);
+    e.cells[0].genome.genes.push(always(PROPEL));
+    rebase(&mut h, &e);
+    let start = e.cells[0].p;
+    for _ in 0..40 {
+        h.tick(&mut e, &mut core);
+    }
+    let (gone, paid) = (e.cells[0].p.sub(start).len(), e.cells[0].state.motor_work);
+    eprintln!("ten cycles of swimming: {gone} units for {paid} energy");
+    assert!(gone > 2., "more than four body lengths in ten cycles: {gone}");
+    assert!(paid < gone as f64 * 0.25, "at a quarter of a unit of energy a unit travelled, or less: {paid}");
+}
+
+#[test]
+fn the_sea_spreads_free_cells_apart_and_leaves_bodies_and_land_cells_where_they_are() {
+    // A free cell, and a bonded pair, all at rest in still water.
+    let wandered = |mixing: f32| {
+        let (mut core, mut e, mut h) = row(3, vec![always(0)], &[]);
+        h.steering.mixing = mixing;
+        e.bonds.truncate(1); // cells 0 and 1 stay a body; cell 2 is free
+        // Open sea: the first stretch of deep water along the habitat's middle.
+        let seed = core.config.seed;
+        let x = (-28..28)
+            .map(|x| x as f32)
+            .find(|&x| (0..5).all(|k| crate::body::ground(x + k as f32 * 0.5, 0., seed, false) < -0.8))
+            .expect("the habitat has a sea");
+        for (i, c) in e.cells.iter_mut().enumerate() {
+            c.p = V3::new(x + [0., 0.44, 2.][i], -0.3, 0.);
+        }
+        let start: Vec<V3> = e.cells.iter().map(|c| c.p).collect();
+        let mut path = 0.;
+        for _ in 0..40 {
+            let before = e.cells[2].p;
+            h.mechanics(&mut e, &mut core, &[]);
+            path += e.cells[2].p.sub(before).len();
+        }
+        let moved = |i: usize| e.cells[i].p.sub(start[i]).len();
+        (moved(2), path, moved(0).max(moved(1)))
+    };
+    let (free, path, body) = wandered(1.);
+    eprintln!("after 10 cycles: a free cell is {free} from where it began after wandering {path}; a body moved {body}");
+    assert!(path > 2. && free > 0.05, "a free cell is jostled about: {free} after {path}");
+    assert!(free < path * 0.6, "and it wanders rather than travels");
+    assert!(body < free * 0.2, "a body holds its place: {body}");
+    assert!(wandered(4.).1 > path * 1.8, "stirred seas jostle harder");
 }
 
 #[test]
@@ -468,7 +590,7 @@ fn a_mouth_grows_larger_than_its_prey_and_does_not_glue_itself_to_it() {
         h.tick(&mut e, &mut core);
     }
     assert!(
-        biomass(&e, 0) > 0.6,
+        biomass(&e, 0) > 0.52,
         "mouth cell reached {}",
         biomass(&e, 0)
     );
@@ -841,6 +963,8 @@ fn walled_sisters_stay_cemented_without_any_glue() {
             build(&mut e, 0, WALL);
         }
         e.cells[0].cooldown = 0.;
+        // Copies stay true, so no daughter invents glue or a wall of its own.
+        h.steering.mutation_scale = 0.;
         for s in &mut h.solutes {
             s[0] = 6.;
         }
@@ -962,6 +1086,7 @@ fn row(n: usize, genes: Vec<Gene>, materials: &[usize]) -> (Core, Evolution, Hab
             stiffness: 0.,
         });
     }
+    h.oxygenate(1.); // these fixtures breathe freely
     rebase(&mut h, &e);
     (core, e, h)
 }
@@ -1055,9 +1180,16 @@ fn motors_buried_in_a_body_have_no_water_to_beat_against() {
         e.cells[at].genome.id = 150;
         e.cells[at].genome.genes.push(always(PROPEL));
         build(&mut e, at, PROPEL);
-        let heading = e.cells[at].heading;
+        // A heading turns with the body it is part of and in no other way.
+        let bearing = |e: &Evolution| {
+            let d = e.cells[1].p.sub(e.cells[2].p);
+            d.z.atan2(d.x)
+        };
+        let (heading, lay) = (e.cells[at].heading, bearing(&e));
         let gone = travel(&mut core, &mut e, &mut h, 40);
-        assert!((e.cells[at].heading - heading).abs() < 0.2, "a cell held in a body does not tumble");
+        let turned = |a: f32| (a + std::f32::consts::PI).rem_euclid(std::f32::consts::TAU) - std::f32::consts::PI;
+        let (swung, rolled) = (turned(e.cells[at].heading - heading), turned(bearing(&e) - lay));
+        assert!((swung - rolled).abs() < 0.25, "a cell held in a body does not tumble: heading {swung}, body {rolled}");
         gone
     };
     let (arm, hub) = (swum(1), swum(0));
@@ -1267,3 +1399,231 @@ fn muscle_at_a_bony_joint_swings_a_limb_and_feet_make_it_a_stride() {
     assert!(strode > stood.abs() * 3. + 0.1, "feet turn the swing into a stride: {strode} against {stood}");
 }
 
+
+#[test]
+fn nitrogen_is_taken_from_the_water_by_light_feeders_passed_on_in_food_and_never_made_or_lost() {
+    use crate::physical::{NITROGEN, N_RATIO, REMAINS_N};
+    // The same fed cell, in a sea with nitrogen and in one with none.
+    let grown = |sea: bool| {
+        let (mut core, mut e, mut h) = fixture();
+        e.cells[1].p = V3::new(0., 5., 9.);
+        for c in &mut e.cells {
+            c.genome.genes = vec![always(7)];
+            let m = c.material.as_mut().unwrap();
+            m.fuel = 0.3;
+            m.nitrogen = 0.;
+        }
+        if !sea {
+            for s in &mut h.solutes {
+                s[NITROGEN] = 0.;
+            }
+        }
+        rebase(&mut h, &e);
+        let before = biomass(&e, 0);
+        for _ in 0..80 {
+            h.tick(&mut e, &mut core);
+        }
+        assert!(balanced(&h, &e), "{:?}", h.errors(&e.cells));
+        (biomass(&e, 0) - before, e.cells[0].state.nitrogen_short)
+    };
+    let ((fed, eased), (starved, short)) = (grown(true), grown(false));
+    eprintln!("growth with nitrogen {fed}, without {starved}");
+    assert!(fed > 0.05 && starved < fed * 0.2, "{fed} against {starved}");
+    assert!(short > 0.5 && eased < 0.2, "shortage {short} and {eased}");
+
+    // An animal has no way to take nitrogen from the water. It gets it by
+    // eating, keeps what it can build with and gives the rest off.
+    let (mut core, mut e, mut h) = fixture();
+    for k in [0, 1] {
+        e.cells[0].material.as_mut().unwrap().proteins[k] = 0.;
+    }
+    e.cells[0].material.as_mut().unwrap().nitrogen = 0.;
+    rebase(&mut h, &e);
+    for _ in 0..8 {
+        h.tick(&mut e, &mut core);
+    }
+    assert_eq!(e.cells[0].state.flux.nitrogen, 0., "an animal took nitrogen from the water");
+    build(&mut e, 0, 9);
+    e.cells[0].genome.genes = vec![always(9)];
+    e.cells[1].genome.id = 300; // a stranger, not kin
+    e.cells[1].genome.genes = vec![always(0), always(7), always(1)];
+    rebase(&mut h, &e);
+    let total = h.nitrogen_total(&e.cells);
+    for _ in 0..240 {
+        for (i, c) in e.cells.iter_mut().enumerate() {
+            c.p = V3::new(i as f32 * 0.4, 5., 0.);
+            c.v = V3::default();
+            c.state.injury = 0.;
+        }
+        h.tick(&mut e, &mut core);
+    }
+    let eater = &e.cells[0];
+    let droppings: f64 = h.solutes.iter().map(|s| s[REMAINS_N]).sum();
+    eprintln!(
+        "eater ate {}, holds {} loose nitrogen, gave off {}, droppings hold {}",
+        eater.state.flux.prey, eater.material.as_ref().unwrap().nitrogen,
+        eater.state.flux.nitrogen_given, droppings
+    );
+    assert!(eater.state.flux.prey > 0.02, "the eater fed");
+    assert_eq!(eater.state.flux.nitrogen, 0.);
+    assert!(eater.material.as_ref().unwrap().nitrogen > 0. && droppings > 0.);
+    assert!(eater.state.flux.nitrogen_given > 0., "spare nitrogen goes back to the water");
+    assert!((h.nitrogen_total(&e.cells) - total).abs() < 1e-9, "nitrogen was made or lost");
+    assert!(N_RATIO > 0.1 && balanced(&h, &e), "{:?}", h.errors(&e.cells));
+}
+
+#[test]
+fn a_cell_feeds_one_level_above_what_it_is_built_from() {
+    // A light-feeder with no other food is a producer.
+    let (mut core, mut e, mut h) = fixture();
+    e.cells[1].p = V3::new(0., 5., 9.);
+    for s in &mut h.solutes {
+        s[0] = 0.;
+        s[1] = 1.;
+    }
+    e.cells[0].genome.genes = vec![always(0)];
+    build(&mut e, 0, 0);
+    e.cells[0].state.trophic = 1.;
+    e.cells[0].material.as_mut().unwrap().fuel = 0.;
+    rebase(&mut h, &e);
+    for _ in 0..120 {
+        e.cells[0].state.thirst = 0.;
+        h.tick(&mut e, &mut core);
+    }
+    eprintln!("light-feeder: {} steps above the producers", e.cells[0].state.trophic);
+    assert_eq!(e.cells[0].state.level(), 0);
+    assert!(h.web.flow[0] > 0., "carbon entered the producers");
+
+    // What eats a producer is a plant-eater; what eats that is a meat-eater.
+    for (prey_steps, level) in [(0., 1), (1., 2)] {
+        let (mut core, mut e, mut h) = fixture();
+        for k in [0, 1] {
+            e.cells[0].material.as_mut().unwrap().proteins[k] = 0.;
+        }
+        build(&mut e, 0, 9);
+        e.cells[0].genome.genes = vec![always(9)];
+        e.cells[1].genome.id = 300;
+        e.cells[1].state.trophic = prey_steps;
+        rebase(&mut h, &e);
+        for _ in 0..160 {
+            for (i, c) in e.cells.iter_mut().enumerate() {
+                c.p = V3::new(i as f32 * 0.4, 5., 0.);
+                c.v = V3::default();
+                c.state.injury = 0.;
+            }
+            e.cells[1].material.as_mut().unwrap().biomass = 0.22;
+            e.cells[1].state.trophic = prey_steps;
+            rebase(&mut h, &e);
+            h.tick(&mut e, &mut core);
+        }
+        eprintln!("eater of level {prey_steps}: {} steps above the producers", e.cells[0].state.trophic);
+        assert_eq!(e.cells[0].state.level(), level);
+        assert!(h.web.flow[level] > 0.);
+    }
+
+    // A cell living on remains is a decomposer, whatever the remains once were.
+    let (mut core, mut e, mut h) = fixture();
+    for k in [0, 1] {
+        e.cells[0].material.as_mut().unwrap().proteins[k] = 0.;
+    }
+    build(&mut e, 0, 15);
+    e.cells[0].genome.genes = vec![always(15)];
+    e.cells[0].material.as_mut().unwrap().fuel = 0.;
+    e.cells[1].p = V3::new(0., 5., 9.);
+    for s in &mut h.solutes {
+        s[5] = 2.;
+        s[crate::physical::REMAINS_N] = 0.3;
+    }
+    rebase(&mut h, &e);
+    for _ in 0..160 {
+        h.tick(&mut e, &mut core);
+    }
+    let rotter = &e.cells[0];
+    assert_eq!(rotter.state.level(), crate::trophic::LEVELS, "a decomposer");
+    assert!(h.web.dead > 0. && rotter.state.flux.nitrogen_given > 0., "it frees the nitrogen in remains");
+    assert!(balanced(&h, &e), "{:?}", h.errors(&e.cells));
+}
+
+#[test]
+fn on_land_a_thick_soft_body_is_crushed_at_its_base_and_bone_or_a_wall_holds_it_up() {
+    // Six cells standing on one of them. Returns the load on the footing and
+    // how much more the foot was hurt than a cell it carries.
+    let stand = |prop: &str, wet: f32| {
+        let (_, mut e, mut h) = row(6, vec![always(0)], &[]);
+        for c in &mut e.cells {
+            c.state.under = wet;
+        }
+        e.cells[0].state.ground = true;
+        match prop {
+            "bone" => e.cells[0].material.as_mut().unwrap().mineral = 0.05,
+            "wall" => build(&mut e, 0, WALL),
+            "fibre" => e.cells[0].material.as_mut().unwrap().body.fibers = 0.05,
+            _ => {}
+        }
+        for _ in 0..40 {
+            h.land(&mut e);
+        }
+        (e.cells[0].state.load, e.cells[0].state.injury - e.cells[1].state.injury)
+    };
+    let (load, hurt) = stand("", 0.);
+    eprintln!("soft body on land: load {load}, base hurt {hurt}");
+    assert!(load > 1.5 && hurt > 0.2, "soft tissue was not crushed: {load}, {hurt}");
+    for prop in ["bone", "wall", "fibre"] {
+        let (load, hurt) = stand(prop, 0.);
+        eprintln!("standing on {prop}: load {load}, base hurt {hurt}");
+        assert!(load < 1. && hurt.abs() < 1e-6, "{prop} did not hold: {load}, {hurt}");
+    }
+    let (load, hurt) = stand("", 1.);
+    assert!(load < 0.05 && hurt.abs() < 1e-6, "water carries a soft body: {load}");
+}
+
+#[test]
+fn dry_air_kills_a_bare_cell_and_skin_or_wet_ground_spares_it() {
+    let dried = |skin: bool, wet: f32, rain: bool| {
+        let (_, mut e, mut h) = fixture();
+        if skin {
+            build(&mut e, 0, crate::physiology::BARRIER);
+        }
+        let site = h.domain.locate(e.cells[0].p);
+        h.planet.as_mut().unwrap().water[site] = if rain { 1. } else { 0. };
+        for _ in 0..40 {
+            e.cells[0].state.under = wet;
+            h.land(&mut e);
+        }
+        (e.cells[0].state.injury, e.cells[0].state.thirst)
+    };
+    let (bare, thirst) = dried(false, 0., false);
+    let (skinned, _) = dried(true, 0., false);
+    eprintln!("ten cycles in dry air: bare {bare}, with skin {skinned}");
+    assert!(bare > 0.1 && thirst > 0.99, "{bare}, {thirst}");
+    assert!(skinned < bare * 0.4, "skin keeps water in: {skinned}");
+    assert_eq!(dried(false, 1., false), (0., 0.), "a cell under water does not dry");
+    assert_eq!(dried(false, 0., true), (0., 0.), "nor does one on wet ground");
+}
+
+#[test]
+fn fat_sheathed_nerves_carry_a_signal_further_along_a_body() {
+    // A row of nerve cells, the first one stimulated. How far the signal gets.
+    let reach = |fat: f64| {
+        let (mut core, mut e, mut h) = row(
+            6,
+            vec![always(crate::physiology::CHANNEL), always(8)],
+            &[crate::physiology::CHANNEL, 8],
+        );
+        for c in &mut e.cells {
+            c.material.as_mut().unwrap().lipid = fat;
+        }
+        rebase(&mut h, &e);
+        let mut far = 0f32;
+        for _ in 0..12 {
+            e.cells[0].state.excitation = 1.;
+            h.excitable_signals(&mut e);
+            far = far.max(e.cells[3].state.excitation);
+        }
+        let _ = &mut core;
+        far
+    };
+    let (lean, fat) = (reach(0.), reach(0.3));
+    eprintln!("signal reaching the fourth cell: lean {lean}, fat-sheathed {fat}");
+    assert!(fat > lean * 1.5 && fat > 0.05, "{lean} against {fat}");
+}

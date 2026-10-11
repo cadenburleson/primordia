@@ -32,6 +32,10 @@ pub struct Flux {
     pub shared: f64,
     /// Fuel an unarmed cell received from a mouth cell of its own body.
     pub fed: f64,
+    /// Dissolved nitrogen taken in from the water.
+    pub nitrogen: f64,
+    /// Spare nitrogen given off into the water.
+    pub nitrogen_given: f64,
 }
 impl Flux {
     /// Everything this cell has taken in as fuel, from any source.
@@ -69,6 +73,8 @@ impl Flux {
         self.prey_animal += b.prey_animal;
         self.shared += b.shared;
         self.fed += b.fed;
+        self.nitrogen += b.nitrogen;
+        self.nitrogen_given += b.nitrogen_given;
     }
     pub fn valid(&self) -> bool {
         [
@@ -96,6 +102,8 @@ impl Flux {
             self.prey_animal,
             self.shared,
             self.fed,
+            self.nitrogen,
+            self.nitrogen_given,
         ]
         .iter()
         .all(|x| x.is_finite() && *x >= 0.)
@@ -112,6 +120,23 @@ pub struct Meal {
     pub prey_genome: u32,
     pub material: String,
     pub amount: f64,
+    /// Who ate whom, for the player's feed: the starter species each cell
+    /// descends from (empty if none) and its cell type when it happened.
+    #[serde(default)]
+    pub attacker_kind: String,
+    #[serde(default)]
+    pub prey_kind: String,
+    #[serde(default)]
+    pub attacker_role: u8,
+    #[serde(default)]
+    pub prey_role: u8,
+}
+/// A cell's starter species, if it descends from one, and its cell type.
+pub(crate) fn kind(c: &autonomous::Cell) -> (String, u8) {
+    (
+        c.collection_sources.first().cloned().unwrap_or_default(),
+        c.material_role(),
+    )
 }
 impl Habitat {
     pub(crate) fn record_meal(
@@ -123,6 +148,7 @@ impl Habitat {
         prey_genome: u32,
         material: &str,
         amount: f64,
+        who: [(String, u8); 2],
     ) {
         if amount <= 1e-12 {
             return;
@@ -150,6 +176,10 @@ impl Habitat {
             prey_genome,
             material: material.into(),
             amount,
+            attacker_kind: who[0].0.clone(),
+            prey_kind: who[1].0.clone(),
+            attacker_role: who[0].1,
+            prey_role: who[1].1,
         });
     }
     pub(crate) fn observation(&self, e: &Evolution, group: &[usize]) -> serde_json::Value {

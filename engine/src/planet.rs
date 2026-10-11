@@ -53,9 +53,9 @@ mod tests {
         let mut p = Planet::new();
         p.storm = 6.;
         p.storm_center = [0., 0.];
-        let mut solutes = vec![[0.; 6]; GRID * GRID];
-        solutes[20 * GRID + 20] = [1., 0.5, 0.2, 0.1, 0.1, 0.3];
-        let initial: [f64; 6] = std::array::from_fn(|k| solutes.iter().map(|s| s[k]).sum());
+        let mut solutes = vec![[0.; crate::physical::SOLUTES]; GRID * GRID];
+        solutes[20 * GRID + 20] = [1., 0.5, 0.2, 0.1, 0.1, 0.3, 0.2, 0.1];
+        let initial: [f64; crate::physical::SOLUTES] = std::array::from_fn(|k| solutes.iter().map(|s| s[k]).sum());
         // Disable only the volcanic random hazard by keeping this short and
         // tracking its explicit mineral input, should an eruption still occur.
         for _ in 0..12 {
@@ -70,7 +70,7 @@ mod tests {
         }
         assert!(p.snowmelt > 0. && p.evaporation > 0. && p.runoff > 0.);
         assert!(p.valid() && p.water_error().abs() < 1e-8);
-        for k in 0..6 {
+        for k in 0..crate::physical::SOLUTES {
             let expected = initial[k] + if k == 2 { p.mineral_input } else { 0. };
             assert!((solutes.iter().map(|s| s[k]).sum::<f64>() - expected).abs() < 1e-9);
         }
@@ -96,8 +96,10 @@ mod tests {
             (site / GRID) as f32 * 1.6 - 31.2,
         );
         assert!(p.relief_at(x, z) > 0. && p.heat[site] > 0. && p.mineral_input > 0.);
+        // The raised ground is the floor a body rests on.
         assert!(
-            p.floor(x, z, 0.2, core.config.seed) >= body::habitat_y(x, z, 0.2, core.config.seed)
+            p.floor(x, z, 0.2, core.config.seed)
+                > body::ground(x, z, core.config.seed, false) + 0.2
         );
         let input = p.mineral_input;
         h.planet = Some(p);
@@ -131,6 +133,14 @@ mod tests {
         assert_eq!(genes, e.cells[0].genome);
     }
 }
+/// Water the air holds over each unit of surface before it starts to rain out.
+/// Height a new planet's seas are filled to. About seven tenths of its
+/// surface lies below this, as on Earth. Life is made of water and cannot
+/// live out of it without skin, support and a way to carry water.
+const SEA_LEVEL: f64 = 0.95;
+const AIR_CAPACITY: f64 = 0.2;
+/// Share of the air's excess water that falls each cycle.
+const RAIN_OUT: f64 = 0.07;
 fn default_storm_radius() -> f32 {
     14.
 }
@@ -176,7 +186,7 @@ impl Planet {
         for i in 0..self.domain.sites() {
             let (x, z) = self.domain.point(i);
             self.water[i] =
-                (0.12 - self.domain.ground(x, z, seed) as f64).max(0.002) * self.domain.area(i);
+                (SEA_LEVEL - self.domain.ground(x, z, seed) as f64).max(0.002) * self.domain.area(i);
         }
         self.atmosphere = (0..self.domain.sites())
             .map(|i| self.domain.area(i) * 0.2)
@@ -194,7 +204,7 @@ impl Planet {
             }
         }
     }
-    fn distance_from(&self, i: usize, center: [f32; 2]) -> f32 {
+    pub(crate) fn distance_from(&self, i: usize, center: [f32; 2]) -> f32 {
         let (x, z) = self.domain.point(i);
         if !self.domain.spherical() {
             return (x - center[0]).hypot(z - center[1]);
@@ -303,21 +313,22 @@ impl Planet {
                 + self.relief[jz * self.domain.grid + jx] * u)
                 * v
     }
+    /// The lowest a body of this radius can rest: the sea bed or the land.
+    /// Water holds a body up by buoyancy, never by acting as a floor.
     pub fn floor(&self, x: f32, z: f32, r: f32, seed: u32) -> f32 {
         let ground = self.domain.ground(x, z, seed) + self.relief_at(x, z);
-        if self.domain.spherical() {
-            let depth = self.surface_depth(self.domain.index(x, z)) as f32;
-            return if depth > r * 1.5 {
-                ground + depth + r * (1. - 2. * 0.78)
-            } else {
-                ground + r
-            };
-        }
-        if ground > 0.12 {
-            ground + r
+        ground + r
+    }
+    /// Where a new arrival of this radius is set down: just under the surface
+    /// where the water is deep enough to cover it, on the bottom elsewhere.
+    pub fn berth(&self, x: f32, z: f32, r: f32, seed: u32) -> f32 {
+        let floor = self.floor(x, z, r, seed);
+        let depth = if self.domain.spherical() {
+            self.surface_depth(self.domain.index(x, z)) as f32
         } else {
-            0.12 + r * (1. - 2. * 0.78)
-        }
+            0.12 - (floor - r)
+        };
+        floor.max(floor - r + depth - r - 0.02)
     }
     pub fn illumination(&self, site: usize) -> f64 {
         if !self.domain.spherical() {
@@ -355,7 +366,7 @@ impl Planet {
                     * 0.55))
             .clamp(0.1, 1.5)
     }
-    pub(crate) fn erupt(&mut self, core: &mut Core, solutes: &mut [[f64; 6]]) {
+    pub(crate) fn erupt(&mut self, core: &mut Core, solutes: &mut [[f64; crate::physical::SOLUTES]]) {
         let center = [
             (core.random() - 0.5) * (self.domain.size() - 20.),
             (core.random() - 0.5)
@@ -383,7 +394,7 @@ impl Planet {
         self.terrain_version += 1;
         core.event("planet",format!("Volcanic disturbance #{} raised local terrain, released tracked minerals and heated nearby habitat.",self.eruptions));
     }
-    pub fn tick(&mut self, core: &mut Core, solutes: &mut [[f64; 6]]) {
+    pub fn tick(&mut self, core: &mut Core, solutes: &mut [[f64; crate::physical::SOLUTES]]) {
         let dt = DT as f64;
         let season = (core.time * std::f32::consts::TAU / self.season_period).sin() * self.season_strength;
         let phase = core.time * std::f32::consts::TAU / 48.;
@@ -414,19 +425,23 @@ impl Planet {
             - if raining { 0.06 } else { 0. }
             - self.cloud_cover * 0.06)
             .clamp(0., 1.);
+        // Air can hold only so much. Whatever it carries beyond what it began
+        // with falls back as rain everywhere, so the seas are not lost to the sky.
+        let area = |i: usize| {
+            if self.domain.spherical() {
+                self.domain.area(i)
+            } else {
+                1.
+            }
+        };
+        let surface: f64 = (0..self.domain.sites()).map(area).sum();
+        let drizzle = (self.atmosphere - AIR_CAPACITY * surface).max(0.) * dt * RAIN_OUT / surface;
         for i in 0..self.domain.sites() {
             let weight =
                 (1. - self.distance_from(i, self.storm_center) / self.storm_radius).max(0.) as f64;
-            if raining {
-                let rain = (dt
-                    * 0.018
-                    * weight
-                    * if self.domain.spherical() {
-                        self.domain.area(i)
-                    } else {
-                        1.
-                    })
-                .min(self.atmosphere);
+            let storm = if raining { dt * 0.018 * weight } else { 0. };
+            let rain = ((storm + drizzle) * area(i)).min(self.atmosphere);
+            if rain > 0. {
                 self.atmosphere -= rain;
                 self.precipitation += rain;
                 if self.temperature_at(i) < 0.3 {
@@ -495,7 +510,7 @@ impl Planet {
                         self.water[a] -= moved;
                         self.water[b] += moved;
                         self.runoff += moved;
-                        for k in 0..6 {
+                        for k in 0..crate::physical::SOLUTES {
                             let transported = solutes[a][k] * fraction;
                             solutes[a][k] -= transported;
                             solutes[b][k] += transported;

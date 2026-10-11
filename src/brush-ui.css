@@ -4,6 +4,7 @@
 .brush-topline { display:flex; align-items:center; gap:12px; margin-bottom:16px; }
 .brush-topline .eyebrow { color:#abcfae; font-size:8px; letter-spacing:1.5px; }
 #brush-status { font-size:10px; color:#a2b8b3; flex:1; }
+#brush-undo { margin-left:auto; }
 #brush-done { color:#d9eacb; font-size:11px; padding:6px 9px; border-radius:7px; border:1px solid #abcfae36; white-space:nowrap; }
 .brush-toolbar kbd { font:9px var(--sans); opacity:.65; padding:2px; }
 .brush-toolbar fieldset { padding:0; margin:0; border:0; min-width:0; }

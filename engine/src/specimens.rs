@@ -287,7 +287,11 @@ impl Core {
             .cells
             .iter()
             .map(|c| {
-                ground(c.p) + c.radius() + 0.08
+                // Afloat just under the surface where there is sea, else on the ground.
+                let (x, z) = d.coords(c.p);
+                h.planet.as_ref().map_or(ground(c.p) + c.radius(), |p| {
+                    p.berth(x, z, c.radius(), self.config.seed)
+                }) + 0.02
                     - if d.spherical() {
                         c.p.len() - d.radius()
                     } else {
@@ -406,15 +410,18 @@ impl Core {
             .map(|c| c.material.as_ref().unwrap().body.gas.iter().sum::<f64>())
             .sum::<f64>();
         let before = next.physical.as_ref().unwrap().totals(&next.cells);
-        next.cells.extend(s.cells);
+        let nitrogen = next.physical.as_ref().unwrap().nitrogen_total(&next.cells);
+        // A body arrives with a working store of nitrogen, as a living one has.
+        let mut arrivals = s.cells;
+        for m in arrivals.iter_mut().filter_map(|c| c.material.as_mut()) {
+            m.nitrogen = m.nitrogen.max(m.bound_nitrogen() * 0.5);
+        }
+        next.cells.extend(arrivals);
         next.bonds.extend(s.bonds);
         let nh = next.physical.as_mut().unwrap();
         nh.joints.extend(s.joints);
         nh.development.synapses.extend(s.synapses);
-        let after = nh.totals(&next.cells);
-        nh.initial_organic += after.0 - before.0;
-        nh.initial_mineral += after.1 - before.1;
-        nh.initial_energy += after.2 - before.2;
+        nh.settle_arrivals(before, nitrogen, &next.cells);
         nh.systems.initial_gas += imported_gas;
         if let Some(p) = &mut nh.planet {
             p.initial_water += imported_water;

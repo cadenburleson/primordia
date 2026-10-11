@@ -1124,8 +1124,27 @@ impl Evolution {
                 .iter()
                 .flat_map(|&i| self.cells[i].collection_sources.iter())
                 .collect::<BTreeSet<_>>());
+            // A body descended from a starter species carries its name.
+            if let Some(species) = selected_cells
+                .first()
+                .and_then(|&i| self.cells[i].collection_sources.first())
+            {
+                v["name"] = format!("{species} {}", v["id"]).into();
+            }
             if let Some(h) = &self.physical {
                 v["observation"] = h.observation(self, &selected_cells);
+                v["bearing"] = h.bearing(self, &selected_cells, core.config.seed);
+                let members: Vec<&Cell> = selected_cells.iter().map(|&i| &self.cells[i]).collect();
+                let n = members.len().max(1) as f32;
+                let mean = |f: &dyn Fn(&Cell) -> f32| members.iter().map(|c| f(c)).sum::<f32>() / n;
+                v["feeding"] = serde_json::json!({
+                    "level": crate::trophic::NAMES[crate::physical::Habitat::body_level(&members)],
+                    "steps": mean(&|c| c.state.trophic),
+                    "scavenged": mean(&|c| c.state.scavenged),
+                    "nitrogenShort": mean(&|c| c.state.nitrogen_short),
+                    "bone": mean(&|c| c.material.as_ref().map_or(0., |m| m.bone() as f32)),
+                    "fat": mean(&|c| c.material.as_ref().map_or(0., |m| m.sheath() as f32)),
+                });
             }
         }
         let development = self.physical.as_ref().map(|h| h.development_view(self));
@@ -1153,7 +1172,24 @@ impl Evolution {
             metadata["autonomous"]["physiology"] = h.physiology_view(self);
             metadata["autonomous"]["planet"] = h.planet.as_ref().map(|p| p.view(core.time)).into();
             metadata["autonomous"]["resources"] = serde_json::json!({"detritus":h.solutes.iter().map(|s|s[5]).collect::<Vec<_>>(),"mineral":h.solutes.iter().map(|s|s[2]).collect::<Vec<_>>(),"waste":h.solutes.iter().map(|s|s[1]).collect::<Vec<_>>(),"light":(0..h.domain.sites()).map(|i|h.planet.as_ref().map_or(1.,|p|p.illumination(i))*h.light_fraction(i)*core.config.sunlight as f64).collect::<Vec<_>>(),"area":(0..h.domain.sites()).map(|i|h.domain.area(i)).collect::<Vec<_>>()});
-            metadata["autonomous"]["feeding"] = serde_json::json!(h.meals);
+            // Each meal with the body its eater now belongs to, so a player
+            // can jump to it; 0 once the eater is dead.
+            let mut body_of = BTreeMap::new();
+            for g in self.groups() {
+                for &i in &g {
+                    body_of.insert(self.cells[i].id, self.cells[g[0]].id);
+                }
+            }
+            metadata["autonomous"]["feeding"] = h
+                .meals
+                .iter()
+                .map(|m| {
+                    let mut v = serde_json::json!(m);
+                    v["attacker_body"] = body_of.get(&m.attacker).copied().unwrap_or(0).into();
+                    v
+                })
+                .collect::<Vec<_>>()
+                .into();
             metadata["autonomous"]["observationControl"] = serde_json::json!(h.ablation);
             metadata["autonomous"]["detritus"] = h.solutes.iter().map(|s| s[5]).sum::<f64>().into();
             metadata["autonomous"]["waste"] = h.solutes.iter().map(|s| s[1]).sum::<f64>().into();

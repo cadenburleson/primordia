@@ -14,6 +14,9 @@ pub mod domain;
 pub mod experiment;
 pub mod observations;
 pub mod specimens;
+pub mod bestiary;
+pub mod champions;
+pub mod trophic;
 pub mod steering;
 pub mod interventions;
 pub mod organics;
@@ -481,6 +484,7 @@ impl Core {
         if let Some(mut evolution) = self.autonomous.take() {
             evolution.tick(self);
             self.autonomous = Some(evolution);
+            self.sustain_species();
             return;
         }
         if let Some(mut lab) = self.lab.take() {
@@ -1670,6 +1674,29 @@ impl World {
     /// disasters. Changes selection and variation, never genes or materials.
     pub fn steer(&mut self, json: &str) -> Result<String, JsValue> {
         self.core.steer(json).map_err(|e| JsValue::from_str(&e))
+    }
+    /// The leading living body on each measure, as a JSON list.
+    pub fn champions(&self) -> String {
+        self.core.champions()
+    }
+    /// One founder of a starter species, as an organism snapshot.
+    pub fn species_specimen(&self, species: &str) -> Result<String, JsValue> {
+        self.core
+            .species_specimen(species)
+            .map(|s| s.1)
+            .map_err(|e| JsValue::from_str(&e))
+    }
+    /// Scatter copies of an organism around painted points; returns how many fitted.
+    pub fn paint_life(
+        &mut self,
+        json: &str,
+        points: &[f32],
+        radius: f32,
+        per_point: u32,
+    ) -> Result<u32, JsValue> {
+        self.core
+            .paint_life(json, points, radius, per_point)
+            .map_err(|e| JsValue::from_str(&e))
     }
     pub fn founder_specimen(&self) -> Result<String, JsValue> {
         self.core.founder_specimen().map_err(|e| JsValue::from_str(&e))

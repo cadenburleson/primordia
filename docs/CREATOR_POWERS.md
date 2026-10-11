@@ -221,20 +221,137 @@ The ladder gains Shaped bodies (24 steps). Inspect gains a Body plan line: bone 
 
 Bred for Muscle after these changes, **Powered movement became established in one world** (45% of its bodies; five complete rowers), the first time breeding alone has done it. The other two worlds had one rower and none. Bred for bodies, the sideways gene reached 12–17% of cells and the growth compass was built in 5–15%.
 
-**Seasons** are a new dial in Powers (None, Mild, Harsh; off by default): the star dims toward midwinter and returns every 200 cycles. In the first test it did not do its job. Harsh seasons cut populations to about a quarter and no fat evolved, with or without them. Cells store fat only when they have a clear surplus, and in these worlds they almost never do.
+**Fat.** The planet already has days (48 cycles) and mild seasons, set in World. A second seasons dial added here was removed as a duplicate. The reason fat never evolves was measured instead: 97–99% of cells are hungry at any moment, and a cell stored fat only when it was glutted and spent it whenever it was merely peckish. Fat is now laid down by any comfortably fed cell and kept until the cell is truly short. Breed for Fat reserves and Breed for Limbs are new goals. Neither has been benchmarked yet.
+
+### Starter species and the feed
+
+Evolution from one founder builds the parts (muscle, fins, mouths, walls) but rarely a whole creature. A survey of other evolution sims found the same thing everywhere: the ones with sustained visible behaviour start from working organisms, and most keep a population floor so predators cannot blink out (ALIEN, The Bibites, Species: ALRE, Polyworld, evolv.io).
+
+Powers now has **Release a species**. Each starter species is one founder cell with a founder's stores and a genome written from the ordinary gene set (`engine/src/bestiary.rs`). It is released through the same path as any introduced organism, has to feed, build and breed like everything else, and mutates from its first division.
+
+| Species | What its genes build |
+|---|---|
+| Alga | Strong light harvest inside a wall; sisters stay cemented |
+| Swimmer | A motor, steered toward light |
+| Grazer | Digestive enzymes and a motor steered toward the scent of life; only a weak light harvest of its own |
+| Hunter | A mouth and a motor steered toward scent |
+| Thornback | Spines and skin |
+| Rower | Glue, a growth compass, muscle, a beat and fins |
+| Courter | A motor steered toward scent, and gametes that fuse with a gamete from another body |
+| Drifter | The plain founder |
+
+**Keep released species from dying out** (on by default) restocks a species with four founders when it falls below eight cells. The count of restocked founders is shown; it is external input, like the first release.
+
+**Happening now** is a feed on the planet view: who is eating whom, by species where known, and each fusion of two gametes. Clicking a line jumps to the eater. Life shows the share of living cells descended from each released species, and Inspect names a body after its species.
+
+**What was measured.** On fresh bright planets seeded with all seven species (three worlds, 1,500 cycles, no restocking): populations reached 2,100–3,000 cells against about 1,000 unseeded. Swimmers, algae, grazers, thornbacks, hunters and courters all survived in every world; rowers died out in one and fell to three cells in another. Hunters held 5–125 cells. Only 13–33 cells at a time were getting a quarter of their fuel by eating: grazers with a founder's full light harvest thrived without grazing. Grazers with no light harvest at all starved to two or three cells and survived only by restocking, so the design now keeps a weak harvest; that middle setting has not been measured. With restocking on, hunters, rowers and courters all stayed present for 900 cycles in every world. In a separate test 80 courters produced 969 gametes and 51 fused zygotes in 600 cycles, but the mating lineage shrank in every mixed world.
 
 ### Speed
 
 Terrain under each cell is now sampled on every fourth mechanics substep instead of all twenty. A comparable native run (500–650 cells on a 128-unit sphere) went from 13.2 to 31.6 cycles per second. In the browser the same quick-start world read 13–23 cycles per second with 410–530 cells, on a busy machine; I could not show a clear browser gain from this change.
 
+### Water, plants and animals, and survival as the only selector
+
+**The seas were being lost to the sky.** Evaporation ran about five times faster than the one roaming storm could rain back, so a planet's seas shrank from 40% of its surface to 12% in 300 cycles and every earlier measurement was taken on a drying world. Air now rains out whatever it holds beyond what it began with. Seas hold at 36–40% cover; old saves refill by themselves.
+
+**Buoyancy is by material.** Tissue is as dense as water, fat lighter (0.9) and bound mineral heavier (2.5). A cell's weight is its mass less the water it displaces, by how much of it is under the surface. Water is no longer a floor: the only floor is the sea bed or the land. Measured on one cell in deep water: plain tissue does not move, fat rises, bone sinks seven times faster than fat rises, and over dry land the same cell falls a hundred times faster than bone sinks. The ground grips a body, and a foot digs in, only as hard as the body presses down. New arrivals are set afloat just under the surface.
+
+**What this does not do.** Swimming in this world is limited by the water's drag, not by weight, so buoyancy changes where a body lives and how much the ground grips it, not how fast it swims. Sinking and rising take hundreds of cycles.
+
+**Plants and animals.** A cell given over to harvesting light cannot swallow or digest living prey (`Cell::bite`, the square of what light-harvesting machinery it lacks). To eat, a cell has to give the light up. The Hunter and Grazer starters therefore carry no light harvest at all. Kinds of life are sorted by how a body feeds: one that makes its own food is plant-like, wall or no wall. Walled cells are drawn as blocks.
+
+**Dispersal.** Free cells and loose grains in water are jostled by its eddies, more when the oceans are stirred (about one unit a generation at natural mixing). Bodies and anything on land are not.
+
+**Survival is the only selector by default.** Evolve is one dial, Natural, Fast or Fastest, that sets how often copied genes vary (1×, 2×, 4×) and lets touching cells swap a gene now and then. Selective breeding is an optional, collapsed experiment. Measured on seeded planets over 800–1,200 cycles: rewarding a trait automatically, with 4× variation and common gene swapping, cut populations from about 2,100–3,300 cells to 250–700; selection alone removed nearly all the animals (34–74 animal-like cells against 400–1,200); 4× variation with common gene swapping about halved the world, because species blur into each other. The presets as shipped, on two planets at 800 cycles: Natural held 1,882 and 3,255 cells with 5 and 6 steps of the ladder established; Fast held 1,840 and 2,413 with 7 and 7; Fastest held 1,873 and 1,893 with 6 and 8. Two planets is a small sample.
+
+**Planet at a glance.** The Planet panel opens on the planet's age, season, weather, temperature and where its water is: seas and lakes (standing water sorted by connected body), clouds and vapour, snow and ice. Great flood and Long drought add water everywhere or remove a third of it; both can be undone.
+
+**Creatures.** One palette holds the starter species, the bodies you saved and the planet's record-holders. Pick one and drag across the map to scatter copies (`Core::paint_life`); a stroke is one undo. Every few seconds the engine names the leading living body on four measures (most kinds of working part for its size, largest, most fuel from prey, fastest under its own power) and the interface keeps a copy of each, replacing one only when its record is clearly beaten.
+
+### Earth as the model
+
+Earth's life went: slow microbes living on dissolved food and vent chemistry with no free oxygen; light-harvesters, whose waste oxygen slowly filled the air; complex cells, made when one cell swallowed another and kept it; sex; bodies; then fast animals and an arms race of eaters and eaten; and last, life on land, plants first. Three pieces of that were missing or wrong here.
+
+| On Earth | Here |
+| --- | --- |
+| Life before oxygen is slow | A cell with no oxygen captures half the energy in its fuel (`FERMENT`; the real figure is nearer a fifteenth) |
+| Light-harvesters make the oxygen | Each unit of fuel made from light frees oxygen; burning fuel fully uses it up. The air mixes planet-wide within days |
+| Oxygen rises once the reduced sea is used up | A new planet starts with none. Dissolved food is burned first and soaks up what is made |
+| Water is thin; a swimmer covers many body lengths cheaply | Drag on a body is 8% of the fluid lattice's own (`SLIP`), and a motor's work is charged at 8% of face value, so the same effort carries a cell twelve times as far. Bonds are damped so bodies do not ring |
+| The ground is not | A crawler works against the old, full drag |
+| Animals live by eating | Hunter and Grazer starters harvest no light and soak up no dissolved fuel. An eater does not follow the scent of its own kind |
+| Complex cells from a swallowed light-feeder | Already here |
+| Land, plants first | Not here yet |
+
+**Measured.** In the browser on a small planet with all seven starter species: oxygen stood at 2% free at cycle 250, 21% at 450 and 53% at 600, and life went from breathing at 75% to 96%. Natively, three planets at 1,200 cycles held 2,138, 1,729 and 2,144 cells with 54–77% of their oxygen free, life breathing at 96–97%, and 10–26 cells eating at any moment. A swimming cell at full drive covers 15 units in ten cycles for 3 units of energy; a starter's motor runs at about a fifth of that drive. With thin water, grazers and hunters reach food: before any limit on them, a boom of grazers fed on the starting dissolved fuel made 104,000 meals in 400 cycles and ate the seas down to 250 cells, which is why animals no longer soak up dissolved fuel.
+
+## Matter, food chains and land
+
+The rule for this round: energy and matter are never made or destroyed, only changed. Carbon, mineral and energy were already audited. Nitrogen and the food chain are new, and land now behaves as land.
+
+**Carbon and oxygen.** A light-feeder builds fuel from carbon dioxide and water with light and frees oxygen. Burning fuel uses oxygen and gives carbon dioxide back. The player-facing name for the old "oxidised waste" pool is now carbon dioxide.
+
+**Nitrogen** (`physical.rs`: `NITROGEN`, `REMAINS_N`, `N_RATIO`). Living tissue and protein hold 0.15 units of nitrogen per unit of carbon, as sea life does (16 atoms to 106). Sugar and fat hold none.
+
+| Step | What happens |
+| --- | --- |
+| Uptake | Only a cell that feeds itself (light, vents, dissolved food) or rots remains can take dissolved nitrogen from the water. It costs energy. |
+| Growth | Tissue, protein and repair cannot be built without it. |
+| Eating | The nitrogen in what is digested goes with it: 85% to the eater, 15% left in droppings. An animal has no other source. |
+| Excretion | A cell gives off what it holds beyond a working store, so animals fertilise the water. |
+| Death | Bound nitrogen stays in the remains until a decomposer frees it, or it leaches out at 0.4% a cycle. |
+| Air | Most nitrogen is gas no cell can use. Lightning fixes a little into the rain of a storm; where oxygen is scarce but present some goes back. |
+
+`Habitat::errors` has a fourth entry for nitrogen and saved worlds are rejected if it does not balance. Worlds saved before nitrogen receive theirs the first time they run.
+
+**The creator cannot make matter either.** A painted creature, a restocked species or a brush stroke of food takes its carbon from the planet's carbon dioxide, its mineral from dissolved mineral and its nitrogen from the air (`settle_arrivals`). Only the energy is new, as sunlight is.
+
+**Trophic levels** (`trophic.rs`). Each cell carries how many steps above the producers it sits, moved toward one more than its food by every mouthful, weighted by how much of its carbon that mouthful replaces. Cells living mostly on remains and dissolved matter are counted apart as decomposers. Planet → "Food web and the planet's books" shows carbon held and taken in at each level, the share passed up, and where all carbon, nitrogen, oxygen and energy are.
+
+**Land** (`Habitat::land`).
+
+| Rule | Effect |
+| --- | --- |
+| Weight | A body out of water puts its whole weight on the cells touching the ground. Bare soft tissue carries three times its own weight; past that the footing is injured. Bone carries up to eleven times as much, a wall or laid-down fibre five. |
+| Drying | A bare cell in dry air is injured at 1.2% a cycle. Skin stops 95% of it and a wall most of it. Ground holding 0.01 of water counts as wet. |
+| Water for chemistry | A cell with no water cannot build with light or take in anything dissolved. Its upkeep falls by nine tenths: it lies dormant until rain. Water held in the body counts. |
+| Swimming | A motor that beats against water loses its push as the cell leaves the water, and has none on dry ground. |
+| Fat and nerves | Fat sheathing two neighbouring nerve cells passes a signal between them up to four times faster. |
+
+**Seas.** New planets are filled to cover about seven tenths of their surface, as Earth is. Before, a third was sea and two thirds of all life sat on dry ground as if it were water.
+
+**New starter:** the Decomposer, a free cell that lives on remains.
+
+**Measured** (three planets, 1,600 cycles, eight starter species, Fast pace):
+
+- 1,807, 1,610 and 2,544 cells, steady or rising, with 56–65% of the surface under standing water.
+- With the old seas and the land rules, the same planets fell to 350–550 cells by 2,400 cycles. With land rules off, one of them held 1,290–1,670.
+- Nitrogen: 11–15% of the usable nitrogen locked in remains, 30–43% in the living. Unlimited nitrogen raised one planet's population by about a fifth.
+- Books balance to within 4 parts in ten million of the energy total.
+- Producers take in 58–93 units of carbon a cycle. Plant-eaters take in 0.5–1.1% of that (Earth: about 10%). Meat-eaters take 5–29% of what plant-eaters do.
+- Tests: a six-cell soft body standing on one cell is loaded to twice its strength and injured; on bone, wall or fibre the load is 0.22–0.47 and it is unhurt. A signal reaching the fourth nerve cell is nine times stronger with fat.
+
 ## Not solved
+
+- **Plants pass almost nothing up the chain.** Plant-eaters take in 0.5–1.1% of what producers make, against about a tenth on Earth. Raising the bite rate fivefold did not help: a grazer finds a prey every fifteen to twenty cycles and needs one every five to eight.
+- **Nothing has colonised land.** A skinned, walled, water-pumping plant painted on the driest ground did worse than a plain alga (15 survivors against 46 after 200 cycles), so no land plant ships yet.
+- **Decomposers barely live.** A cell living on remains alone stays at the restocking floor. A decomposer that also soaked up dissolved food cut the planet's population by a third.
+- **No cell fixes nitrogen from the air.** Only lightning does.
+- **Fermentation still gives half the energy of breathing**, not a fifteenth.
+
+- **Animals reach food but still do not pay their way.** An obligate grazer now takes 0.012–0.022 fuel a cycle from prey (0.001–0.004 before thin water) and a hunter up to 0.02, against roughly 0.035–0.05 to live and swim. Both stay near the restocking floor of eight. They need about twice the intake: they sense prey only within 1.6 units and search blind beyond it.
+- **Worlds are somewhat smaller than before oxygen** (about 1,700–2,150 cells against 1,900–3,300), and the first few hundred cycles are slow.
+- An eater no longer follows the scent of its own kind, but grazers still mostly touch grazers, and once their genes drift apart they digest each other.
 
 - Hunters are a real but small guild, about 1% of bodies, and can still die out. A carnivore appeared in one run; a lasting second trophic level has not.
 - Hunters stay single-celled, so guts, and bodies built around a mouth, have not evolved.
 - Bodies with workers and breeders have appeared unaided only as a handful and have not become established; seeded by hand they persist. Fungus-like life stays rare.
 - Limbs, coordinated walking and anything resembling a brain have not been observed to evolve. Rowing is slow: a four-cell rower covers about a body length in 300 cycles. Bred worlds assemble muscle and fins but only a handful of complete rowers, and stay small.
-- Left alone, most cells still live singly (6–15% in bodies). Bodies are common only where the player breeds for them.
-- Fat has not evolved in any run, with or without seasons.
+- Left alone, most cells still live singly (6–15% in bodies).
+- Fat has not evolved in any run. The storage rule has been changed and not yet re-measured.
+- Eating is still rare: well under one cell in a hundred at any moment. Mating happens when seeded and does not yet pay for itself.
+- The sea is drawn level, but the engine still treats water as a layer of one depth over each field site, so on a small planet rough ground under a sea is wet to the same depth everywhere.
+- A seeded planet holds two to three times the cells and runs correspondingly slower (about 6–10 cycles per second in the browser at 2,500 cells).
 - Nothing has yet evolved a jointed limb. The lever works when supplied; evolution has not been seen to build one.
 - Most cells that carry a mouth do not hunt; it protects them from armed kin.
 - Horns and image-forming eyes are not modelled. Propulsion is one push per cell, not a visible flagellum.
@@ -245,7 +362,7 @@ Terrain under each cell is now sampled on every fourth mechanics substep instead
 ## Checks
 
 ```sh
-cargo test --profile preview --manifest-path engine/Cargo.toml --lib   # 133 tests
+cargo test --profile preview --manifest-path engine/Cargo.toml --lib   # 152 tests
 npm run check:steering   # the shipped WASM, through the same API the UI uses
 npm run check:scheduler && npm run check:nursery-ui && npm run check:brush-ui
 npm run build

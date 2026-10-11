@@ -1,10 +1,11 @@
 import type {Command, WorldConfig} from './sim/types';
 import {geometry,normal,coordinates} from './sim/geometry';
-export type BrushKind='raise'|'lower'|'flatten'|'fuel'|'mineral'|'detritus'|'water';
-export interface BrushSettings {tool:BrushKind;radius:number;amount:number;aspect:number;angle:number;level?:number}
+export type BrushKind='raise'|'lower'|'flatten'|'fuel'|'mineral'|'detritus'|'water'|'life';
+/** For the life brush, `amount` is organisms per dab and `life` names the registered creature. */
+export interface BrushSettings {tool:BrushKind;radius:number;amount:number;aspect:number;angle:number;level?:number;life?:string}
 export interface BrushPoint {x:number;z:number;height:number}
 export interface BrushTool {settings:BrushSettings;begin:(p:BrushPoint)=>boolean;move:(p:BrushPoint)=>void;end:()=>void}
-export interface BrushAck {type:'brush-ack';id:number;done:boolean;error?:string}
+export interface BrushAck {type:'brush-ack';id:number;done:boolean;error?:string;note?:string}
 
 // Arc-length sampling: dose follows distance, not pointer-event frequency.
 // Globe paths follow the short great-circle arc, including the date-line seam.
@@ -46,7 +47,8 @@ export class BrushStroke {
   begin(p:BrushPoint,settings:BrushSettings,config:WorldConfig){
     if(this.busy)return false;
     this.id=++this.serial;this.settings={...settings,level:settings.tool==='flatten'?p.height:undefined};this.first=true;this.released=false;this.clipped=false;
-    this.path=new BrushPath(config,Math.max(geometry(config).spacing*.4,settings.radius*settings.aspect*.3));
+    // Terrain dabs follow the field grid; creatures are scattered by the brush's own size.
+    this.path=new BrushPath(config,settings.tool==='life'?Math.max(.3,settings.radius*.7):Math.max(geometry(config).spacing*.4,settings.radius*settings.aspect*.3));
     this.points=this.path.sample([p.x,p.z]);this.flush();this.changed();return true;
   }
   move(p:BrushPoint){if(!this.path||this.released)return;const next=this.path.sample([p.x,p.z]);const room=256-this.points.length;if(next.length>room||this.path.truncated)this.clipped=true;this.points.push(...next.slice(0,room));this.schedule();}
@@ -56,7 +58,7 @@ export class BrushStroke {
   accept(m:BrushAck){
     if(m.id!==this.id||!this.busy)return;
     this.flight=false;
-    if(m.error||m.done){const clipped=this.clipped;this.reset();this.changed();this.report(m.error??(clipped?'Stroke saved. The input queue filled; paint shorter strokes for full coverage.':'Stroke saved · undo restores the whole stroke.'));return;}
+    if(m.error||m.done){const clipped=this.clipped;this.reset();this.changed();this.report(m.error??m.note??(clipped?'Stroke saved. The input queue filled; paint shorter strokes for full coverage.':'Stroke saved · undo restores the whole stroke.'));return;}
     if(this.released)this.flush();else this.schedule();this.changed();
   }
   private reset(){if(this.timer)clearTimeout(this.timer);this.timer=null;this.points=[];this.settings=null;this.path=null;this.flight=false;}

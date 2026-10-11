@@ -11,6 +11,20 @@ import {resourceValues,resourceRGB,type ResourceLayer} from '../sim/resource-vie
 const MAX_CELLS = 65000;
 const temp = new THREE.Object3D(), color = new THREE.Color();
 const chosenColor=new THREE.Color(CHOSEN_COLOR),complexColor=new THREE.Color('#ffffff'),injuryColor=new THREE.Color('#653e48'),mineralColor=new THREE.Color('#b7c9bd'),snowColor=new THREE.Color('#e5ece1');
+// The sea reads by its bed: turquoise over the shallows, navy over the deeps.
+// The surface itself stays clear enough to see what swims under it.
+const shallowsColor=new THREE.Color('#2f9dc2'),deepColor=new THREE.Color('#0a2a5c'),wetColor=new THREE.Color('#2a3a36'),surfaceShallow=new THREE.Color('#7fd0ea'),surfaceDeep=new THREE.Color('#2f7fd0');
+const smooth=(a:number,b:number,v:number)=>{const t=Math.min(1,Math.max(0,(v-a)/(b-a)));return t*t*(3-2*t);};
+/** Height of standing water at a point, read from the pooled sites around it.
+ * A sea lies level even where the ground under it is rough; NaN where nothing has pooled. */
+function seaLevel(levels:Float32Array,x:number,z:number,c:WorldConfig){
+  const g=geometry(c),raw=(x+g.half)/g.spacing-.5,gx=g.sphere?raw:Math.max(0,Math.min(g.grid-1,raw)),gz=Math.max(0,Math.min(g.rows-1,(z+(g.sphere?g.half/2:g.half))/g.spacing-.5));
+  const ix=Math.floor(gx),iz=Math.floor(gz),jz=Math.min(g.rows-1,iz+1),u=gx-ix,v=gz-iz;
+  const wrap=(i:number)=>g.sphere?(i%g.grid+g.grid)%g.grid:Math.max(0,Math.min(g.grid-1,i));
+  let total=0,weight=0;
+  for(const [k,w] of [[iz*g.grid+wrap(ix),(1-u)*(1-v)],[iz*g.grid+wrap(ix+1),u*(1-v)],[jz*g.grid+wrap(ix),(1-u)*v],[jz*g.grid+wrap(ix+1),u*v]]){const level=levels[k];if(level===level){total+=level*w;weight+=w;}}
+  return weight>1e-4?total/weight:NaN;
+}
 export function bodyOffset(cell: number, count: number, shape: number, branching: number): THREE.Vector3 {
   if (count === 1) return new THREE.Vector3();
   if (shape < .34) {
@@ -33,6 +47,9 @@ export class WorldView {
   camera = new THREE.PerspectiveCamera(40, 1, .1, 600);
   controls: OrbitControls;
   cells: THREE.InstancedMesh;
+  /** Walled cells are drawn as blocks: a plant cell is boxed in by its wall. */
+  walled: THREE.InstancedMesh;
+  private boxed=new Uint8Array(MAX_CELLS);
   bones: THREE.InstancedMesh;
   jointCuffs:THREE.InstancedMesh;
   jointMuscles:THREE.InstancedMesh;
@@ -43,6 +60,8 @@ export class WorldView {
   resourceRange:{min:number;max:number;available:boolean}={min:0,max:0,available:false};
   private terrainDirty=true;
   private terrainSamples:Float32Array|null=null;
+  /** Ground height at the middle of each field site, to find where the sea stands. */
+  private siteGround:Float32Array|null=null;
   private waterIndices:number[]=[];
   private waterIndexBuffer:THREE.BufferAttribute|null=null;
   private terrainRevision=-1;
@@ -108,6 +127,8 @@ export class WorldView {
     sun.shadow.bias = -.0006; this.scene.add(sun);
     this.sun=sun;
     this.cells = new THREE.InstancedMesh(new THREE.SphereGeometry(1, 8, 6), new THREE.MeshStandardMaterial({roughness:1,metalness:0}), MAX_CELLS);
+    this.walled = new THREE.InstancedMesh(new THREE.BoxGeometry(1.8,1.8,1.8), new THREE.MeshStandardMaterial({roughness:1,metalness:0}), MAX_CELLS);
+    this.walled.instanceMatrix.setUsage(THREE.DynamicDrawUsage);this.walled.frustumCulled=false;this.walled.count=0;this.scene.add(this.walled);
     this.bones = new THREE.InstancedMesh(new THREE.CylinderGeometry(.06,.06,1,5),new THREE.MeshStandardMaterial({ color:'#dfdabd',roughness:.6 }), 22000);
     this.jointCuffs=new THREE.InstancedMesh(new THREE.TorusGeometry(.23,.026,6,14),new THREE.MeshStandardMaterial({color:'#e7e0bb',roughness:.4}),8000);
     this.jointMuscles=new THREE.InstancedMesh(new THREE.CylinderGeometry(.035,.035,1,6),new THREE.MeshStandardMaterial({roughness:.4}),16000);
@@ -184,7 +205,7 @@ export class WorldView {
     this.renderer.setSize(width,height);this.renderDirty=true;
   }
   build(config: WorldConfig) {
-    this.terrainSurface=null;this.terrainSamples=null;this.terrainRevision=-1;this.snowAmount=-1;
+    this.terrainSurface=null;this.terrainSamples=null;this.siteGround=null;this.terrainRevision=-1;this.snowAmount=-1;
     this.config=config;
     const dimensions=geometry(config);this.scene.fog=null;this.controls.maxDistance=Math.max(120,dimensions.size*3);this.controls.maxPolarAngle=dimensions.sphere?Math.PI:Math.PI*.47;this.camera.far=Math.max(600,dimensions.size*8);this.camera.updateProjectionMatrix();this.ring.scale.setScalar(dimensions.size/64);
     const shadowSpan=dimensions.sphere?dimensions.radius+10:dimensions.half+6;
@@ -241,9 +262,11 @@ export class WorldView {
     }
     // Match terrain topology exactly. Dry triangles never receive a water face.
     const geo=terrain.clone();geo.deleteAttribute('color');
+    // Colour and clearness vary with depth, vertex by vertex.
+    geo.setAttribute('color',new THREE.BufferAttribute(new Float32Array(terrainPosition.count*4),4));
     this.waterIndices=Array.from(geo.index!.array);
     this.waterIndexBuffer=new THREE.BufferAttribute(new Uint32Array(this.waterIndices),1);this.waterIndexBuffer.setUsage(THREE.DynamicDrawUsage);geo.setIndex(this.waterIndexBuffer);geo.setDrawRange(0,0);
-    this.water=new THREE.Mesh(geo,new THREE.MeshStandardMaterial({color:'#469ed0',roughness:1,metalness:0,transparent:true,opacity:.48,depthWrite:false,polygonOffset:true,polygonOffsetFactor:-1,polygonOffsetUnits:-2}));
+    this.water=new THREE.Mesh(geo,new THREE.MeshStandardMaterial({vertexColors:true,roughness:.45,metalness:0,transparent:true,depthWrite:false,polygonOffset:true,polygonOffsetFactor:-1,polygonOffsetUnits:-2}));
     this.water.visible=!this.overlay;this.terrain.add(this.water);
   }
   update(snapshot: Snapshot) {
@@ -271,15 +294,30 @@ export class WorldView {
       if(this.terrainSurface&&(this.terrainDirty||(performance.now()-this.lastTerrainUpdate>=1000&&(g.sphere||this.overlay||planet?.terrainVersion!==this.terrainRevision||Math.abs((planet?.snow??0)-this.snowAmount)>.25)))){
         const geo=this.terrainSurface.geometry,pos=geo.attributes.position,colors=geo.attributes.color;
         const low=new THREE.Color(snapshot.config.kind==='tidal'?'#394a3d':snapshot.config.kind==='alien'?'#5f4567':'#47342c'),high=new THREE.Color('#aab58b');
-        const depths=new Float32Array(pos.count),wp=this.overlay?undefined:this.water?.geometry.attributes.position;
+        const depths=new Float32Array(pos.count),wp=this.overlay?undefined:this.water?.geometry.attributes.position,wc=this.overlay?undefined:this.water?.geometry.attributes.color;
+        // Where water has pooled, each site holds it up to one level.
+        let levels:Float32Array|null=null;
+        if(g.sphere&&planet?.waterDepth){
+          const count=planet.waterDepth.length;
+          if(this.siteGround?.length!==count){this.siteGround=new Float32Array(count);for(let i=0;i<count;i++){const [sx,sz]=point(i,snapshot.config);this.siteGround[i]=ground(sx,sz,snapshot.config);}}
+          levels=new Float32Array(count);
+          for(let i=0;i<count;i++)levels[i]=planet.waterDepth[i]>.05?this.siteGround[i]+(planet.relief?.[i]??0)+planet.waterDepth[i]:NaN;
+        }
         for(let i=0;i<pos.count;i++){
           const base=this.terrainSamples!,o=i*6,x=base[o],z=base[o+1],h=base[o+2]+sample(planet?.relief,x,z,snapshot.config);
           if(g.sphere){const radius=g.radius+h;pos.setXYZ(i,base[o+3]*radius,base[o+4]*radius,base[o+5]*radius);}else{pos.setXYZ(i,x,h,z);}
-          color.copy(low).lerp(high,THREE.MathUtils.clamp((h+.1)/3.5,0,1)).lerp(snowColor,Math.min(1,sample(planet?.snowCover,x,z,snapshot.config)*3));
+          // A flat habitat's sea stands at one level; a planet's lies wherever it has pooled.
+          const film=g.sphere&&planet?.waterDepth?sample(planet.waterDepth,x,z,snapshot.config):Math.max(0,.12-h);depths[i]=film;
+          // The engine says where it is wet; the sea is drawn level across it.
+          const level=levels&&film>.015?seaLevel(levels,x,z,snapshot.config):NaN,depth=level===level?Math.max(level-h,Math.min(film,.03)):film;
+          color.copy(low).lerp(high,THREE.MathUtils.clamp((h+.1)/3.5,0,1));
+          // Damp ground darkens; a sea bed takes the colour of the water over it.
+          if(depth>0)color.lerp(wetColor,smooth(0,.015,depth)*.3).lerp(shallowsColor,smooth(.015,.25,depth)*.8).lerp(deepColor,smooth(.15,1.3,depth)*.94);
+          color.lerp(snowColor,Math.min(1,sample(planet?.snowCover,x,z,snapshot.config)*3));
           if(this.overlay){const rgb=resourceRGB(this.resourceField,sample(density,x,z,snapshot.config),fieldMax);color.setRGB(rgb[0]/255,rgb[1]/255,rgb[2]/255,THREE.SRGBColorSpace);}
           colors.setXYZ(i,color.r,color.g,color.b);
-          const depth=planet?.waterDepth?sample(planet.waterDepth,x,z,snapshot.config):Math.max(0,.12-h);depths[i]=depth;
           if(wp){if(g.sphere){const radius=g.radius+h+depth+.015;wp.setXYZ(i,base[o+3]*radius,base[o+4]*radius,base[o+5]*radius);}else{wp.setXYZ(i,x,h+depth+.015,z);}}
+          if(wc){const deep=smooth(.1,1.2,depth);color.copy(surfaceShallow).lerp(surfaceDeep,deep);wc.setXYZW(i,color.r,color.g,color.b,smooth(0,.15,depth)*(.14+.2*deep));}
         }
         if(this.water&&wp&&this.waterIndexBuffer){
           this.waterIndexBuffer.array.set(this.waterIndices);this.water.geometry.computeVertexNormals();
@@ -287,7 +325,7 @@ export class WorldView {
           // Films below 0.015 units remain surface moisture, rather than a
           // coplanar transparent ocean. The display offset does not alter physics.
           for(let i=0;i<this.waterIndices.length;i+=3){const a=this.waterIndices[i],b=this.waterIndices[i+1],c=this.waterIndices[i+2];if(Math.min(depths[a],depths[b],depths[c])>.015){this.waterIndexBuffer.setX(wetCount++,a);this.waterIndexBuffer.setX(wetCount++,b);this.waterIndexBuffer.setX(wetCount++,c);}}
-          this.water.geometry.setDrawRange(0,wetCount);this.waterIndexBuffer.needsUpdate=true;wp.needsUpdate=true;this.water.geometry.computeBoundingSphere();
+          this.water.geometry.setDrawRange(0,wetCount);this.waterIndexBuffer.needsUpdate=true;wp.needsUpdate=true;if(wc)wc.needsUpdate=true;this.water.geometry.computeBoundingSphere();
         }
         pos.needsUpdate=true;colors.needsUpdate=true;if(!this.overlay&&(this.terrainDirty||planet?.terrainVersion!==this.terrainRevision))geo.computeVertexNormals();geo.computeBoundingSphere();this.terrainRevision=planet?.terrainVersion??-1;this.snowAmount=planet?.snow??0;this.lastTerrainUpdate=performance.now();this.terrainDirty=false;
       }
@@ -320,7 +358,8 @@ export class WorldView {
         if(materialTypes){if(role>0&&role<CELL_TYPES.length)color.set(CELL_TYPES[role].color);if(complex)color.lerp(complexColor,.3);if(chosen)color.lerp(chosenColor,.5);}
         else{if(role===1)color.set('#d8e5c4');if(role===2)color.set('#d88e72');if(role===3)color.set('#83c7d1');if(role===4)color.set('#ddb76b');if(role===5)color.set('#b5a2d9');}
         color.lerp(injuryColor,(1-health)*.8);
-        this.cells.setColorAt(count,color);this.overviewPositions.setXYZ(count,temp.position.x,temp.position.y,temp.position.z);
+        this.boxed[count]=materialTypes&&role===17?1:0;
+        this.cells.setColorAt(count,color);if(this.boxed[count])this.walled.setColorAt(count,color);this.overviewPositions.setXYZ(count,temp.position.x,temp.position.y,temp.position.z);
         this.cellIds[count]=snapshot.ids[i];this.pickRadii[count]=r;count++;
       }
       if(snapshot.ids[i]===this.selectedId){
@@ -342,7 +381,7 @@ export class WorldView {
       if(kind===2)color.lerp(new THREE.Color('#ffdb9e'),activation*.7);
       this.bones.setColorAt(linkCount++,color);
     }
-    this.cells.count=count;this.bones.count=linkCount;
+    this.cells.count=count;this.walled.count=count;this.bones.count=linkCount;
     this.overviewCells.geometry.setDrawRange(0,count);this.overviewPositions.needsUpdate=true;this.applyCameraMode();
     for(let p=0;p<snapshot.jointData.length&&this.jointMotion.length<8000;p+=JOINT_STRIDE){
       const a=nodeKeys[snapshot.jointData[p]],b=nodeKeys[snapshot.jointData[p+1]],c=nodeKeys[snapshot.jointData[p+2]];
@@ -355,6 +394,7 @@ export class WorldView {
     if(this.jointMuscles.instanceColor)this.jointMuscles.instanceColor.needsUpdate=true;
     this.animateBodies(1);
     if(this.cells.instanceColor)this.cells.instanceColor.needsUpdate=true;
+    if(this.walled.instanceColor)this.walled.instanceColor.needsUpdate=true;
     if(this.bones.instanceColor)this.bones.instanceColor.needsUpdate=true;
     if(this.selectedId&&!snapshot.ids.includes(this.selectedId))this.selected.visible=false;
     const physics=snapshot.autonomous?.physics,flow=physics?.flow;
@@ -373,9 +413,15 @@ export class WorldView {
   private animateBodies(_alpha:number){
     if(this.overviewCells.visible)return;
     const a=new THREE.Vector3(),b=new THREE.Vector3(),c=new THREE.Vector3(),delta=new THREE.Vector3(),up=new THREE.Vector3(0,1,0);
+    const sphere=!!this.config&&geometry(this.config).sphere;
     for(let i=0;i<this.cells.count;i++){
-      temp.position.fromArray(this.positions,i*3);temp.rotation.set(0,0,0);temp.scale.setScalar(this.pickRadii[i]);temp.updateMatrix();this.cells.setMatrixAt(i,temp.matrix);
+      // Each cell is one shape or the other; the one it is not shrinks to nothing.
+      const box=this.boxed[i]===1;
+      temp.position.fromArray(this.positions,i*3);temp.rotation.set(0,0,0);temp.scale.setScalar(box?0:this.pickRadii[i]);temp.updateMatrix();this.cells.setMatrixAt(i,temp.matrix);
+      if(box&&sphere)temp.quaternion.setFromUnitVectors(up,a.copy(temp.position).normalize());
+      temp.scale.setScalar(box?this.pickRadii[i]:0);temp.updateMatrix();this.walled.setMatrixAt(i,temp.matrix);
     }
+    this.walled.instanceMatrix.needsUpdate=true;
     for(const link of this.linkMotion){
       a.fromArray(this.positions,link.a*3);b.fromArray(this.positions,link.b*3);delta.subVectors(b,a);
       const length=delta.length();temp.position.copy(a).add(b).multiplyScalar(.5);
@@ -398,7 +444,7 @@ export class WorldView {
   private applyCameraMode(){
     const markers=this.cameraMode==='overview'&&!!this.config&&geometry(this.config).sphere&&(this.config.worldSize??64)>256;
     this.overviewCells.visible=markers;
-    for(const mesh of [this.cells,this.bones,this.jointCuffs,this.jointMuscles,this.matter])mesh.visible=!markers;
+    for(const mesh of [this.cells,this.walled,this.bones,this.jointCuffs,this.jointMuscles,this.matter])mesh.visible=!markers;
     if(markers)this.selected.visible=false;
     this.selectedBounds.visible=!markers&&!this.selectedBounds.box.isEmpty();
     this.renderDirty=true;

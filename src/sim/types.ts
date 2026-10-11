@@ -49,6 +49,19 @@ export interface LabView {jointed:boolean;motorsEnabled:boolean;alternations:num
 export interface CompetingFamily {id:number;name:string;introduced:number;living:number;cells:number;births:number;exchanges:number;meals:number;deaths:number;generation:number;jointed:number;meanPredation:number;meanSensing:number;meanMuscle:number;controllerChange:number;representative:number|null}
 export interface BirthRecord {time:number;child:number;parent:number;mate:number;family:number;generation:number}
 export interface CompetitionView {directionalSensing:boolean;foodEnergy:number;peakGeneration:number;renewal:number;families:CompetingFamily[];ancestry:BirthRecord[];peakJointed:number;largestBody:number;foodPoorFraction:number}
+/** How the water or the land carries a body. `load` is its weight beside what its footing can bear (past 1 it is being crushed); `dry` is how hard dry air is drying it; `thirst` how short of water its chemistry is. */
+export interface Bearing {submerged:number;weight:number;depth:number;sinks:number;load?:number;feet?:number;dry?:number;thirst?:number}
+/** Where the planet's carbon, nitrogen, oxygen and energy are, and how much life feeds at each level. `error` is what the books fail to account for. */
+export interface CyclesView {
+  carbon:{dioxide:number;dissolved:number;living:number;remains:number;total:number;error:number};
+  nitrogen:{air:number;dissolved:number;living:number;remains:number;total:number;error:number};
+  oxygen:{free:number;bound:number};
+  energy:{sunlight:number;vents:number;heat:number;work:number;stored:number;start:number;error:number};
+  /** Producers, plant-eaters, meat-eaters, top predators, then decomposers. `intake` is carbon per cycle. */
+  levels:{name:string;cells:number;carbon:number;intake:number}[];
+  /** Share of each level's intake that the next level up takes in. */
+  efficiency:number[];
+}
 export interface BodyStores {water:number;solutes:number[];gas:number[];matrix:number;fibers:number;polymers:{sequence:number[];amount:number}[]}
 export interface MaterialInventory {biomass:number;fuel:number;mineral:number;lipid:number;proteins:number[];body?:BodyStores}
 export interface PhysicsView {domain:{width:number;grid:number;rows:number;sites:number;spacing:number;radius:number;shape:"planar"|"sphere";area:number;boundary:string};worldFlow?:number[][]|null;assay: 'full'|'passive'; joints:number; angularWork:number;organic:number;mineral:number;chemicalEnergy:number;photonEnergy:number;heat:number;mechanicalInput:number;massError:number;mineralError:number;energyError:number;fluidSpeed:number;boundEvents:number;dissociations:number;proteinMass:number;boundMineral:number;flow:[number,number,number][]}
@@ -56,51 +69,66 @@ export interface CellPhysiology {excitation:number;recovery:number;nutrient_memo
   /** 0 for a stem cell, 1 to 3 once committed to a fate inside a body. */
   fate?:number;
   /** Light harvest kept up by a captured cell living inside this one. */
-  symbiont?:number}
+  symbiont?:number;
+  /** How fully the cell burned its fuel last tick: 1 with oxygen to spare, 0 when it could only ferment. */
+  breath?:number}
 export interface SystemView {particles:{p:V3;radius:number;mineral:number}[];ledger:{waterFlow:number;soluteFlow:number;membraneExchange:number;absorbed:number;filtered:number;gasExchange:number;respired:number;pumpWork:number;matrixBuilt:number;fiberBuilt:number;mineralRemodeled:number;polymersBuilt:number;fidelityWork:number;matrixMeals:number};fluidCells:number;fluidConnections:number;internalWater:number;internalSolutes:number;matrix:number;fibers:number;polymerSpecies:number;polymerMass:number;gasError:number;germlineCells:number;pressureMax:number}
 export interface PhysiologyView {ledger:{lipid_stored:number;lipid_used:number;fuel_transported:number;energy_transported:number;signal_work:number;repairs:number;digested:number;excreted:number;decomposed:number;spikes:number;contact_changes:number};regions:{function:string;cells:number;regions:number;largest:number}[];mixedBodies:number;lipid:number;excited:number;injured:number;grounded:number}
 export interface PlanetView {seasonStrength?:number;seasonPeriod?:number;cloudCover?:number;stormRadius?:number;waterDepth?:number[];sunDirection?:number[];day:number;season:number;sunlight:number;temperature:number;weather:string;storm:number;stormCenter:number[];water:number;snow:number;atmosphere:number;waterError:number;precipitation:number;evaporation:number;snowmelt:number;runoff:number;eruptions:number;mineralInput:number;relief:number[];snowCover:number[];heat:number[];terrainVersion:number}
 export interface CellLifecycle {root:number;depth:number;phase:"somatic"|"gamete"|"zygote";mate:number;homolog:{id:number;genes:ProgramCell["genes"]}|null}
 export interface DevelopmentView {gametesProduced:number;zygotes:number;meioses:number;livingGametes:number;diploidCells:number;synapses:number;transmissions:number;adaptations:number;sensoryWork:number;neuralWork:number;fusionWork:number;recent:{time:number;child:number;parent:number;mate:number;generation:number}[]}
 export interface ProgramCell {lifecycle?:CellLifecycle;state?:CellPhysiology;material?:MaterialInventory|null;id:number;parent:number;genome:number;generation:number;genes:{action:number;promoter:number[];bias:number;strength:number;fates?:number}[];energy:number;chemicals:number[];expression:number[]}
-export type BreedingGoal='bodies'|'swimming'|'movement'|'support'|'senses'|'hunting'|'defence';
+export type BreedingGoal='bodies'|'swimming'|'movement'|'support'|'senses'|'hunting'|'defence'|'limbs'|'reserves';
 /** Creator commands. They change selection and variation, never genes or materials. */
 export type SteerAction =
   | {kind:'mutation';scale:number}
   | {kind:'mixing';scale:number}
   | {kind:'sharing';scale:number}
-  | {kind:'seasons';depth:number;length:number}
+  | {kind:'seed';species:string;count:number;sustain?:boolean}
+  | {kind:'sustain';on:boolean}
   | {kind:'light';scale:number}
   | {kind:'vents';scale:number}
-  | {kind:'goal';goal:BreedingGoal|'';strength:number;period:number}
+  | {kind:'goal';goal:BreedingGoal|'auto'|'';strength:number;period:number}
   | {kind:'favour';body:number;pressure:number}
   | {kind:'unfavour'}
   | {kind:'storm';scale:number;duration:number}
   | {kind:'winter';depth:number;duration:number}
   | {kind:'meteor';x:number;z:number;radius:number}
   | {kind:'dying';fraction:number}
-  | {kind:'nourish';amount:number};
+  | {kind:'nourish';amount:number}
+  | {kind:'water';change:number}
+  | {kind:'oxygen';level:number}
+  /** Fix a share of the air's nitrogen into the water (positive) or drive a share of what is dissolved back to the air. */
+  | {kind:'nitrogen';change:number};
 /** stage: 0 absent · 1 gene in the pool · 2 working somewhere · 3 established. */
 export interface LadderRung {key:string;stage:0|1|2|3;progress:number;genes:number;built:number;count:number;first:(number|null)[]}
-export interface SteeringView {mutation:number;mutationFactor:number;mixing:number;light:number;vents:number;
+export interface SteeringView {
+  /** The rewarded trait follows life's ladder by itself; `goal` is the one in force. */
+  auto?:boolean;
+  /** Share of the planet's oxygen that is free, and how fully living cells are burning their fuel (1 is with oxygen to spare). */
+  oxygen?:number;breath?:number;cycles?:CyclesView;mutation:number;mutationFactor:number;mixing:number;light:number;vents:number;
   /** How readily touching cells pass a gene across; 0 is off. */
   sharing?:number;
-  /** Share of light lost at midwinter, the length of a year in cycles, and the share of light arriving now. */
-  seasonDepth?:number;seasonLength?:number;season?:number;
+  /** Living cells descended from each starter species released, which are being kept from dying out, and founders released to do it. */
+  species?:[string,number][];sustained?:string[];restocked?:number;
   /** Living cells by how their body feeds: light, dissolved fuel, remains, vents, herbivore, omnivore, carnivore. */
   diet:number[];
   /** Living cells by kind of life: simple (no wall, mouth or motor), plant-like, fungus-like, animal-like. */
   kinds?:number[];
   /** Times a swallowed cell was first kept alive inside its host. */
   captures:number;losses:[number,number,number];storm:number;goal:BreedingGoal|'';strength:number;period:number;nextRound:number;rounds:number;culled:number;note:''|'selecting'|'no-variation'|'recovering'|'too-few';scored:number;bodies:number;favoured:number;favourPressure:number;favourCulled:number;winter:number;ladder:LadderRung[];milestones:{key:string;stage:number;time:number;generation:number}[]}
-export interface AutonomousView {steering?:SteeringView|null;systems?:SystemView|null;development?:DevelopmentView|null;resources?:{detritus:number[];mineral:number[];waste?:number[];light?:number[];area?:number[]};feeding?:{time:number;attacker:number;prey:number;attacker_genome:number;prey_genome:number;material:string;amount:number}[];observationControl?:string;physiology?:PhysiologyView;planet?:PlanetView|null;detritus?:number;waste?:number;physics?:PhysicsView|null;actions:string[];expressed:number[];divisions:number;attachedDivisions:number;pointEdits:number;duplications:number;deletions:number;innovations:number;exchanges:number;foodEnergy:number;motorWork:number;peakBody:number;peakGeneration:number;genomeMin:number;genomeMax:number;genomes:number;recent:{time:number;parent:number;child:number;genome:number;generation:number;attached:boolean;edits:number}[]}
+export interface AutonomousView {steering?:SteeringView|null;systems?:SystemView|null;development?:DevelopmentView|null;resources?:{detritus:number[];mineral:number[];waste?:number[];light?:number[];area?:number[]};feeding?:{time:number;attacker:number;prey:number;attacker_genome:number;prey_genome:number;material:string;amount:number;attacker_kind?:string;prey_kind?:string;attacker_role?:number;prey_role?:number;attacker_body?:number}[];observationControl?:string;physiology?:PhysiologyView;planet?:PlanetView|null;detritus?:number;waste?:number;physics?:PhysicsView|null;actions:string[];expressed:number[];divisions:number;attachedDivisions:number;pointEdits:number;duplications:number;deletions:number;innovations:number;exchanges:number;foodEnergy:number;motorWork:number;peakBody:number;peakGeneration:number;genomeMin:number;genomeMax:number;genomes:number;recent:{time:number;parent:number;child:number;genome:number;generation:number;attached:boolean;edits:number}[]}
 export interface Snapshot {
   type: 'snapshot'; nursery?:{parentName:string}|null; selection?:number; paused?:boolean; assessment?:Assessment; canUndoWorld?:boolean; config: WorldConfig; data: Float32Array; ids: Uint32Array;
   cellData:Float32Array; linkData:Float32Array; jointData:Float32Array; lab:LabView|null; study:boolean; competition:CompetitionView|null; autonomous?:AutonomousView|null;
   field: Float32Array; stats: Stats; lineages: (Lineage & { count: number })[];
   events: LifeEvent[]; history: HistoryPoint[]; selected: OrganismView | null;
 }
-export interface OrganismView {observation?:BodyObservation;programCells?:ProgramCell[]; id: number; lineage: number; name: string; generation: number; age: number; cells: number; energy: number; genes: number[]; development:number[]; regulation:{rules:number[][];growth:number[]}|null; anatomy:Anatomy|null; body:PhysicalBody; meals:number; feedingCooldown:number; family:number; offspring:number; parent: number; mate: number; x: number; z: number }
+export interface OrganismView {observation?:BodyObservation;programCells?:ProgramCell[];
+  /** How the water carries this body: share under water, weight borne beside its land weight, depth below, and its weight fully submerged. */
+  bearing?:Bearing;
+  /** Where the body sits in the food chain, and what limits it. */
+  feeding?:{level:string;steps:number;scavenged:number;nitrogenShort:number;bone:number;fat:number}; id: number; lineage: number; name: string; generation: number; age: number; cells: number; energy: number; genes: number[]; development:number[]; regulation:{rules:number[][];growth:number[]}|null; anatomy:Anatomy|null; body:PhysicalBody; meals:number; feedingCooldown:number; family:number; offspring:number; parent: number; mate: number; x: number; z: number }
 export interface SaveData {
   version: 1|2|3|4; config: WorldConfig; rng: number; time: number; next_id: number; next_lineage: number;
   births: number; deaths: number; mating: number; organisms: (Omit<Organism, 'genes'> & { genes: number[] })[];
@@ -115,6 +143,7 @@ export type WorldEdit =
   | {kind:'genes';body:number;cell:number;genes:ProgramCell['genes']};
 export type Command =
   | {type:'brush-stroke';id:number;start:boolean;end:boolean;settings:import('../brush').BrushSettings;points:[number,number][]}
+  | {type:'life-source';token:string;species?:string;json?:string;sustain?:boolean}
   | {type:'nursery';action:'enter'|'leave'|'recover'}
   | {type:'steer';action:SteerAction}
   | {type:'display-priority';mode:'live'|'evolution'}
@@ -145,7 +174,10 @@ export type Command =
 
 export type ComparisonControl='baseline'|'motors'|'transport'|'signals';
 export interface SpecimenSummary {name:string;cells:number;generation:number;genomes:number;joints:number;bonds:number;synapses:number;sourceBody:number;sourceSeed:number;cycle:number;genes:number[];functions:number[];shape:number[][]}
-export interface SavedSpecimen {id:string;savedAt:string;json:string;summary:SpecimenSummary}
+/** A record-holder the game kept by itself: which record, why, and on which planet. */
+export interface ChampionRecord {slot:string;title:string;note:string;score:number;seed:number;time:number}
+export interface SavedSpecimen {id:string;savedAt:string;json:string;summary:SpecimenSummary;auto?:ChampionRecord}
+export interface ChampionMessage extends ChampionRecord {type:'champion';json:string;summary:SpecimenSummary}
 export interface SpecimenMessage {type:'specimen';action:'capture'|'inspect';json:string;summary:SpecimenSummary}
 export interface Flux {fuel:number;detritus:number;photosynthesis:number;prey:number;lost_to_predators:number;defense_blocked:number;minerals:number;waste:number;organic_waste:number;signal_a:number;signal_b:number;proteins:number;absorbed:number;filtered:number;respiration:number;water_transport:number;solute_transport:number;matrix:number;fibers:number;chemosynthesis?:number;wounded?:number;prey_animal?:number;
   /** Fuel a mouth cell passed to unarmed cells of its own body, and what those cells received. */

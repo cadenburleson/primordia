@@ -44,7 +44,8 @@ impl Polymer {
 #[serde(default)]
 pub struct BodyStores {
     pub water: f64,
-    pub solutes: [f64; 6],
+    #[serde(deserialize_with = "crate::physical::padded")]
+    pub solutes: [f64; crate::physical::SOLUTES],
     pub gas: [f64; 2],
     pub matrix: f64,
     pub fibers: f64,
@@ -202,11 +203,12 @@ impl SystemLedger {
 pub struct MatterParticle {
     pub p: body::V3,
     pub v: body::V3,
-    pub solutes: [f64; 6],
+    #[serde(deserialize_with = "crate::physical::padded")]
+    pub solutes: [f64; crate::physical::SOLUTES],
 }
 impl MatterParticle {
     fn mass(&self) -> f64 {
-        self.solutes.iter().sum()
+        self.solutes[..6].iter().sum()
     }
     fn radius(&self) -> f32 {
         (0.04 + self.mass().cbrt() * 0.12) as f32
@@ -250,16 +252,45 @@ fn transfer(x: &mut f64, y: &mut f64, requested: f64) -> f64 {
     *y += moved;
     moved
 }
+/// Oxygen a planet holds over each field site, free or bound. It has to be
+/// large beside what life makes and burns in a cycle, or the air could not
+/// carry a crowded sea through a single night.
+const AIR: f64 = 0.6;
+/// Share of the gap between a site's air and the planet's that closes each tick.
+const AIR_MIXING: f64 = 0.2;
 impl Habitat {
+    /// Set how much of the planet's oxygen is free, from none (0) to all of
+    /// it (1), everywhere at once. A young planet has none: it is all bound up.
+    pub(crate) fn oxygenate(&mut self, level: f64) {
+        if self.systems.gas.is_empty() {
+            self.systems.gas = vec![[0.; 2]; self.domain.sites()];
+            for (i, g) in self.systems.gas.iter_mut().enumerate() {
+                g[1] = AIR * self.domain.area(i) / 2.56;
+            }
+            self.systems.initial_gas = self.systems.gas.iter().flatten().sum::<f64>();
+        }
+        for g in &mut self.systems.gas {
+            let total = g[0] + g[1];
+            *g = [total * level, total * (1. - level)];
+        }
+    }
+    /// Share of the planet's oxygen that is free.
+    pub(crate) fn oxygen(&self) -> f64 {
+        let free: f64 = self.systems.gas.iter().map(|g| g[0]).sum();
+        let all: f64 = self.systems.gas.iter().flatten().sum();
+        if all > 0. { free / all } else { 0. }
+    }
     fn gas_transport(&mut self, e: &Evolution) {
         if self.systems.gas.is_empty() {
-            self.systems.gas = (0..self.domain.sites())
-                .map(|i| {
-                    let area = self.domain.area(i) / 2.56;
-                    [0.04 * area, 0.02 * area]
-                })
-                .collect();
-            self.systems.initial_gas = self.systems.gas.iter().flatten().sum::<f64>();
+            self.oxygenate(0.);
+        }
+        // Worlds saved when the air was a tenth this size keep their mix.
+        let full: f64 = (0..self.domain.sites()).map(|i| AIR * self.domain.area(i) / 2.56).sum();
+        if self.systems.initial_gas < full * 0.5 {
+            for g in self.systems.gas.iter_mut().flatten() {
+                *g *= 10.;
+            }
+            self.systems.initial_gas += self.systems.gas.iter().flatten().sum::<f64>() * 0.9;
         }
         for (a, b) in self.domain.edges() {
             let (lo, hi) = (a.min(b), a.max(b));
@@ -272,6 +303,16 @@ impl Habitat {
             for k in 0..2 {
                 let difference = x[k] / self.domain.area(a) - y[k] / self.domain.area(b);
                 transfer(&mut x[k], &mut y[k], DT as f64 * 0.05 * difference);
+            }
+        }
+        // The air above mixes within days: each site's gases relax toward the
+        // planet's average, so oxygen made in one sea reaches every other.
+        let area: Vec<f64> = (0..self.domain.sites()).map(|i| self.domain.area(i)).collect();
+        let surface: f64 = area.iter().sum();
+        for k in 0..2 {
+            let mean = self.systems.gas.iter().map(|g| g[k]).sum::<f64>() / surface;
+            for (g, a) in self.systems.gas.iter_mut().zip(&area) {
+                g[k] += (mean * a - g[k]) * AIR_MIXING;
             }
         }
         // Atmospheric transport is reduced diffusion; body transport is separate.
@@ -308,7 +349,7 @@ impl Habitat {
                 * (1. - (-dt * (0.001 + c.state.injury as f64 * 0.15 + (1. - seal) * 0.006)).exp());
             let fraction = leak / m.body.water.max(1e-12);
             m.body.water -= leak;
-            for k in 0..6 {
+            for k in 0..crate::physical::SOLUTES {
                 let lost = m.body.solutes[k] * fraction;
                 m.body.solutes[k] -= lost;
                 self.solutes[site][k] += lost;
@@ -324,7 +365,7 @@ impl Habitat {
                     .as_ref()
                     .map_or(1., |p| p.water[site])
                     .max(self.domain.area(site) * 0.02);
-                for k in 0..6 {
+                for k in 0..crate::physical::SOLUTES {
                     let permeability = (if k == 5 {
                         gates[9].max(gates[MATRIX_DIGEST]) * 0.001
                     } else {
@@ -350,6 +391,14 @@ impl Habitat {
                     .min(m.body.solutes[5])
                     .min((m.biomass * 1.5 - m.fuel).max(0.) / 0.85)
                     .min(c.energy as f64 / 0.2);
+                let unbound = if m.body.solutes[5] > 0. {
+                    (m.body.solutes[crate::physical::REMAINS_N] * digestion * 0.85 / m.body.solutes[5])
+                        .min(m.body.solutes[crate::physical::REMAINS_N])
+                } else {
+                    0.
+                };
+                m.body.solutes[crate::physical::REMAINS_N] -= unbound;
+                m.nitrogen += unbound;
                 m.body.solutes[5] -= digestion;
                 m.fuel += digestion * 0.85;
                 c.state.flux.detritus += digestion * 0.85;
@@ -403,16 +452,6 @@ impl Habitat {
             c.state.flux.respiration += respiration;
             c.state.flux.waste += respiration;
             e.food_energy += respiration * Q;
-            let regenerated = (dt
-                * 0.001
-                * gates[0]
-                * self.planet.as_ref().map_or(1., |p| p.illumination(site))
-                * self.shade.get(site).copied().unwrap_or(1.) as f64)
-                .min(self.systems.gas[site][1]);
-            self.systems.gas[site][1] -= regenerated;
-            self.systems.gas[site][0] += regenerated;
-            self.photon_energy += regenerated * 0.2;
-            self.heat += regenerated * 0.2;
             for (gate, rate, cost, fiber) in [
                 (gates[MATRIX], 0.006, 0.5, false),
                 (gates[FIBER], 0.004, 0.7, true),
@@ -510,6 +549,7 @@ impl Habitat {
             let lysed = (dt * 0.025 * gates[LYSIS]).min((m.biomass - 0.005).max(0.));
             m.biomass -= lysed;
             self.solutes[site][5] += lysed;
+            self.solutes[site][crate::physical::REMAINS_N] += lysed * crate::physical::N_RATIO;
             let osmotic = m.body.solutes.iter().sum::<f64>() / m.body.water.max(0.002);
             c.state.pressure = ((m.body.water / capacity.max(0.002) - 0.7).max(0.) * 0.8
                 + osmotic / (1. + osmotic) * 0.2)
@@ -580,7 +620,7 @@ impl Habitat {
             self.systems.water_flow += moved;
             x.state.flux.water_transport += moved * 0.5;
             y.state.flux.water_transport += moved * 0.5;
-            for k in 0..6 {
+            for k in 0..crate::physical::SOLUTES {
                 let transported = donor.solutes[k] * fraction;
                 donor.solutes[k] -= transported;
                 receiver.solutes[k] += transported;
@@ -594,7 +634,7 @@ impl Habitat {
                 receiver.gas[k] += transported;
             }
             if xm.body.water > 1e-9 && ym.body.water > 1e-9 {
-                for k in 0..6 {
+                for k in 0..crate::physical::SOLUTES {
                     let gradient =
                         xm.body.solutes[k] / xm.body.water - ym.body.solutes[k] / ym.body.water;
                     let transported = transfer(
@@ -654,6 +694,19 @@ impl Habitat {
                 p.v.add(fluid.sub(p.v).mul(DT * 0.4))
                     .sub(up.mul(DT * 0.03 * (p.solutes[2] / p.mass().max(1e-12)) as f32));
             p.p = p.p.add(p.v.mul(DT));
+            // Loose grains ride the same eddies as free cells, so what is shed
+            // in one spot scatters as it sinks instead of hanging in a column.
+            if self.planet.as_ref().unwrap().surface_depth(site) > 0.05 {
+                let turn = ((p.p.x * 12.9898 + p.p.y * 4.1414 + p.p.z * 78.233 + core.time * 37.719).sin()
+                    * 43758.547)
+                    .fract()
+                    * std::f32::consts::TAU;
+                p.p = p.p.add(
+                    self.domain
+                        .tangent(p.p, turn)
+                        .mul(crate::physical::JOSTLE * self.steering.mixing.sqrt()),
+                );
+            }
             if !self.domain.spherical() {
                 p.p.x = p.p.x.clamp(-self.domain.wall(), self.domain.wall());
                 p.p.z = p.p.z.clamp(-self.domain.wall(), self.domain.wall());
@@ -677,7 +730,7 @@ impl Habitat {
                 }
             }
             let site = self.domain.locate(p.p);
-            for k in 0..6 {
+            for k in 0..crate::physical::SOLUTES {
                 let dissolved = p.solutes[k] * (1. - (-DT as f64 * 0.006).exp());
                 p.solutes[k] -= dissolved;
                 self.solutes[site][k] += dissolved;
@@ -701,8 +754,22 @@ impl Habitat {
                                 .min(p.solutes[5])
                                 .min((m.biomass * 1.5 - m.fuel).max(0.) / 0.85)
                                 .min(c.energy as f64 / 0.2);
+                            let unbound = if p.solutes[5] > 0. {
+                                (p.solutes[crate::physical::REMAINS_N] * extracted * 0.85 / p.solutes[5])
+                                    .min(p.solutes[crate::physical::REMAINS_N])
+                            } else {
+                                0.
+                            };
+                            p.solutes[crate::physical::REMAINS_N] -= unbound;
+                            m.nitrogen += unbound;
                             p.solutes[5] -= extracted * 0.85;
                             m.fuel += extracted * 0.85;
+                            self.web.feed(
+                                &mut c.state,
+                                m.organic(),
+                                extracted * 0.85,
+                                crate::trophic::Source::Dead,
+                            );
                             c.state.flux.detritus += extracted * 0.85;
                             self.physiology.digested += extracted;
                             self.physiology.excreted += extracted * 0.15;
@@ -730,7 +797,7 @@ impl Habitat {
         for p in &mut self.systems.particles {
             if p.mass() <= 1e-12 {
                 let site = self.domain.locate(p.p);
-                for k in 0..6 {
+                for k in 0..crate::physical::SOLUTES {
                     self.solutes[site][k] += p.solutes[k];
                     p.solutes[k] = 0.;
                 }

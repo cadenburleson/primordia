@@ -10,6 +10,8 @@ pub const LIPID: usize = 10;
 /// How fast excitable cells fire and recover. At 3 a steadily stimulated
 /// cell beats about once every seventeen cycles: quick enough to row with.
 const NERVE_PACE: f32 = 3.;
+/// How many times faster a signal crosses between two fully fat-sheathed cells.
+const MYELIN: f32 = 3.;
 pub const RECEPTOR: usize = 11;
 pub const CHANNEL: usize = 12;
 pub const REPAIR: usize = 13;
@@ -52,6 +54,25 @@ pub struct CellState {
     /// Removed by the player's selection: its body returns to the world as
     /// fuel the survivors can use, rather than as remains.
     pub culled: bool,
+    /// How fully the cell burned its fuel last tick: 1 with oxygen to spare,
+    /// 0 when it could only ferment.
+    pub breath: f32,
+    /// Steps above the producers in the food chain: 0 for a cell built from
+    /// carbon dioxide, one more than its food for a cell built from prey.
+    pub trophic: f32,
+    /// Share of its carbon that came from remains and dissolved matter.
+    pub scavenged: f32,
+    /// How far short of nitrogen its growth is running, 0 to 1.
+    pub nitrogen_short: f32,
+    /// On land: the body's weight beside what its footing can carry. Past 1
+    /// the cells it stands on are being crushed.
+    pub load: f32,
+    /// How hard dry air is drawing water out of this cell, 0 to 1.
+    pub dry: f32,
+    /// How short of water its chemistry is, 0 to 1.
+    pub thirst: f32,
+    /// Share of the cell under water, 0 to 1.
+    pub under: f32,
 }
 impl CellState {
     pub fn valid(&self) -> bool {
@@ -132,7 +153,7 @@ impl Cell {
     /// prey search across the world, target direction, fitness score or clock.
     pub(crate) fn physical_inputs(
         &mut self,
-        solutes: &[[f64; 6]],
+        solutes: &[[f64; crate::physical::SOLUTES]],
         degree: usize,
         domain: crate::domain::Domain,
     ) -> [f32; INPUTS] {
@@ -258,9 +279,11 @@ impl Habitat {
         let enzyme = c.activity(LIPID) as f64;
         let repair = c.activity(REPAIR) as f64;
         let m = c.material.as_mut().unwrap();
-        let amount = if c.energy > 6. {
+        // Fat is laid down whenever a cell is comfortably fed, not only when
+        // it is glutted, and it is kept until the cell is truly short.
+        let amount = if c.energy > 5. {
             (DT as f64 * 0.025 * enzyme)
-                .min((m.fuel - m.biomass * 0.6).max(0.))
+                .min((m.fuel - m.biomass * 0.25).max(0.))
                 .min((m.biomass * 1.5 - m.lipid).max(0.))
                 .min(c.energy as f64 / 0.2)
         } else {
@@ -271,7 +294,7 @@ impl Habitat {
         self.physiology.lipid_stored += amount;
         self.spend(c, amount * 0.2, false);
         let m = c.material.as_mut().unwrap();
-        if c.energy < 4.5 || m.fuel < m.biomass * 0.15 {
+        if c.energy < 2.5 {
             let used = (DT as f64 * 0.035 * enzyme).min(m.lipid);
             m.lipid -= used;
             m.fuel += used;
@@ -279,8 +302,10 @@ impl Habitat {
         }
         let repaired = (DT as f64 * 0.008 * repair * c.state.injury as f64)
             .min(m.fuel)
-            .min(c.energy as f64 / 0.6);
+            .min(c.energy as f64 / 0.6)
+            .min(m.nitrogen / crate::physical::N_RATIO);
         m.fuel -= repaired;
+        m.nitrogen = (m.nitrogen - repaired * crate::physical::N_RATIO).max(0.);
         m.biomass += repaired;
         c.state.injury = (c.state.injury - repaired as f32 / (m.biomass as f32).max(0.02)).max(0.);
         self.physiology.repairs += repaired;
@@ -362,6 +387,11 @@ impl Habitat {
             .iter()
             .map(|c| c.activity(CHANNEL) * (c.energy / 0.02).clamp(0., 1.))
             .collect();
+        let sheaths: Vec<f32> = e
+            .cells
+            .iter()
+            .map(|c| c.material.as_ref().map_or(0., |m| m.sheath() as f32))
+            .collect();
         let mut state: Vec<_> = e
             .cells
             .iter()
@@ -375,7 +405,8 @@ impl Habitat {
                 let conductivity = gates[a].min(gates[c])
                     * b.integrity
                     * (e.cells[a].activity(8) + e.cells[c].activity(8))
-                    * 0.15;
+                    * 0.15
+                    * (1. + MYELIN * sheaths[a].min(sheaths[c]));
                 let flow = (state[c][0] - state[a][0]) * conductivity;
                 coupling[a] += flow;
                 coupling[c] -= flow;

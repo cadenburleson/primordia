@@ -11,11 +11,13 @@ import {initStudio,updateStudio,describeBody,setStudioPanel} from './studio';
 import {storeWorld,readWorld} from './storage';
 import {Inspection,ecologyHTML,evidenceHTML} from './inspection';
 import {resourceLabels,resourceColors,resourceUnit} from './sim/resource-view';
-import {Collection,organismBrowserHTML,saveOrganismHTML,collectionHTML} from './collection';
-import type {SavedSpecimen,SpecimenMessage} from './sim/types';
+import {Collection,organismBrowserHTML,saveOrganismHTML} from './collection';
+import {Creatures,creaturesHTML} from './creatures';
+import type {SavedSpecimen,SpecimenMessage,ChampionMessage} from './sim/types';
 import {WorldTools,worldToolsHTML,geneEditorHTML,brushToolbarHTML,type EditorMessage} from './world-tools';
 import {progressHTML,updateProgress} from './progress';
 import {Ladder,ladderHTML,ladderHUD,milestoneHTML,type LadderAction} from './ladder';
+import {Feed,feedHTML} from './feed';
 import {Powers,powersHTML} from './powers';
 import {CELL_TYPES,CHOSEN_COLOR,cellType,isChosen,isCommitted,isComplex} from './sim/roles';
 import {CELL_STRIDE} from './sim/types';
@@ -32,9 +34,11 @@ let view:WorldView, specimen:SpecimenView,inspection:Inspection;
 let collection:Collection,placementSpecimen:SavedSpecimen|null=null,placementPending=false;
 let pendingFocusId:number|null=null;
 let worldTools:WorldTools,editorSelectionPending=false,creatingWorld=false;
-let ladder:Ladder,powers:Powers;
+let ladder:Ladder,powers:Powers,feed:Feed,creatures:Creatures;
+/** Painting pauses time; it resumes by itself if it was running. */
+let resumeAfterBrush=false;
 let guide:EvolutionGuide,nurseryBusy=false,pendingPlanetSpecimen:SavedSpecimen|null=null;
-let lastUI=0,lastSpecimen=0,pendingLoad=false,hasLocalSave=false,quietSteer:string|null=null;
+let lastUI=0,trailingUI=0,lastSpecimen=0,pendingLoad=false,hasLocalSave=false,quietSteer:string|null=null;
 const worker=new Worker(new URL('./sim/worker.ts',import.meta.url),{type:'module'});
 const send=(command:Command)=>worker.postMessage(command);
 const syncVisibility=()=>send({type:'visibility',visible:!document.hidden});
@@ -48,13 +52,15 @@ document.querySelector('#app')!.innerHTML=`
     <div class="header-actions"><button id="save" class="save-button" aria-label="Save world">${icon('download')}<span>Save world</span></button><details id="studio-menu" class="studio-menu"><summary aria-label="World files and tools">${icon('settings-2')}<span>More</span></summary><div><button id="new-world" class="text-button">${icon('plus')} Create a new planet</button><button id="recover-nursery" class="text-button" disabled>${icon('rotate-ccw')} Recover last held planet</button><button id="load" class="text-button">${icon('upload')} Open world file</button><button id="restore" class="text-button" disabled>${icon('rotate-ccw')} Restore browser save</button><button id="open-labs" class="text-button">${icon('flask-conical')} Comparison labs</button><button id="help" class="text-button">${icon('circle-help')} How life works</button><button id="settings" class="text-button">${icon('settings-2')} Toggle view resolution</button></div></details></div>
   </header>
   <div class="workspace awaiting-world hide-shape hide-observe">
-    <nav class="planet-dock" aria-label="Planet tools"><button id="toggle-guide" aria-expanded="false">${icon('sprout')}<span>Life</span></button><button id="toggle-powers" aria-expanded="false">${icon('zap')}<span>Powers</span></button><button id="toggle-shape" aria-expanded="false">${icon('globe')}<span>World</span></button><button id="toggle-observe" aria-expanded="false">${icon('microscope')}<span>Inspect</span></button><button id="toggle-collection" aria-expanded="false">${icon('dna')}<span>Collection</span></button></nav>
+    <nav class="planet-dock" aria-label="Planet tools"><button id="toggle-guide" aria-expanded="false" title="What life has reached so far">${icon('sprout')}<span>Life</span></button><button id="toggle-collection" aria-expanded="false" title="Paint creatures onto the map">${icon('dna')}<span>Creatures</span></button><button id="toggle-powers" aria-expanded="false" title="Choose what survives">${icon('zap')}<span>Evolve</span></button><button id="toggle-shape" aria-expanded="false" title="Star, seas, land and disasters">${icon('globe')}<span>Planet</span></button><button id="toggle-observe" aria-expanded="false" title="Look inside a body">${icon('microscope')}<span>Inspect</span></button></nav>
     <button id="guide-hint" class="guide-hint" aria-label="Open life's ascent">${ladderHUD}</button>
     ${milestoneHTML}
+    ${feedHTML}
     ${guideHTML}
     ${powersHTML}
+    ${creaturesHTML}
     <div id="nursery-status" class="nursery-status" hidden><span><strong>Evolution nursery</strong><small id="nursery-parent-note">Your planet is held.</small></span><button id="return-nursery">Return to planet ↗</button></div>
-    <aside class="world-panel" aria-label="Shape the planet" hidden><div class="drawer-heading"><span class="eyebrow">PLANET TOOLS</span><button data-close-panel class="icon-button" aria-label="Close planet tools">×</button></div>
+    <aside class="world-panel" aria-label="Shape the planet" hidden><div class="drawer-heading"><span class="eyebrow">PLANET</span><button data-close-panel class="icon-button" aria-label="Close planet tools">×</button></div>
       ${worldToolsHTML}
       <div id="creation-panel">
       <div class="panel-intro"><span class="eyebrow">CREATE A WORLD</span><h1>Let there be life.</h1><p>Set the conditions. Plant the first cells.<br>Discover what survives.</p></div>
@@ -77,7 +83,9 @@ document.querySelector('#app')!.innerHTML=`
           <p id="world-scale" class="setup-note"></p>
         </details>
         <div class="capacity-row"><label for="setup-star">Star <small>Light is the only income a world has</small></label><select id="setup-star"><option value="1">Dim · life struggles to pay its way</option><option value="3">Warm · a small, steady population</option><option value="6" selected>Bright · life can flourish</option><option value="8">Blazing · crowded, and slower to run</option></select></div>
-        <div class="capacity-row"><label for="setup-pace">Evolution pace</label><select id="setup-pace"><option value="1">Real time · watch closely</option><option value="0" selected>Fast-forward · generations first</option></select></div>
+        <div class="capacity-row"><label for="setup-push">Evolution <small>You can change this any time in Evolve</small></label><select id="setup-push"><option value="natural">Natural · genes vary at their own rate</option><option value="fast" selected>Fast · twice the new ideas</option><option value="fastest">Fastest · four times, and more broken copies</option></select></div>
+        <div class="capacity-row"><label for="setup-air">Air <small>Earth began with none</small></label><select id="setup-air"><option value="0" selected>Young planet · no oxygen yet</option><option value="1">Breathable from the start</option></select></div>
+        <div class="capacity-row"><label for="setup-pace">Clock</label><select id="setup-pace"><option value="1">Real time · watch closely</option><option value="0" selected>Fast-forward · generations first</option></select></div>
         <details class="setup-details"><summary>Starting environment</summary><div class="capacity-row"><label for="setup-sunlight">Sunlight · %</label><input id="setup-sunlight" type="number" min="0" max="100" value="75"></div><div class="capacity-row"><label for="setup-temperature">Baseline temperature · 0–100 model scale</label><input id="setup-temperature" type="number" min="0" max="100" value="48"></div><div class="capacity-row"><label for="setup-nutrients">Starting fuel · %</label><input id="setup-nutrients" type="number" min="0" max="100" value="70"></div><div class="capacity-row"><label for="setup-minerals">Starting minerals · %</label><input id="setup-minerals" type="number" min="0" max="100" value="45"></div><p class="setup-note">A richer world feeds more cells. What those cells become is up to evolution, and to you.</p></details>
         <div class="creation-launch"><p id="setup-summary"></p><p id="creation-status" class="creation-status" role="status" aria-live="polite" hidden></p><button id="create-physical" class="primary-button">${icon('plus')} Create planet &amp; begin</button></div>
         <button id="open-saved-from-setup" class="observe-button">Open a saved world instead</button>
@@ -87,7 +95,7 @@ document.querySelector('#app')!.innerHTML=`
       </div>
       <details class="panel-section engine-card"><summary>What can evolve · population limit</summary>
         <strong id="engine-name">Autonomous evolution</strong><p id="engine-description">Cell heredity, physical bodies and ecology run together in this world.</p>
-        <details class="setup-details" id="engine-capabilities"><summary>What can evolve here?</summary><ul class="engine-capabilities"><li>Division, mutation and attached cell colonies</li><li>Specialized material and tissue functions</li><li>Mineral support, contraction and joints</li><li>Swimming, crawling and steering by sense</li><li>Engulfing prey, venom, spines and armour</li><li>Feeding on vent chemistry without light</li><li>Sensing and adaptive cell signals</li><li>Digestion, fluid transport and gas exchange</li><li>Gametes, chromosome recombination and fusion</li></ul><p class="setup-note">None of it is handed out. Each ability starts as a mutation and is built from real material and energy. Use Powers to decide which inventions get a future.</p></details>
+        <details class="setup-details" id="engine-capabilities"><summary>What can evolve here?</summary><ul class="engine-capabilities"><li>Division, mutation and attached cell colonies</li><li>Specialized material and tissue functions</li><li>Mineral support, contraction and joints</li><li>Swimming, crawling and steering by sense</li><li>Engulfing prey, venom, spines and armour</li><li>Feeding on vent chemistry without light</li><li>Sensing and adaptive cell signals</li><li>Digestion, fluid transport and gas exchange</li><li>Gametes, chromosome recombination and fusion</li></ul><p class="setup-note">None of it is handed out. Each ability starts as a mutation and is built from real material and energy. Use Evolve to decide which inventions get a future.</p></details>
         <details class="setup-details" id="run-options"><summary>View &amp; run settings</summary>
           <div class="capacity-row"><label for="run-cell-budget">Current cell limit</label><input id="run-cell-budget" type="number" min="100" max="64000" step="1" value="8192"></div>
           <button id="apply-budget" class="observe-button">Update current limit</button><p class="setup-note">More room means more cells and more chances to change, at a cost in speed.</p>
@@ -115,20 +123,19 @@ document.querySelector('#app')!.innerHTML=`
         <div class="chart-axis"><span id="chart-start">0 cycles</span><span>Natural selection has no finish line.</span><span id="chart-end">now</span></div></details>
       </section>
     </main>
-    <aside class="life-panel" aria-label="Inspect life and resources" hidden><div class="drawer-heading"><span class="eyebrow">UNDER THE LENS</span><button data-close-panel class="icon-button" aria-label="Close inspector">×</button></div><div class="observer-heading"><span class="eyebrow">OBSERVE</span><span id="observer-context">The story so far</span></div><nav class="panel-tabs" aria-label="Observations"><button data-tab="progress" class="active">Overview</button><button data-tab="life">Inspect life</button><button data-tab="ecology">Resources</button></nav><label class="observer-more" for="observer-view"><span>Go deeper</span><select id="observer-view"><option value="">Choose a view…</option><option value="evidence">Test what a tissue does</option><option value="collection">Organism collection</option><option value="notes">Evolution journal</option></select></label>
+    <aside class="life-panel" aria-label="Inspect life and resources" hidden><div class="drawer-heading"><span class="eyebrow">INSPECT</span><button data-close-panel class="icon-button" aria-label="Close inspector">×</button></div><div class="observer-heading"><span class="eyebrow">OBSERVE</span><span id="observer-context">The story so far</span></div><nav class="panel-tabs" aria-label="Observations"><button data-tab="progress" class="active">Overview</button><button data-tab="life">Inspect life</button><button data-tab="ecology">Resources</button></nav><label class="observer-more" for="observer-view"><span>Go deeper</span><select id="observer-view"><option value="">Choose a view…</option><option value="evidence">Test what a tissue does</option><option value="notes">Evolution journal</option></select></label>
       <div id="progress-content">${progressHTML}</div>
       <div id="life-content" hidden>${organismBrowserHTML}<div class="specimen-heading"><span class="eyebrow">UNDER THE LENS</span><button id="focus" class="icon-button" title="Follow this lifeform" aria-label="Follow this lifeform">${icon('focus')}</button></div>
         <div id="specimen-canvas"></div><div class="specimen-info"><span class="specimen-type" id="specimen-type">THE FIRST CELL</span><h3 id="specimen-name">Waiting for life</h3><p id="specimen-description">A small beginning. An open future.</p></div>
         <div id="body-story" class="body-story" hidden></div><div class="specimen-stats"><div><span>Cells</span><strong id="organism-cells">—</strong></div><div><span>Generation</span><strong id="organism-gen">—</strong></div><div><span>Energy</span><strong id="organism-energy">—</strong></div></div>
         ${saveOrganismHTML}
-        <details id="technical-details" class="setup-details"><summary>Genes &amp; inner workings</summary><div class="traits-heading">INHERITED FUNCTIONS <span id="organism-id"></span></div><div id="traits"></div>
+        <details id="technical-details" class="setup-details"><summary>Genes &amp; inner workings</summary><button id="edit-organism" class="observe-button" disabled>Edit this body’s genes…</button><div class="traits-heading">INHERITED FUNCTIONS <span id="organism-id"></span></div><div id="traits"></div>
         <div class="roles" id="roles"></div><div id="body-mechanics" class="body-mechanics"></div><section id="joint-mechanics" class="cell-ecology" hidden></section><section id="cell-ecology" class="cell-ecology" hidden></section>
         <section id="autonomous-results" class="cell-ecology" hidden></section><section id="population-results" class="cell-ecology" hidden><span class="eyebrow">COMPETING ECOSYSTEM / ECOLOGICAL SELECTION</span><button id="toggle-sensing" class="observe-button" data-sensing>Disable directional sensing</button><div id="population-details"></div></section><section id="lab-results" class="lab-results" hidden><span class="eyebrow">CONTROLLED LOCOMOTION ASSAY</span><h3 id="lab-phase">Developing</h3><p id="lab-trial"></p><progress id="lab-progress" max="20" value="0"></progress><div class="lab-metrics"><div><span>Net travel</span><strong id="lab-distance">0.00</strong></div><div><span>Motor work</span><strong id="lab-work">0.00</strong></div><div><span>Champion travel</span><strong id="lab-best">—</strong></div><div><span>Best score</span><strong id="lab-score">—</strong></div></div><p id="lab-improvement"></p><small>Each candidate grows from one cell. Travel is measured after development and settling. Selection rewards net travel and penalizes work and collapse. Units are model units.</small><div id="lab-rounds"></div><button id="replay-best" class="observe-button">Watch best body</button><button id="toggle-motors" class="observe-button" hidden>Disable joint motors</button><button id="continue-selection" class="observe-button" hidden>Continue selection</button></section></details><button id="observe" class="observe-button">${icon('microscope')} Find the largest body ${icon('arrow-up-right')}</button>
         <div class="lineage-heading"><span>LIVING LINEAGES</span><span id="lineage-count">0</span></div><div id="lineages"></div>
         <button id="seed-life" class="seed-button">${icon('plus')} Introduce 80 protocells</button>
       </div>
       <div id="ecology-content" hidden>${ecologyHTML}</div><div id="evidence-content" hidden>${evidenceHTML}</div>
-      <div id="collection-content" hidden>${collectionHTML}</div>
       <div id="notes-content" hidden><div class="notes-intro"><span class="eyebrow">AN EVOLUTIONARY JOURNAL</span><h3>Small changes.<br>New possibilities.</h3><p>Milestones record what actually happened in this world.</p></div><div id="events"></div><div class="journal-stats" id="journal-stats"></div></div>
       <div class="science-note">${icon('flask-conical')} A model of possibility.<br><span>Not a prediction of extraterrestrial life.</span></div>
     </aside>
@@ -140,7 +147,7 @@ document.querySelector('#app')!.innerHTML=`
     <section class="labs-section"><h3>Current engine experiments</h3><p>A fresh population uses your current world's settings. The main run is held while the experiment runs.</p><div class="labs-actions"><button id="shared-passive" class="observe-button">${icon('activity')} Passive mechanics</button><small>Contraction is disabled to observe physical structure and contact.</small><button id="shared-scarcity" class="observe-button">${icon('leaf')} Scarce resources</button><small>Starts with less fuel. Evolution and all physical mechanisms remain available.</small></div></section>
     <details class="setup-details legacy-labs"><summary>Legacy comparisons</summary><p>Older supplied traits and precursor bodies use earlier models. The locomotion and joint comparisons select movement scores. Their results do not demonstrate autonomous evolution in the main world.</p><div class="labs-actions"><button id="start-lab" class="observe-button">${icon('activity')} Locomotion comparison</button><button id="start-joints" class="observe-button">${icon('bone')} Joint comparison</button><button id="start-tissue" class="observe-button">${icon('microscope')} Tissue comparison</button><div id="competition-entry"><label for="competing-founders">Starting competitors</label><select id="competing-founders"><option value="24">24 cells</option><option value="48" selected>48 cells</option><option value="96">96 cells</option></select><button id="start-population" class="observe-button">${icon('dna')} Competing ecosystem comparison</button></div></div></details>
   </dialog>
-  <dialog id="help-dialog"><button id="close-help" class="icon-button" aria-label="Close help">${icon('x')}</button><span class="eyebrow">HOW LIFE WORKS HERE</span><h2>Nothing is handed out.</h2><p>You plant single cells with four genes: feed on light, take up fuel, stick together, divide. Everything after that has to be invented by mutation and built from real material.</p><div class="help-grid"><div><h3>Genes build materials</h3><p>A gene makes one material: muscle fibre, mineral binder, a light receptor. A cell is whatever it has managed to build, and every bit of it costs fuel and energy.</p></div><div><h3>Bodies grow cell by cell</h3><p>Daughter cells that stay attached become a body. Bodies stand, bend and move through real physics: gravity, water, terrain and their own contractions.</p></div><div><h3>You steer, evolution invents</h3><p>Powers never write a gene. They change how often copies vary, how bright the star is, and which bodies survive. Breed for a purpose and the gene pool follows.</p></div><div><h3>Life tells you what it reached</h3><p>Life tracks each step, from colonies to organs, by measuring living cells. A step counts only when cells have actually built the tissue.</p></div></div><p class="help-small">Honest limits: this is a reduced model of life, in its own units, with a designed chemistry. Flagella, horns and image-forming eyes are not modelled. Muscle, skeleton, nerves and organs are, but coordinated walking and intelligence have not yet been seen to evolve here. Extinction is always possible.</p><button id="start-exploring" class="primary-button">Back to your world ${icon('arrow-up-right')}</button></dialog>
+  <dialog id="help-dialog"><button id="close-help" class="icon-button" aria-label="Close help">${icon('x')}</button><span class="eyebrow">HOW LIFE WORKS HERE</span><h2>Nothing is handed out.</h2><p>You plant single cells with four genes: feed on light, take up fuel, stick together, divide. Everything after that has to be invented by mutation and built from real material.</p><div class="help-grid"><div><h3>Genes build materials</h3><p>A gene makes one material: muscle fibre, mineral binder, a light receptor. A cell is whatever it has managed to build, and every bit of it costs fuel and energy.</p></div><div><h3>Bodies grow cell by cell</h3><p>Daughter cells that stay attached become a body. Bodies move through real physics. Water carries their weight; on land they bear all of it.</p></div><div><h3>You steer, evolution invents</h3><p>Evolve never writes a gene. It changes how often copies vary and which bodies survive. Creatures lets you paint in working starter species, and keeps your planet’s best bodies for you.</p></div><div><h3>Life tells you what it reached</h3><p>Life tracks each step, from colonies to organs, by measuring living cells. A step counts only when cells have actually built the tissue.</p></div></div><p class="help-small">Honest limits: this is a reduced model of life, in its own units, with a designed chemistry. Flagella, horns and image-forming eyes are not modelled. Muscle, skeleton, nerves and organs are, but coordinated walking and intelligence have not yet been seen to evolve here. Extinction is always possible.</p><button id="start-exploring" class="primary-button">Back to your world ${icon('arrow-up-right')}</button></dialog>
 `;
 
 $('creation-dialog-content').appendChild($('creation-panel'));
@@ -153,18 +160,28 @@ catch(error){$('loading').innerHTML=`<strong>3D graphics unavailable</strong><sp
 inspection=new Inspection(send,(x,z)=>{view.focusLocation(x,z);syncViewNote();},kind=>{
   view.resourceField=kind as typeof view.resourceField;$<HTMLSelectElement>('field-type').value=kind;view.setOverlay(true);syncLayerLegend();
 });
-collection=new Collection(send,id=>select(id,true),startPlacement,toast,openTab,placeOnPlanet,count=>guide?.collectionChanged(count));
+collection=new Collection(send,id=>select(id,true),startPlacement,toast,openTab,placeOnPlanet,count=>guide?.collectionChanged(count),()=>creatures?.refresh());
+creatures=new Creatures(send,source=>{cancelPlacement();return worldTools.armLife(source,creatures.sustain);},toast);
 worldTools=new WorldTools(send,startSurfaceTool,cancelPlacement,startPlacement,toast,openTab,layer=>{
   if(layer==='surface')view.setOverlay(false);else{view.resourceField=layer as typeof view.resourceField;$<HTMLSelectElement>('resource-kind').value=layer;view.setOverlay(true);}
   syncLayerLegend();inspection.render();
 },brush=>{
-  if(brush){placementSpecimen=null;placementPending=false;view.setPlacement(null);$('placement-status').hidden=true;setStudioPanel(null);if(!paused){paused=true;send({type:'control',paused:true});updatePause();}}
+  // The creature palette stays open beside the map; terrain brushes get the whole view.
+  if(brush){placementSpecimen=null;placementPending=false;view.setPlacement(null);$('placement-status').hidden=true;if(brush.settings.tool!=='life'){setStudioPanel(null);creatures?.released();}if(!paused){resumeAfterBrush=true;paused=true;send({type:'control',paused:true});updatePause();}}
+  else creatures?.released();
   view.setBrush(brush);
+  if(!brush)resumeIfPainted();
 });
+/** Let time run again once the last stroke has been taken in. */
+function resumeIfPainted(){
+  if(!resumeAfterBrush||worldTools.arming||worldTools.painting)return;
+  resumeAfterBrush=false;paused=false;send({type:'control',paused:false});updatePause();
+}
 guide=new EvolutionGuide(handleGuideAction);
 document.querySelector('#evolution-guide .guide-intro')!.insertAdjacentHTML('afterend',ladderHTML);
 ladder=new Ladder(handleLadderAction);
 powers=new Powers(send,()=>selectedId,aimStrike,toast);
+feed=new Feed(id=>{pendingFocusId=id;select(id,true);});
 function openCreation(){cancelPlacement();if(snapshot)setupConfig={...config};syncSetupControls();if(!creatingWorld)clearCreationFeedback();$<HTMLDialogElement>('creation-dialog').showModal();}
 $('new-world').addEventListener('click',openCreation);$('begin-setup').addEventListener('click',openCreation);
 $('close-creation').addEventListener('click',()=>$<HTMLDialogElement>('creation-dialog').close());
@@ -174,7 +191,7 @@ function startSurfaceTool(note:string,action:(x:number,z:number)=>void){
   cancelPlacement();setStudioPanel(null);send({type:'control',paused:true});$('placement-note').textContent=note;$('placement-status').hidden=false;
   view.setPlacement(action);
 }
-function openTab(name:string){worldTools?.stopBrush();updateStudio(name);tab=name;document.querySelectorAll<HTMLElement>('[data-tab]').forEach(el=>el.classList.toggle('active',el.dataset.tab===name));for(const key of ['progress','life','ecology','evidence','collection','notes'])$(key+'-content').hidden=tab!==key;inspection.render();collection?.refresh();if(snapshot){updateUI(snapshot);if(tab==='life')specimen.update(snapshot.selected);}}
+function openTab(name:string){worldTools?.stopBrush();if(name==='collection'){setStudioPanel('creatures');return;}updateStudio(name);tab=name;document.querySelectorAll<HTMLElement>('[data-tab]').forEach(el=>el.classList.toggle('active',el.dataset.tab===name));for(const key of ['progress','life','ecology','evidence','notes'])$(key+'-content').hidden=tab!==key;inspection.render();collection?.refresh();if(snapshot){updateUI(snapshot);if(tab==='life')specimen.update(snapshot.selected);}}
 function cancelPlacement(){worldTools?.stopBrush();placementSpecimen=null;placementPending=false;view.setPlacement(null);$('placement-status').hidden=true;}
 function switchNursery(action:'enter'|'leave'|'recover'){
   if(nurseryBusy)return;
@@ -205,18 +222,17 @@ function handleGuideAction(action:GuideAction){
   if(action==='collection'){openTab('collection');return;}
   if(action==='function'){openTab('evidence');return;}
   if(action==='save'){$('save').click();return;}
-  if(action==='founder'){$('introduce-founder').click();return;}
+  if(action==='founder'){setStudioPanel('creatures');return;}
   setStudioPanel('shape');
   if(action==='seasons'){document.querySelector<HTMLButtonElement>('[data-shape="climate"]')!.click();const strength=$<HTMLInputElement>('season-strength');strength.value='0.5';$<HTMLSelectElement>('season-period').value='960';strength.dispatchEvent(new Event('input'));document.querySelector<HTMLDetailsElement>('.season-controls')!.open=true;$('apply-seasons').scrollIntoView({block:'nearest'});return;}
   if(action==='capacity'){$<HTMLDetailsElement>('run-options').open=true;document.querySelector<HTMLDetailsElement>('.engine-card')!.open=true;$('run-options').scrollIntoView({block:'nearest'});return;}
   document.querySelector<HTMLButtonElement>(`[data-shape="${action==='climate'?'climate':'surface'}"]`)!.click();
   if(action==='food')document.querySelector<HTMLButtonElement>('[data-surface="fuel"]')!.click();
 }
+/** Load the brush with a saved creature and open the palette beside the map. */
 function startPlacement(s:SavedSpecimen){
-  if(!collection.canPlace()){toast('Place copies in the main cellular world, outside an active comparison.');return;}
-  cancelPlacement();setStudioPanel(null);placementSpecimen=s;placementPending=false;send({type:'control',paused:true});
-  $('placement-note').textContent=`Place ${s.summary.name} · click a clear spot on the surface · drag and zoom normally`;$('placement-status').hidden=false;
-  view.setPlacement((x,z)=>{if(!placementSpecimen||placementPending)return;placementPending=true;send({type:'specimen',action:'place',json:placementSpecimen.json,x,z});});
+  if(!collection.canPlace()){toast('Release creatures on your main planet, outside an active comparison.');return;}
+  setStudioPanel('creatures');creatures.paint({token:s.id,name:s.auto?.title??s.summary.name,json:s.json});
 }
 $('cancel-placement').addEventListener('click',cancelPlacement);
 document.addEventListener('keydown',e=>{if(e.key==='Escape')cancelPlacement();});
@@ -272,7 +288,7 @@ function scaleDescription(){updateSetupSummary();const size=Number($<HTMLSelectE
 
 for(const id of ['world-size','world-shape','initial-cells','cell-budget','founder-spread','resource-layout','setup-pace'])$(id).addEventListener('change',scaleDescription);
 for(const id of ['initial-cells','cell-budget'])$(id).addEventListener('input',updateSetupSummary);
-function createPhysical(){if(creatingWorld)return;const next=physicalSetup();clearCreationFeedback();if(!validSetup(next))return;setCreatingWorld(true);creationFeedback(`Creating your planet with ${fmt(next.initialCells!)} starting cells. Loading the engine and preparing the world…`);setupConfig={...next};speed=Number($<HTMLSelectElement>('setup-pace').value);$<HTMLSelectElement>('simulation-speed').value=String(speed);$<HTMLSelectElement>('run-priority').value=speed===0?'evolution':'live';send({type:'display-priority',mode:speed===0?'evolution':'live'});selectedId=null;autoselect=true;paused=false;view.select(null);specimen.update(null);$('loading').hidden=false;$('loading').classList.add('preparing-world');const star=Number($<HTMLSelectElement>('setup-star').value);send({type:'init',config:next,steering:[...(star===1?[]:[{kind:'light' as const,scale:star}]),...(next.kind==='volcanic'?[{kind:'vents' as const,scale:4}]:[])]});send({type:'control',speed});updatePause();}
+function createPhysical(){if(creatingWorld)return;const next=physicalSetup();clearCreationFeedback();if(!validSetup(next))return;setCreatingWorld(true);creationFeedback(`Creating your planet with ${fmt(next.initialCells!)} starting cells. Loading the engine and preparing the world…`);setupConfig={...next};speed=Number($<HTMLSelectElement>('setup-pace').value);$<HTMLSelectElement>('simulation-speed').value=String(speed);$<HTMLSelectElement>('run-priority').value=speed===0?'evolution':'live';send({type:'display-priority',mode:speed===0?'evolution':'live'});selectedId=null;autoselect=true;paused=false;view.select(null);specimen.update(null);$('loading').hidden=false;$('loading').classList.add('preparing-world');const star=Number($<HTMLSelectElement>('setup-star').value),push=$<HTMLSelectElement>('setup-push').value;send({type:'init',config:next,steering:[...(star===1?[]:[{kind:'light' as const,scale:star}]),...(next.kind==='volcanic'?[{kind:'vents' as const,scale:4}]:[]),...(push==='natural'?[]:[{kind:'mutation' as const,scale:push==='fastest'?4:2},{kind:'sharing' as const,scale:1}]),...($<HTMLSelectElement>('setup-air').value==='1'?[{kind:'oxygen' as const,level:1}]:[])]});send({type:'control',speed});updatePause();}
 $('create-physical').addEventListener('click',createPhysical);
 $('creation-panel').addEventListener('input',()=>{if(!creatingWorld)clearCreationFeedback();});
 $('fast-setup').addEventListener('click',()=>{setupConfig={...PRESETS.tidal,worldSize:128,initialCells:64,capacity:4096};syncSetupControls();$<HTMLSelectElement>('setup-pace').value='0';clearCreationFeedback();creationFeedback('Quick start ready: a small planet, 64 starting cells, room for 4,096. Create your planet to begin.');});
@@ -302,7 +318,7 @@ function syncLayerLegend(){
   const lab=!!snapshot?.lab;$<HTMLSelectElement>('field-type').disabled=lab;
   $<HTMLSelectElement>('field-type').value=view.overlay?view.resourceField:'surface';
   if(lab){$('world-layer-legend').textContent='Laboratory floor';return;}
-  if(!view.overlay){$('world-layer-legend').textContent='Blue = surface water · dissolved resources: choose a map';return;}
+  if(!view.overlay){$('world-layer-legend').textContent='Turquoise = shallows · navy = deep sea · choose a map to see dissolved resources';return;}
   const kind=view.resourceField,r=view.resourceRange,high=resourceColors[kind].join(','),num=(v:number)=>v>0&&v<.001?v.toExponential(2):v.toFixed(3);
   $('world-layer-legend').innerHTML=r.available?`<span class="layer-scale" style="background:linear-gradient(90deg,rgb(24,31,36),rgb(${high}))"></span><span>${resourceLabels[kind]} · ${num(r.min)}–${num(r.max)} ${resourceUnit(kind)}<small>Brighter = more · logarithmic scale · surface colors replaced</small></span>`:'This field is unavailable in the current model.';
 }
@@ -343,6 +359,7 @@ $('lineages').addEventListener('click',e=>{const button=(e.target as HTMLElement
 });
 initStudio(openTab);
 for(const id of ['toggle-guide','guide-hint','toggle-powers','toggle-shape','toggle-observe','toggle-collection'])$(id).addEventListener('click',()=>worldTools.stopBrush());
+document.querySelectorAll<HTMLElement>('[data-close-panel]').forEach(b=>b.addEventListener('click',()=>worldTools.stopBrush()));
 $('return-nursery').onclick=()=>switchNursery('leave');
 $('recover-nursery').onclick=()=>switchNursery('recover');
 readWorld('nursery-parent').then(json=>$<HTMLButtonElement>('recover-nursery').disabled=!json).catch(()=>{});
@@ -507,16 +524,17 @@ document.querySelector('.lineage-heading > span')!.textContent=auto?'BODIES ALIV
     $('joint-mechanics').hidden=true;
     $('cell-ecology').hidden=true;
     const pending=selectedId!==null&&s.ids.includes(selectedId);
-    $('specimen-type').textContent=pending?'INSPECTING':st.population?'NO SELECTION':'AWAITING LIFE';$('specimen-name').textContent=pending?'Reading a lifeform':selectedId?'This one has died':st.population?'Choose a lifeform':auto?'Extinct':'Chemistry alone';$('specimen-description').textContent=pending?'Tracing what it inherited.':st.population?'Click any body on the planet to look inside it.':auto?'No cells survive. Restore a save, or plant new life from World.':'Try seeding life, or wait for a possible origin.';
+    $('specimen-type').textContent=pending?'INSPECTING':st.population?'NO SELECTION':'AWAITING LIFE';$('specimen-name').textContent=pending?'Reading a lifeform':selectedId?'This one has died':st.population?'Choose a lifeform':auto?'Extinct':'Chemistry alone';$('specimen-description').textContent=pending?'Tracing what it inherited.':st.population?'Click any body on the planet to look inside it.':auto?'No cells survive. Restore a save, or paint new life from Creatures.':'Try seeding life, or wait for a possible origin.';
     for(const id of ['organism-cells','organism-gen','organism-energy'])$(id).textContent='—';$('traits').innerHTML='';$('roles').innerHTML='';$('body-mechanics').innerHTML='';$('organism-id').textContent='';
   }
   drawChart();
 }
-worker.onmessage=async(event:MessageEvent<Snapshot|SpecimenMessage|EditorMessage|{type:'steered';kind:string;message:string}|{type:'specimen-placed';id:number}|{type:'error';message:string}|{type:'save';json:string}|{type:'loaded'}|{type:'world-created'}|{type:'nursery-changed';active:boolean}>)=>{
+worker.onmessage=async(event:MessageEvent<Snapshot|SpecimenMessage|EditorMessage|{type:'steered';kind:string;message:string}|{type:'specimen-placed';id:number}|ChampionMessage|{type:'error';message:string}|{type:'save';json:string}|{type:'loaded'}|{type:'world-created'}|{type:'nursery-changed';active:boolean}>)=>{
   const data=event.data;
-  if(data.type==='nursery-changed'){nurseryBusy=false;guide.feedback('');selectedId=null;autoselect=true;view.select(null);if(data.active){speed=0;$<HTMLSelectElement>('simulation-speed').value='0';$<HTMLSelectElement>('run-priority').value='evolution';setStudioPanel('guide');$<HTMLButtonElement>('recover-nursery').disabled=false;}else if(!pendingPlanetSpecimen){openTab('collection');toast('Your planet is restored and paused. Place saved organisms, then resume.');}return;}
+  if(data.type==='nursery-changed'){nurseryBusy=false;guide.feedback('');selectedId=null;autoselect=true;view.select(null);if(data.active){speed=0;$<HTMLSelectElement>('simulation-speed').value='0';$<HTMLSelectElement>('run-priority').value='evolution';setStudioPanel('guide');$<HTMLButtonElement>('recover-nursery').disabled=false;}else if(!pendingPlanetSpecimen){openTab('collection');toast('Your planet is restored and paused. Paint in what you brought back, then resume.');}return;}
   if(data.type==='error'){quietSteer=null;if(nurseryBusy){nurseryBusy=false;pendingPlanetSpecimen=null;guide.feedback(data.message);}if(!snapshot){$('loading').hidden=false;document.querySelector('.workspace')!.classList.add('awaiting-world');}pendingLoad=false;placementPending=false;setCreatingWorld(false);worldTools.onError();collection.onError();if($<HTMLDialogElement>('creation-dialog').open)creationFeedback(data.message,true);else toast(data.message);$('loading').classList.remove('preparing-world');$('loading').hidden=!!snapshot;return;}
-  if(data.type==='editor-state'||data.type==='editor-specimen'||data.type==='edited'||data.type==='brush-ack'){if(data.type==='edited'||data.type==='brush-ack'){editorSelectionPending=true;view.invalidateTerrain();}worldTools.accept(data);return;}
+  if(data.type==='editor-state'||data.type==='editor-specimen'||data.type==='edited'||data.type==='brush-ack'){if(data.type==='edited'||data.type==='brush-ack'){editorSelectionPending=true;view.invalidateTerrain();}worldTools.accept(data);if(data.type==='brush-ack')resumeIfPainted();return;}
+  if(data.type==='champion'){if(await collection.acceptChampion(data)&&$('creatures-panel').hidden)$('toggle-collection').classList.add('has-news');return;}
   if(data.type==='steered'){if(data.kind==='meteor')view.invalidateTerrain();toast(quietSteer??data.message);quietSteer=null;return;}
   if(data.type==='specimen'){await collection.accept(data);return;}
   if(data.type==='specimen-placed'){const name=placementSpecimen?.summary.name??'Organism';cancelPlacement();autoselect=false;pendingFocusId=data.id;select(data.id,false);toast(`${name} placed as body #${data.id}. World paused; place another or resume.`);return;}
@@ -538,10 +556,11 @@ worker.onmessage=async(event:MessageEvent<Snapshot|SpecimenMessage|EditorMessage
   if(data.paused!==undefined&&paused!==data.paused){paused=data.paused;updatePause();}
   if(data.assessment?.checkpoint&&data.selection!==undefined&&data.selection!==(selectedId??0)){selectedId=data.selection||null;view.select(selectedId);}
   if(pendingFocusId!==null&&data.ids.includes(pendingFocusId)){view.focusLife(pendingFocusId,false);pendingFocusId=null;syncViewNote();}
-  inspection.update(data);ladder.update(data);powers.update(data);
-  collection.update(data);guide.update(data);$('nursery-status').hidden=!data.nursery;$('nursery-parent-note').textContent=data.nursery?`${data.nursery.parentName} is held · your collection travels with you.`:'';
+  inspection.update(data);ladder.update(data);powers.update(data);feed.update(data);creatures.update(data);
+  collection.update(data);guide.update(data);$('nursery-status').hidden=!data.nursery;$('nursery-parent-note').textContent=data.nursery?`${data.nursery.parentName} is held · your creatures travel with you.`:'';
   if(pendingPlanetSpecimen&&!data.nursery&&!nurseryBusy){const saved=pendingPlanetSpecimen;pendingPlanetSpecimen=null;startPlacement(saved);}
-  const now=performance.now();if(now-lastUI>250||changed){lastUI=now;updateUI(data);}
+  // A paused world sends one last picture; make sure the readouts catch it.
+  const now=performance.now();clearTimeout(trailingUI);if(now-lastUI>250||changed){lastUI=now;updateUI(data);}else trailingUI=window.setTimeout(()=>{if(snapshot){lastUI=performance.now();updateUI(snapshot);}},260);
   if(tab==='life'&&!document.querySelector<HTMLElement>('.life-panel')!.hidden&&now-lastSpecimen>500){lastSpecimen=now;specimen.physics=!!data.autonomous?.physics;specimen.update(data.selected);}
 };
 worker.onerror=e=>{nurseryBusy=false;pendingPlanetSpecimen=null;guide.feedback(`The engine stopped: ${e.message}. Save any available world and reload.`);setCreatingWorld(false);const message=`The simulation engine stopped: ${e.message}. Reload this page to restart the engine.`;if($<HTMLDialogElement>('creation-dialog').open)creationFeedback(message,true);else toast(message);$('loading').classList.remove('preparing-world');$('loading').hidden=!!snapshot;};

@@ -10,8 +10,9 @@ use crate::{
     *,
 };
 
-pub const GOALS: [&str; 7] = [
-    "bodies", "swimming", "movement", "support", "senses", "hunting", "defence",
+pub const GOALS: [&str; 9] = [
+    "bodies", "swimming", "movement", "support", "senses", "hunting", "defence", "limbs",
+    "reserves",
 ];
 const CENSUS_PERIOD: f32 = 2.;
 
@@ -34,16 +35,23 @@ pub struct Steering {
     pub mixing: f32,
     /// How readily touching cells pass a copy of a gene across. 0 is never.
     pub sharing: f32,
-    /// Seasons: the share of the star's light lost at midwinter, and the
-    /// length of a year in cycles. Depth 0 is a world without seasons.
-    pub season_depth: f32,
-    pub season_length: f32,
+    /// Starter species the player asked to keep from dying out, and how many
+    /// founders have been released since to do it.
+    pub sustained: Vec<String>,
+    pub restocked: u32,
     /// Brightness of the star: multiplies the light reaching photosynthesis.
     pub light: f32,
     /// Activity of the planet's interior: multiplies chemosynthesis at vents.
     pub vents: f32,
     /// Empty, or one of `GOALS`: the trait bodies are bred for.
     pub goal: String,
+    /// The goal follows life's ladder by itself: whatever step has not been
+    /// reached yet is the one rewarded.
+    pub auto: bool,
+    /// Rounds spent on the current step, and steps set aside for now because
+    /// they made no headway.
+    pub auto_rounds: u32,
+    pub auto_tried: Vec<String>,
     pub goal_strength: f32,
     pub goal_period: f32,
     pub next_round: f32,
@@ -78,11 +86,14 @@ impl Default for Steering {
             storm_until: 0.,
             mixing: 1.,
             sharing: 0.,
-            season_depth: 0.,
-            season_length: 400.,
+            sustained: Vec::new(),
+            restocked: 0,
             light: 1.,
             vents: 1.,
             goal: String::new(),
+            auto: false,
+            auto_rounds: 0,
+            auto_tried: Vec::new(),
             goal_strength: 0.25,
             goal_period: 30.,
             next_round: 0.,
@@ -105,12 +116,6 @@ impl Default for Steering {
     }
 }
 impl Steering {
-    /// Share of the star's light arriving at this point in the year: full at
-    /// midsummer, down by the season's depth at midwinter.
-    pub(crate) fn season(&self, now: f32) -> f32 {
-        1. - self.season_depth
-            * (0.5 - 0.5 * (std::f32::consts::TAU * now / self.season_length).cos())
-    }
     /// The genes a breeding goal leans new copying errors toward. Breeding
     /// can only choose among what variation offers; this makes it offer more
     /// of what is being bred for. No goal, no lean.
@@ -120,6 +125,8 @@ impl Steering {
             "swimming" => &[PROPEL, STEER],
             "movement" => &[2, 4, 5, 20, CHANNEL, FIN],
             "support" => &[3, 28],
+            "limbs" => &[2, 3, 4, 5, 20, CHANNEL, FIN],
+            "reserves" => &[crate::physiology::LIPID],
             "senses" => &[RECEPTOR, CHANNEL, 16, 24],
             "hunting" => &[9, ENGULF, TOXIN],
             "defence" => &[BARRIER, SPINE, TOXIN, WALL],
@@ -144,12 +151,15 @@ impl Steering {
             && self.mutation_scale <= 10.
             && (0.25..=8.).contains(&self.mixing)
             && (0.0..=8.).contains(&self.sharing)
-            && (0.0..=0.95).contains(&self.season_depth)
-            && (40.0..=4000.).contains(&self.season_length)
+            && self.sustained.len() <= crate::bestiary::SPECIES.len()
+            && self
+                .sustained
+                .iter()
+                .all(|s| crate::bestiary::SPECIES.iter().any(|known| known.0 == s))
             && (0.25..=8.).contains(&self.light)
             && (0.25..=8.).contains(&self.vents)
             && self.storm_scale <= 16.
-            && (0.05..=0.6).contains(&self.goal_strength)
+            && (self.goal_strength == 0. || (0.05..=0.6).contains(&self.goal_strength))
             && (5.0..=400.).contains(&self.goal_period)
             && self.favour_pressure <= 0.2
             && self.winter_depth <= 1.
@@ -216,9 +226,20 @@ enum Command {
     Sharing {
         scale: f32,
     },
-    Seasons {
-        depth: f32,
-        length: f32,
+    Seed {
+        species: String,
+        count: u32,
+        /// Keep this species from dying out by releasing a few more founders
+        /// whenever it falls below a handful.
+        #[serde(default)]
+        sustain: bool,
+    },
+    Sustain {
+        on: bool,
+    },
+    /// Watch over one species the player has painted in by hand.
+    Keep {
+        species: String,
     },
     Light {
         scale: f32,
@@ -255,8 +276,39 @@ enum Command {
     Nourish {
         amount: f64,
     },
+    /// Set how much of the planet's oxygen is free: 0 for a young planet's
+    /// air, 1 for air that everything can breathe.
+    Oxygen {
+        level: f64,
+    },
+    /// Move nitrogen between the air and the water: a share of the air's
+    /// fixed into the seas and soils as a great lightning storm would
+    /// (positive), or a share of what is dissolved driven back to the air.
+    Nitrogen {
+        change: f64,
+    },
+    /// Rain new water over the whole planet (a depth, positive) or draw a
+    /// share of all standing water off into space (a fraction, negative).
+    Water {
+        change: f64,
+    },
 }
 
+/// Rounds an automatic goal stays on one step before trying the next.
+const AUTO_PATIENCE: u32 = 12;
+/// The trait to reward to reach a step of the ladder, where there is one.
+fn rung_goal(key: &str) -> Option<&'static str> {
+    Some(match key {
+        "colonies" | "bodies" | "tissues" | "fates" | "castes" | "shapes" | "organs" => "bodies",
+        "senses" | "nerves" | "reflexes" => "senses",
+        "swimming" | "steering" => "swimming",
+        "muscle" | "fins" | "movement" => "movement",
+        "skeleton" => "support",
+        "hunters" => "hunting",
+        "defences" | "walls" => "defence",
+        _ => return None,
+    })
+}
 fn carries(c: &Cell, actions: &[usize]) -> bool {
     let has = |g: &autonomous::Genome| {
         g.genes
@@ -287,7 +339,7 @@ fn mineral_fraction(c: &Cell) -> f32 {
 impl Habitat {
     /// Copying-error multiplier in force at `time`.
     /// Diffusion rates in force. Chemical signals keep their natural range.
-    pub(crate) fn diffusivity(&self, natural: [f64; 6]) -> [f64; 6] {
+    pub(crate) fn diffusivity(&self, natural: [f64; crate::physical::SOLUTES]) -> [f64; crate::physical::SOLUTES] {
         let mut rates = natural;
         for k in [0, 1, 2, 5] {
             rates[k] *= self.steering.mixing as f64;
@@ -428,6 +480,51 @@ impl Habitat {
                 embodied * mean(&mineral_fraction),
                 embodied * mean(&|c| c.activity(3) + latent(c, &[3])),
             ),
+            // A limb: bone meeting at a joint that muscle swings. Scored by
+            // the work the body's joints have done, and by ground covered
+            // once it has feet; until then, by the parts.
+            "limbs" => {
+                let ids: BTreeSet<u32> = group.iter().map(|&i| e.cells[i].id).collect();
+                let swung = self
+                    .joints
+                    .iter()
+                    .filter(|j| ids.contains(&j.b))
+                    .map(|j| j.work)
+                    .sum::<f64>() as f32;
+                let mut travel = V3::default();
+                let mut tracked = 0.;
+                for &i in group {
+                    if let Some(&from) = self.steering.anchors.get(&e.cells[i].id) {
+                        travel = travel.add(e.cells[i].p.sub(from));
+                        tracked += 1.;
+                    }
+                }
+                let travel = if tracked > 0. { travel.mul(1. / tracked).len() } else { 0. };
+                (
+                    embodied * swung.min(4.) * (0.5 + mean(&|c| c.activity(FIN)).sqrt() * travel.min(12.)),
+                    embodied
+                        * (0.3
+                            + mean(&|c| {
+                                (8. * mineral_fraction(c)).min(1.)
+                                    + c.activity(4)
+                                    + 0.5 * c.activity(CHANNEL)
+                                    + 0.5 * c.activity(FIN)
+                                    + latent(c, &[3])
+                                    + latent(c, &[4])
+                                    + 0.5 * latent(c, &[CHANNEL])
+                                    + 0.5 * latent(c, &[FIN])
+                            })),
+                )
+            }
+            // Fat laid down against lean times. Lone cells count.
+            "reserves" => (
+                mean(&|c| {
+                    c.material
+                        .as_ref()
+                        .map_or(0., |m| (m.lipid / m.mass().max(1e-12)) as f32)
+                }),
+                mean(&|c| c.activity(crate::physiology::LIPID) + latent(c, &[crate::physiology::LIPID])),
+            ),
             "senses" => (
                 mean(&|c| {
                     c.activity(RECEPTOR) + c.activity(CHANNEL) + c.activity(16) + c.activity(17)
@@ -465,9 +562,47 @@ impl Habitat {
         }
     }
 
+    /// Point the goal at the first step of life's ladder that is not yet
+    /// established. A step that makes no headway in `AUTO_PATIENCE` rounds is
+    /// set aside and the next one tried, so one hard step cannot hold up the rest.
+    fn follow_ladder(&mut self, e: &Evolution) {
+        let open: Vec<(&str, &str)> = self
+            .ladder(e)
+            .iter()
+            .filter(|r| r.stage < 3)
+            .filter_map(|r| rung_goal(r.key).map(|g| (r.key, g)))
+            .collect();
+        let s = &mut self.steering;
+        s.auto_tried.retain(|k| open.iter().any(|o| o.0 == k));
+        if open.iter().all(|o| s.auto_tried.iter().any(|k| k == o.0)) {
+            s.auto_tried.clear();
+        }
+        // Everything on the ladder is established: keep rewarding richer bodies.
+        let Some(&(key, goal)) = open.iter().find(|o| !s.auto_tried.iter().any(|k| k == o.0))
+        else {
+            s.goal = "bodies".into();
+            return;
+        };
+        if s.goal == goal {
+            s.auto_rounds += 1;
+            if s.auto_rounds >= AUTO_PATIENCE && open.len() > 1 {
+                s.auto_tried.push(key.into());
+                s.auto_rounds = 0;
+            }
+        } else {
+            s.goal = goal.into();
+            s.auto_rounds = 0;
+            s.anchors.clear();
+            s.round_note.clear();
+        }
+    }
+
     /// One round of artificial selection: the lowest-scoring bodies are
     /// removed and recycled. Survivors inherit the freed room and material.
     fn selection_round(&mut self, e: &mut Evolution, core: &mut Core) {
+        if self.steering.auto {
+            self.follow_ladder(e);
+        }
         let goal = self.steering.goal.clone();
         let groups = e.groups();
         let total = e.cells.len();
@@ -475,7 +610,7 @@ impl Habitat {
             .iter()
             .map(|g| self.goal_score(e, g, &goal))
             .collect();
-        self.steering.anchors = if goal == "movement" || goal == "swimming" {
+        self.steering.anchors = if goal == "movement" || goal == "swimming" || goal == "limbs" {
             e.cells.iter().map(|c| (c.id, c.p)).collect()
         } else {
             BTreeMap::new()
@@ -540,6 +675,10 @@ impl Habitat {
         s.round_births = e.divisions;
         let quota =
             (births as f32 * 1.2 * s.goal_strength).min(contenders as f32 * s.goal_strength);
+        if s.goal_strength == 0. {
+            s.round_note = "leaning".into();
+            return;
+        }
         if total < 48 {
             s.round_note = "too-few".into();
             return;
@@ -638,15 +777,20 @@ impl Habitat {
                 flux.add(&e.cells[i].state.flux);
             }
             let walled = g.iter().filter(|&&i| built(&e.cells[i], &[WALL])).count() * 2 >= g.len();
-            let kind = if walled {
-                if flux.intake() <= 0. {
+            let armed = g.iter().any(|&i| built(&e.cells[i], &[9, ENGULF, PROPEL, FIN]));
+            // A body that makes its own food lives as a plant does, wall or no
+            // wall. One that does not is a fungus if it is walled, an animal
+            // if it has a mouth, enzymes, a motor or fins, and a microbe otherwise.
+            let kind = if flux.intake() <= 0. {
+                if walled {
                     continue;
-                } else if (flux.photosynthesis + flux.chemosynthesis) * 2. >= flux.intake() {
-                    1
-                } else {
-                    2
                 }
-            } else if g.iter().any(|&i| built(&e.cells[i], &[ENGULF, PROPEL, FIN])) {
+                if armed { 3 } else { 0 }
+            } else if (flux.photosynthesis + flux.chemosynthesis) * 2. >= flux.intake() {
+                1
+            } else if walled {
+                2
+            } else if armed {
                 3
             } else {
                 0
@@ -654,6 +798,24 @@ impl Habitat {
             cells[kind] += g.len();
         }
         cells
+    }
+
+    /// Living cells descended from each starter species the player released,
+    /// in the bestiary's order. A lineage that has mated outside its own kind
+    /// is counted under the first of its names.
+    pub(crate) fn species(&self, e: &Evolution) -> Vec<(String, usize)> {
+        crate::bestiary::SPECIES
+            .iter()
+            .map(|&(_, name)| {
+                let living = e
+                    .cells
+                    .iter()
+                    .filter(|c| c.collection_sources.first().is_some_and(|s| s == name))
+                    .count();
+                (name.to_string(), living)
+            })
+            .filter(|s| s.1 > 0)
+            .collect()
     }
 
     /// Signalling contacts that run from a sensing cell to a moving one.
@@ -1061,13 +1223,14 @@ impl Habitat {
             "mutationFactor": self.mutation_factor(now),
             "mixing": s.mixing,
             "sharing": s.sharing,
-            "seasonDepth": s.season_depth,
-            "seasonLength": s.season_length,
-            "season": s.season(now),
             "light": s.light,
             "vents": s.vents,
             "storm": (s.storm_until - now).max(0.),
             "goal": s.goal,
+            "auto": s.auto,
+            "oxygen": self.oxygen(),
+            "cycles": self.cycles(e),
+            "breath": if e.cells.is_empty() { 0. } else { e.cells.iter().map(|c| c.state.breath).sum::<f32>() / e.cells.len() as f32 },
             "strength": s.goal_strength,
             "period": s.goal_period,
             "nextRound": if s.goal.is_empty() { 0. } else { (s.next_round - now).max(0.) },
@@ -1084,6 +1247,9 @@ impl Habitat {
             "ladder": self.ladder(e),
             "diet": self.diets(e, &e.groups()).0,
             "kinds": self.kinds(e, &e.groups()),
+            "species": self.species(e),
+            "sustained": s.sustained,
+            "restocked": s.restocked,
             "captures": s.captures,
             "milestones": s.milestones,
         })
@@ -1100,6 +1266,22 @@ impl Core {
             serde_json::from_str(json).map_err(|_| "Invalid steering command")?;
         if self.config.physical_assay != "full" {
             return Err("Return to the main world before steering evolution".into());
+        }
+        if let Command::Seed { species, count, sustain } = &command {
+            let note = self.seed_species(species, *count)?;
+            if *sustain {
+                let kept = &mut self
+                    .autonomous
+                    .as_mut()
+                    .and_then(|e| e.physical.as_mut())
+                    .unwrap()
+                    .steering
+                    .sustained;
+                if !kept.contains(species) {
+                    kept.push(species.clone());
+                }
+            }
+            return Ok(note);
         }
         let mut e = self
             .autonomous
@@ -1145,13 +1327,33 @@ impl Core {
                 h.steering.mixing = unit(scale, 0.25, 8., "Ocean mixing")?;
                 format!("The waters now mix at {scale:.2}× their natural rate.")
             }
-            Command::Seasons { depth, length } => {
-                h.steering.season_depth = unit(depth, 0., 0.95, "Winter depth")?;
-                h.steering.season_length = unit(length, 40., 4000., "Year length")?;
-                if depth > 0. {
-                    format!("The year now turns every {length:.0} cycles; midwinter dims the star by {:.0}%.", depth * 100.)
+            Command::Seed { .. } => unreachable!("released before the world is taken"),
+            Command::Keep { species } => {
+                let name = crate::bestiary::SPECIES
+                    .iter()
+                    .find(|s| s.0 == species)
+                    .ok_or("Unknown starter species")?
+                    .1;
+                if !h.steering.sustained.contains(&species) {
+                    h.steering.sustained.push(species);
+                }
+                format!("{name}s will be restocked if they fall to a handful.")
+            }
+            Command::Sustain { on } => {
+                h.steering.sustained = if on {
+                    let living = h.species(&e);
+                    crate::bestiary::SPECIES
+                        .iter()
+                        .filter(|s| living.iter().any(|l| l.0 == s.1))
+                        .map(|s| s.0.to_string())
+                        .collect()
                 } else {
-                    "The seasons are stilled.".into()
+                    Vec::new()
+                };
+                if on {
+                    "Released species will be restocked if they fall to a handful.".into()
+                } else {
+                    "Released species are on their own.".into()
                 }
             }
             Command::Sharing { scale } => {
@@ -1175,20 +1377,40 @@ impl Core {
                 strength,
                 period,
             } => {
-                if !goal.is_empty() && !GOALS.contains(&goal.as_str()) {
+                let auto = goal == "auto";
+                if !goal.is_empty() && !auto && !GOALS.contains(&goal.as_str()) {
                     return Err("Unknown breeding goal".into());
                 }
-                h.steering.goal_strength = unit(strength, 0.05, 0.6, "Selection strength")?;
+                // Strength 0 only leans new genes toward the trait: nothing is removed.
+                h.steering.goal_strength = if strength == 0. {
+                    0.
+                } else {
+                    unit(strength, 0.05, 0.6, "Selection strength")?
+                };
                 h.steering.goal_period = unit(period, 5., 400., "Selection period")?;
                 h.steering.round_note.clear();
                 h.steering.round_births = e.divisions;
                 h.steering.anchors.clear();
                 h.steering.next_round = now + h.steering.goal_period;
-                h.steering.goal = goal.clone();
-                if goal.is_empty() {
-                    "Breeding stopped. Survival is decided by the world alone.".into()
+                h.steering.goal = if auto { String::new() } else { goal.clone() };
+                h.steering.auto = auto;
+                h.steering.auto_rounds = 0;
+                h.steering.auto_tried.clear();
+                if auto {
+                    h.follow_ladder(e);
+                    format!(
+                        "New genes now lean toward whatever life has not reached yet, starting with {}.{}",
+                        h.steering.goal,
+                        if strength > 0. {
+                            format!(" Every {period:.0} cycles the bodies showing least of it make way.")
+                        } else {
+                            " Nothing is removed.".into()
+                        }
+                    )
+                } else if goal.is_empty() {
+                    "Selection stopped. Survival is decided by the world alone.".into()
                 } else {
-                    format!("Breeding for {goal}: every {period:.0} cycles the weakest {:.0}% are removed.", strength * 100.)
+                    format!("Rewarding {goal}: every {period:.0} cycles the bodies showing least of it make way.")
                 }
             }
             Command::Favour { body, pressure } => {
@@ -1268,18 +1490,73 @@ impl Core {
                 }
                 // External fuel where life already is, accounted like a brush stroke.
                 let before = h.totals(&e.cells);
+                let nitrogen = h.nitrogen_total(&e.cells);
                 let sites: BTreeSet<usize> = e.cells.iter().map(|c| h.domain.locate(c.p)).collect();
                 for &i in &sites {
                     h.solutes[i][0] += amount * h.domain.area(i);
                 }
-                let after = h.totals(&e.cells);
-                h.initial_organic += after.0 - before.0;
-                h.initial_mineral += after.1 - before.1;
-                h.initial_energy += after.2 - before.2;
+                h.settle_arrivals(before, nitrogen, &e.cells);
                 format!(
                     "Fuel rained on {} inhabited sites. Genes are unchanged.",
                     sites.len()
                 )
+            }
+            Command::Nitrogen { change } => {
+                if !change.is_finite() || !(-0.9..=0.5).contains(&change) || change == 0. {
+                    return Err("Nitrogen changes by between -0.9 and 0.5".into());
+                }
+                let k = crate::physical::NITROGEN;
+                if change > 0. {
+                    let moved = h.air_nitrogen * change;
+                    let surface: f64 = (0..h.domain.sites()).map(|i| h.domain.area(i)).sum();
+                    for i in 0..h.domain.sites() {
+                        h.solutes[i][k] += moved * h.domain.area(i) / surface;
+                    }
+                    h.air_nitrogen -= moved;
+                    format!("Lightning fixed {:.0}% of the air's nitrogen into the seas and soils. Whatever feeds on light can now grow further.", change * 100.)
+                } else {
+                    let mut moved = 0.;
+                    for s in &mut h.solutes {
+                        moved -= s[k] * change;
+                        s[k] *= 1. + change;
+                    }
+                    h.air_nitrogen += moved;
+                    format!("{:.0}% of the dissolved nitrogen went back to the air. Growth is tighter now.", -change * 100.)
+                }
+            }
+            Command::Oxygen { level } => {
+                if !level.is_finite() || !(0.0..=1.).contains(&level) {
+                    return Err("Oxygen runs from 0 to 1".into());
+                }
+                h.oxygenate(level);
+                if level == 0. {
+                    "The air holds no free oxygen. Life is slow until light-feeders make some.".into()
+                } else {
+                    format!("{:.0}% of the planet's oxygen is now free to breathe.", level * 100.)
+                }
+            }
+            Command::Water { change } => {
+                if !change.is_finite() || !(-0.9..=2.).contains(&change) || change == 0. {
+                    return Err("Add up to 2 deep, or remove up to nine-tenths".into());
+                }
+                let d = h.domain;
+                let p = h.planet.as_mut().ok_or("This world has no planetary surface")?;
+                let before: f64 = p.water.iter().sum();
+                for i in 0..d.sites() {
+                    if change > 0. {
+                        p.water[i] += change * if d.spherical() { d.area(i) } else { 1. };
+                    } else {
+                        p.water[i] *= 1. + change;
+                    }
+                }
+                // Water from outside the world, or lost to it: the books move with it.
+                let delta = p.water.iter().sum::<f64>() - before;
+                p.initial_water += delta;
+                if change > 0. {
+                    format!("A great flood: water {change:.2} deep fell everywhere and is running to the low ground.")
+                } else {
+                    format!("A long drought: {:.0}% of the standing water is gone.", -change * 100.)
+                }
             }
             Command::Dying { fraction } => {
                 let fraction = unit(fraction, 0.05, 0.95, "Extinction fraction")?;
@@ -1307,6 +1584,8 @@ mod tests {
         })
         .unwrap();
         c.start_physical();
+        // These tests are about steering, on a planet whose air is already breathable.
+        habitat(&mut c).oxygenate(1.);
         c
     }
     fn save(c: &Core) -> String {
@@ -1358,13 +1637,13 @@ mod tests {
     fn breeding_removes_low_scorers_recycles_them_and_spares_the_leaders() {
         let mut c = world(96);
         c.step(8);
-        // Give a third of the founders a real contractile gene. They must still
+        // Give a third of the founders a real gene for skin. They must still
         // synthesise the material themselves before it counts.
         {
             let e = c.autonomous.as_mut().unwrap();
             for (i, cell) in e.cells.iter_mut().enumerate() {
                 if i % 3 == 0 {
-                    cell.genome.genes.push(make_gene(4));
+                    cell.genome.genes.push(make_gene(BARRIER));
                     // An edited chromosome is a new genome.
                     cell.genome.id = e.next_genome;
                     e.next_genome += 1;
@@ -1374,16 +1653,16 @@ mod tests {
         c.step(60);
         let carriers_before = {
             let e = c.autonomous.as_ref().unwrap();
-            e.cells.iter().filter(|c| carries(c, &[4])).count() as f32 / e.cells.len() as f32
+            e.cells.iter().filter(|c| carries(c, &[BARRIER])).count() as f32 / e.cells.len() as f32
         };
-        c.steer(r#"{"kind":"goal","goal":"movement","strength":0.4,"period":5}"#)
+        c.steer(r#"{"kind":"goal","goal":"defence","strength":0.4,"period":5}"#)
             .unwrap();
         c.step(4 * 60);
         let e = c.autonomous.as_ref().unwrap();
         let h = e.physical.as_ref().unwrap();
         assert!(h.steering.rounds >= 5 && h.steering.culled > 0);
         let carriers_after =
-            e.cells.iter().filter(|c| carries(c, &[4])).count() as f32 / e.cells.len() as f32;
+            e.cells.iter().filter(|c| carries(c, &[BARRIER])).count() as f32 / e.cells.len() as f32;
         assert!(
             carriers_after > carriers_before,
             "{carriers_before} -> {carriers_after}"
@@ -1466,14 +1745,7 @@ mod tests {
         assert!(c.steer(r#"{"kind":"sharing","scale":4}"#).is_ok());
         assert!(c.steer(r#"{"kind":"sharing","scale":40}"#).is_err());
         assert!(c.steer(r#"{"kind":"sharing","scale":0}"#).is_ok());
-        assert!(c.steer(r#"{"kind":"seasons","depth":0.8,"length":200}"#).is_ok());
-        assert!(c.steer(r#"{"kind":"seasons","depth":2,"length":200}"#).is_err());
-        {
-            let s = &c.autonomous.as_ref().unwrap().physical.as_ref().unwrap().steering;
-            assert!((s.season(0.) - 1.).abs() < 1e-6 && (s.season(100.) - 0.2).abs() < 1e-5);
-            assert!((s.season(200.) - 1.).abs() < 1e-5, "a year later it is midsummer again");
-        }
-        assert!(c.steer(r#"{"kind":"seasons","depth":0,"length":400}"#).is_ok());
+
         assert!(c.steer(r#"{"kind":"light","scale":3}"#).is_ok());
         assert!(c.steer(r#"{"kind":"light","scale":0}"#).is_err());
         assert!(c
@@ -1587,7 +1859,11 @@ mod tests {
         let mut c = world(64);
         let e = c.autonomous.as_mut().unwrap();
         let make = |cell: &mut Cell, action: usize| cell.material.as_mut().unwrap().proteins[action] = 0.02;
-        e.cells[0].state.flux.photosynthesis = 5.; // a bare light feeder
+        e.cells[0].state.flux.photosynthesis = 5.; // a bare light feeder: it lives as a plant
+        make(&mut e.cells[6], PROPEL);
+        e.cells[6].state.flux.photosynthesis = 5.; // so does a light feeder that swims
+        make(&mut e.cells[7], ENGULF);
+        e.cells[7].state.flux.prey = 5.; // an animal fed on prey
         make(&mut e.cells[1], WALL);
         e.cells[1].state.flux.photosynthesis = 5.;
         make(&mut e.cells[2], WALL);
@@ -1597,7 +1873,62 @@ mod tests {
         make(&mut e.cells[5], WALL); // walled but not yet fed: unsorted
         let h = e.physical.as_ref().unwrap();
         let kinds = h.kinds(e, &e.groups());
-        assert_eq!(kinds, [e.cells.len() - 5, 1, 1, 2]);
+        assert_eq!(kinds, [e.cells.len() - 8, 3, 1, 3]);
+    }
+
+    #[test]
+    fn flood_and_drought_change_how_much_water_the_planet_holds_and_the_books_follow() {
+        let mut c = world(64);
+        let sea = |c: &mut Core| {
+            let p = habitat(c).planet.as_ref().unwrap();
+            (p.water.iter().sum::<f64>(), p.water_error())
+        };
+        let (before, _) = sea(&mut c);
+        c.steer(r#"{"kind":"water","change":0.5}"#).unwrap();
+        let (flooded, error) = sea(&mut c);
+        assert!(flooded > before * 1.5 && error.abs() < 1e-9, "{before} -> {flooded}, error {error}");
+        c.steer(r#"{"kind":"water","change":-0.5}"#).unwrap();
+        let (dried, error) = sea(&mut c);
+        assert!((dried - flooded * 0.5).abs() < 1e-6 && error.abs() < 1e-9);
+        for bad in ["0", "3", "-0.95"] {
+            assert!(c.steer(&format!(r#"{{"kind":"water","change":{bad}}}"#)).is_err());
+        }
+        c.step(40);
+        assert!(c.autonomous.as_ref().unwrap().valid());
+    }
+
+    #[test]
+    fn an_automatic_goal_follows_the_ladder_and_moves_on_from_a_step_that_stalls() {
+        let mut c = world(64);
+        c.step(4 * 30);
+        let note = c
+            .steer(r#"{"kind":"goal","goal":"auto","strength":0.25,"period":5}"#)
+            .unwrap();
+        assert!(note.contains("starting with bodies"), "{note}");
+        let state = |c: &mut Core| {
+            let s = &habitat(c).steering;
+            (s.auto, s.goal.clone(), s.auto_tried.clone())
+        };
+        // Colonies come first on the ladder, and bigger bodies are how to reach them.
+        assert_eq!(state(&mut c), (true, "bodies".to_string(), vec![]));
+        // It never stays on one step past its patience: the step is reached,
+        // or it is set aside and the next one tried.
+        for _ in 0..16 {
+            c.step(4 * 5);
+            assert!(habitat(&mut c).steering.auto_rounds < AUTO_PATIENCE);
+        }
+        let (auto, goal, _) = state(&mut c);
+        assert!(auto && GOALS.contains(&goal.as_str()), "{goal}");
+        // A save carries it, and choosing a trait by hand ends it.
+        let mut resumed = Core::load(&save(&c)).unwrap();
+        resumed.step(40);
+        c.step(40);
+        assert_eq!(save(&resumed), save(&c));
+        c.steer(r#"{"kind":"goal","goal":"senses","strength":0.25,"period":30}"#).unwrap();
+        assert_eq!(state(&mut c), (false, "senses".to_string(), vec![]));
+        c.steer(r#"{"kind":"goal","goal":"auto","strength":0.25,"period":30}"#).unwrap();
+        c.steer(r#"{"kind":"goal","goal":"","strength":0.25,"period":30}"#).unwrap();
+        assert_eq!(state(&mut c), (false, String::new(), vec![]));
     }
 
     #[test]

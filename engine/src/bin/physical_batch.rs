@@ -144,8 +144,36 @@ fn run() -> Result<(), String> {
         );
     }
     eprintln!(
-        "diet [light, soup, remains, vents, herbivore, omnivore, carnivore] {} · complex-cell captures {}\nkinds [microbe, plant-like, fungus-like, animal-like] {}",
-        view["diet"], view["captures"], view["kinds"]
+        "diet [light, soup, remains, vents, herbivore, omnivore, carnivore] {} · complex-cell captures {}\nkinds [microbe, plant-like, fungus-like, animal-like] {}\nspecies {}\noxygen {:.2} breath {:.2} restocked {}",
+        view["diet"], view["captures"], view["kinds"], view["species"],
+        view["oxygen"].as_f64().unwrap_or(0.), view["breath"].as_f64().unwrap_or(0.), view["restocked"]
+    );
+    let cycles = e.physical.as_ref().unwrap().cycles(e);
+    let part = |pool: &str, keys: &[&str]| {
+        keys.iter()
+            .map(|k| format!("{k} {:.1}", cycles[pool][*k].as_f64().unwrap_or(0.)))
+            .collect::<Vec<_>>()
+            .join(" ")
+    };
+    eprintln!(
+        "carbon {}\nnitrogen {} short {:.2}\nlevels {}\nefficiency {}",
+        part("carbon", &["dioxide", "dissolved", "living", "remains"]),
+        part("nitrogen", &["air", "dissolved", "living", "remains"]),
+        e.cells.iter().map(|c| c.state.nitrogen_short as f64).sum::<f64>() / e.cells.len().max(1) as f64,
+        cycles["levels"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|l| format!(
+                "{} {} cells {:.1}C in {:.3}",
+                l["name"].as_str().unwrap(),
+                l["cells"],
+                l["carbon"].as_f64().unwrap(),
+                l["intake"].as_f64().unwrap()
+            ))
+            .collect::<Vec<_>>()
+            .join(" | "),
+        cycles["efficiency"]
     );
     eprintln!(
         "breeding: {} rounds, {} cells removed, last round '{}'",

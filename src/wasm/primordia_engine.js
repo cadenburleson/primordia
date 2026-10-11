@@ -53,6 +53,22 @@ export class World {
         return v1;
     }
     /**
+     * The leading living body on each measure, as a JSON list.
+     * @returns {string}
+     */
+    champions() {
+        let deferred1_0;
+        let deferred1_1;
+        try {
+            const ret = wasm.world_champions(this.__wbg_ptr);
+            deferred1_0 = ret[0];
+            deferred1_1 = ret[1];
+            return getStringFromWasm0(ret[0], ret[1]);
+        } finally {
+            wasm.__wbindgen_free(deferred1_0, deferred1_1, 1);
+        }
+    }
+    /**
      * @param {string} json
      */
     configure(json) {
@@ -247,6 +263,25 @@ export class World {
         }
     }
     /**
+     * Scatter copies of an organism around painted points; returns how many fitted.
+     * @param {string} json
+     * @param {Float32Array} points
+     * @param {number} radius
+     * @param {number} per_point
+     * @returns {number}
+     */
+    paint_life(json, points, radius, per_point) {
+        const ptr0 = passStringToWasm0(json, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
+        const len0 = WASM_VECTOR_LEN;
+        const ptr1 = passArrayF32ToWasm0(points, wasm.__wbindgen_malloc);
+        const len1 = WASM_VECTOR_LEN;
+        const ret = wasm.world_paint_life(this.__wbg_ptr, ptr0, len0, ptr1, len1, radius, per_point);
+        if (ret[2]) {
+            throw takeFromExternrefTable0(ret[1]);
+        }
+        return ret[0] >>> 0;
+    }
+    /**
      * @param {string} json
      * @param {number} x
      * @param {number} z
@@ -334,6 +369,31 @@ export class World {
     simulation_time() {
         const ret = wasm.world_simulation_time(this.__wbg_ptr);
         return ret;
+    }
+    /**
+     * One founder of a starter species, as an organism snapshot.
+     * @param {string} species
+     * @returns {string}
+     */
+    species_specimen(species) {
+        let deferred3_0;
+        let deferred3_1;
+        try {
+            const ptr0 = passStringToWasm0(species, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
+            const len0 = WASM_VECTOR_LEN;
+            const ret = wasm.world_species_specimen(this.__wbg_ptr, ptr0, len0);
+            var ptr2 = ret[0];
+            var len2 = ret[1];
+            if (ret[3]) {
+                ptr2 = 0; len2 = 0;
+                throw takeFromExternrefTable0(ret[2]);
+            }
+            deferred3_0 = ptr2;
+            deferred3_1 = len2;
+            return getStringFromWasm0(ptr2, len2);
+        } finally {
+            wasm.__wbindgen_free(deferred3_0, deferred3_1, 1);
+        }
     }
     start_autonomous() {
         wasm.world_start_autonomous(this.__wbg_ptr);
@@ -465,6 +525,13 @@ function getUint8ArrayMemory0() {
         cachedUint8ArrayMemory0 = new Uint8Array(wasm.memory.buffer);
     }
     return cachedUint8ArrayMemory0;
+}
+
+function passArrayF32ToWasm0(arg, malloc) {
+    const ptr = malloc(arg.length * 4, 4) >>> 0;
+    getFloat32ArrayMemory0().set(arg, ptr / 4);
+    WASM_VECTOR_LEN = arg.length;
+    return ptr;
 }
 
 function passStringToWasm0(arg, malloc, realloc) {

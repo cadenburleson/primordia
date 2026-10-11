@@ -88,7 +88,7 @@ impl SurfaceFlow {
             && self.water_transported.is_finite()
             && self.water_transported >= 0.
     }
-    pub fn step(&mut self, d: Domain, p: &mut Planet, solutes: &mut [[f64; 6]], seed: u32) {
+    pub fn step(&mut self, d: Domain, p: &mut Planet, solutes: &mut [[f64; crate::physical::SOLUTES]], seed: u32) {
         let mesh = Mesh::of(d, seed);
         let (areas, normals, geometry) = (&mesh.areas, &mesh.normals, &mesh.edges);
         let count = d.sites();
@@ -140,7 +140,7 @@ impl SurfaceFlow {
                 p.water[receiver] += amount;
                 self.water_transported += amount;
                 p.runoff += amount;
-                for k in 0..6 {
+                for k in 0..crate::physical::SOLUTES {
                     let carried = solutes[donor][k] * fraction;
                     solutes[donor][k] -= carried;
                     solutes[receiver][k] += carried;
@@ -152,12 +152,12 @@ impl SurfaceFlow {
             }
         }
     }
-    pub fn diffuse(d: Domain, solutes: &mut [[f64; 6]], dt: f64, diffusivity: [f64; 6]) {
+    pub fn diffuse(d: Domain, solutes: &mut [[f64; crate::physical::SOLUTES]], dt: f64, diffusivity: [f64; crate::physical::SOLUTES]) {
         let mesh = Mesh::of(d, 0);
         let areas = &mesh.areas;
         for _ in 0..4 {
             for &(i, j, _, _, length) in &mesh.edges {
-                for k in 0..6 {
+                for k in 0..crate::physical::SOLUTES {
                     let flux = dt / 4. * diffusivity[k] * areas[i].min(areas[j])
                         / (length * length)
                         * (solutes[i][k] / areas[i] - solutes[j][k] / areas[j]);
@@ -174,7 +174,7 @@ impl SurfaceFlow {
 #[cfg(test)]
 mod tests {
     use super::*;
-    fn fixture() -> (Domain, Planet, Vec<[f64; 6]>, SurfaceFlow) {
+    fn fixture() -> (Domain, Planet, Vec<[f64; crate::physical::SOLUTES]>, SurfaceFlow) {
         let mut d = Domain::from_size(128);
         d.shape = crate::domain::Shape::Sphere;
         let mut p = Planet::new_in(d);
@@ -184,14 +184,14 @@ mod tests {
             p.water[i] = (4. - d.ground(x, z, 8042) as f64) * d.area(i);
         }
         p.initial_water = p.water.iter().sum::<f64>() + p.atmosphere;
-        (d, p, vec![[0.; 6]; d.sites()], SurfaceFlow::new(d))
+        (d, p, vec![[0.; crate::physical::SOLUTES]; d.sites()], SurfaceFlow::new(d))
     }
     #[test]
     fn water_advection_carries_all_species_across_longitude() {
         let (d, mut p, mut s, mut f) = fixture();
         let a = d.rows() / 2 * d.grid + d.grid - 1;
         let b = d.rows() / 2 * d.grid;
-        s[a] = [1., 2., 3., 4., 5., 6.];
+        s[a] = [1., 2., 3., 4., 5., 6., 7., 8.];
         let initial = s[a];
         for i in 0..d.sites() {
             let (x, z) = d.point(i);
@@ -200,19 +200,19 @@ mod tests {
         f.step(d, &mut p, &mut s, 8042);
         assert!(s[b].iter().all(|v| *v > 0.));
         assert!(p.water_error().abs() < 1e-7 && f.valid(d));
-        for k in 0..6 {
+        for k in 0..crate::physical::SOLUTES {
             assert!((s.iter().map(|s| s[k]).sum::<f64>() - initial[k]).abs() < 1e-10);
         }
     }
     #[test]
     fn polar_diffusion_is_connected_positive_and_conservative() {
         let (d, _, mut s, _) = fixture();
-        s[0] = [1.; 6];
+        s[0] = [1.; crate::physical::SOLUTES];
         let opposite = d.grid / 2;
-        SurfaceFlow::diffuse(d, &mut s, 0.25, [0.12; 6]);
+        SurfaceFlow::diffuse(d, &mut s, 0.25, [0.12; crate::physical::SOLUTES]);
         assert!(s[opposite][0] > 0.);
         assert!(s.iter().flatten().all(|x| *x >= 0. && x.is_finite()));
-        for k in 0..6 {
+        for k in 0..crate::physical::SOLUTES {
             assert!((s.iter().map(|s| s[k]).sum::<f64>() - 1.).abs() < 1e-10);
         }
     }

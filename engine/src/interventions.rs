@@ -162,6 +162,7 @@ impl Core {
                 };
                 let nh = next.physical.as_mut().unwrap();
                 let before = nh.totals(&next.cells);
+                let nitrogen = nh.nitrogen_total(&next.cells);
                 let p = nh.planet.as_mut().ok_or("No planetary surface")?;
                 let level = level.unwrap_or_else(|| d.ground(x, z, self.config.seed) + p.relief_at(x, z));
                 let mut touched = 0;
@@ -215,10 +216,7 @@ impl Core {
                 }
                 }
                 p.terrain_version = p.terrain_version.wrapping_add(1);
-                let after = nh.totals(&next.cells);
-                nh.initial_organic += after.0 - before.0;
-                nh.initial_mineral += after.1 - before.1;
-                nh.initial_energy += after.2 - before.2;
+                nh.settle_arrivals(before, nitrogen, &next.cells);
                 if terrain {
                     // Lift connected bodies together when the edited ground rises.
                     // No new tissue, chemical energy, or material is created.

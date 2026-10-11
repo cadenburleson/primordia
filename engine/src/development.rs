@@ -374,6 +374,7 @@ impl Habitat {
             inventory.fuel += mb.fuel;
             inventory.mineral += mb.mineral;
             inventory.lipid += mb.lipid;
+            inventory.nitrogen += mb.nitrogen;
             inventory.fuel += inventory.body.merge(&mb.body);
             for (a, b) in inventory.proteins.iter_mut().zip(mb.proteins) {
                 *a += b;
