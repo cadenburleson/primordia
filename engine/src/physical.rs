@@ -379,6 +379,10 @@ impl Inventory {
                 .cbrt()) as f32
     }
     pub fn activity(&self, k: usize) -> f32 {
+        // Most cells make only a few of the proteins there are.
+        if self.proteins[k].to_bits() == 0 {
+            return 0.;
+        }
         (self.proteins[k] / (0.015 * self.biomass + self.proteins[k]).max(1e-12)) as f32
     }
     /// How much of this cell is bone, and how much is laid-down fibre.
@@ -1147,7 +1151,7 @@ impl Habitat {
     /// Left-minus-right differences sampled one field spacing to either side
     /// of the heading: dissolved fuel, light, the waste living cells give off,
     /// and organic remains. Each needs the matching receptor material.
-    fn lateral_senses(&self, c: &Cell, core: &Core) -> [f32; LATERAL] {
+    fn lateral_senses(&self, c: &Cell, core: &Core, at: (f32, f32)) -> [f32; LATERAL] {
         // A steering apparatus carries a crude chemical sense of its own;
         // dedicated receptors sharpen it.
         let receptor = c
@@ -1160,7 +1164,7 @@ impl Habitat {
         let reach = self.domain.spacing().max(c.radius());
         let side = self
             .domain
-            .tangent(c.p, c.heading + std::f32::consts::FRAC_PI_2)
+            .tangent_at(at.0, at.1, c.heading + std::f32::consts::FRAC_PI_2)
             .mul(reach);
         let (l, r) = (
             self.domain.locate(c.p.add(side)),
@@ -1186,13 +1190,14 @@ impl Habitat {
         ]
     }
     pub(crate) fn physiology(&mut self, e: &mut Evolution, core: &Core) {
-        let mut degree = BTreeMap::<u32, usize>::new();
+        let mut degree = crate::body::Ids::default();
         for b in &e.bonds {
             *degree.entry(b.a).or_default() += 1;
             *degree.entry(b.b).or_default() += 1;
         }
         for c in &mut e.cells {
-            let site = self.domain.locate(c.p);
+            let at = self.domain.coords(c.p);
+            let site = self.domain.index(at.0, at.1);
             c.chemicals = [
                 (self.solutes[site][3]
                     / (0.03 * self.domain.area(site) / 2.56 + self.solutes[site][3]))
@@ -1210,13 +1215,14 @@ impl Habitat {
                     c.chemicals[k] = c.chemicals[k] * (1. - fraction) + internal * fraction;
                 }
             }
-            let inputs = c.physical_inputs(
+            let inputs = c.physical_inputs_at(
                 &self.solutes,
                 degree.get(&c.id).copied().unwrap_or(0),
                 self.domain,
+                at,
             );
             let mut inputs = inputs;
-            let lateral = self.lateral_senses(c, core);
+            let lateral = self.lateral_senses(c, core, at);
             inputs[INPUTS - LATERAL..].copy_from_slice(&lateral);
             // A cell on its own is its own organism and can become anything.
             // Inside a body a stem cell commits when one of its commitment
@@ -1275,9 +1281,9 @@ impl Habitat {
                 * self.steering.light as f64;
             let s = &mut self.solutes[site];
             let m = c.material.as_mut().unwrap();
-            let activity: Vec<_> = (0..ACTIONS)
-                .map(|k| m.activity(k) as f64 * (1. - c.state.injury * 0.75) as f64)
-                .collect();
+            let activity: [f64; ACTIONS] = std::array::from_fn(|k| {
+                m.activity(k) as f64 * (1. - c.state.injury * 0.75) as f64
+            });
             // Transport moves actual reduced carbon into the cell.
             // A membrane given over to swallowing prey has little room left for
             // soaking up dissolved fuel, harvesting light or vent chemistry: a
@@ -1450,6 +1456,9 @@ impl Habitat {
             e.food_energy += captured;
             // Gene output is a production rate. Mechanical effects use actual
             // protein/mineral inventories, never promoter output directly.
+            // The share of a protein lost each tick: little while its gene is
+            // working, a great deal once it falls silent.
+            let (kept, dropped) = (1. - (-0.025 * dt).exp(), 1. - (-0.2 * dt).exp());
             for k in 0..ACTIONS {
                 // Commitment genes regulate; they build nothing.
                 let building = if BECOME.contains(&k) || k == BROADEN || k == SIZE {
@@ -1457,6 +1466,15 @@ impl Habitat {
                 } else {
                     c.expression[k] as f64
                 };
+                // Nothing made and nothing held: every sum below would add nothing.
+                if building == 0.
+                    && m.proteins[k].to_bits() == 0
+                    && m.fuel > 0.
+                    && c.energy > 0.
+                    && m.nitrogen > 0.
+                {
+                    continue;
+                }
                 // Protein and tissue are built with nitrogen; fuel and fat hold none.
                 // A wall is cellulose: carbon, hydrogen and oxygen only.
                 let needs = if k == WALL { 0. } else { N_RATIO };
@@ -1473,8 +1491,7 @@ impl Habitat {
                 self.heat += before - c.energy as f64;
                 // Machinery whose gene is silent in this cell is dismantled fast,
                 // so what a cell is follows what its genes are doing now.
-                let decay = if c.expression[k] > 0. { 0.025 } else { 0.2 };
-                let turnover = m.proteins[k] * (1. - (-decay * dt).exp());
+                let turnover = m.proteins[k] * if c.expression[k] > 0. { kept } else { dropped };
                 m.proteins[k] -= turnover;
                 m.fuel += turnover;
                 m.nitrogen += turnover * needs;
@@ -1542,13 +1559,11 @@ impl Habitat {
             }
             // What a cell cannot use it gives off, and the water carries it
             // back to whatever feeds on light.
-            let spare =
-                (m.nitrogen - m.bound_nitrogen() * 0.5).max(0.) * (1. - (-0.2 * dt).exp());
+            let spare = (m.nitrogen - m.bound_nitrogen() * 0.5).max(0.) * dropped;
             m.nitrogen -= spare;
             s[NITROGEN] += spare;
             c.state.flux.nitrogen_given += spare;
-            let spare =
-                (m.phosphorus - m.bound_phosphorus() * 0.5).max(0.) * (1. - (-0.2 * dt).exp());
+            let spare = (m.phosphorus - m.bound_phosphorus() * 0.5).max(0.) * dropped;
             m.phosphorus -= spare;
             s[2] += spare;
             let upkeep = dt
@@ -1639,7 +1654,7 @@ impl Habitat {
         }
         let mut degree = vec![0usize; e.cells.len()];
         let ids = e.index();
-        let mut bonded = BTreeSet::new();
+        let mut bonded = crate::body::Pairs::default();
         for b in &e.bonds {
             degree[ids[&b.a]] += 1;
             degree[ids[&b.b]] += 1;
@@ -1655,24 +1670,33 @@ impl Habitat {
                 (p.z / width).floor() as i32,
             )
         };
-        let mut bins = BTreeMap::<(i32, i32, i32), Vec<usize>>::new();
-        for (i, c) in e.cells.iter().enumerate() {
-            bins.entry(bin(c.p)).or_default().push(i);
+        // Nothing here moves a cell, so positions are read from one compact list.
+        let places: Vec<V3> = e.cells.iter().map(|c| c.p).collect();
+        let mut bins = crate::body::Bins::default();
+        for (i, &p) in places.iter().enumerate() {
+            bins.entry(bin(p)).or_default().push(i);
         }
+        // Cells in one bin share the same neighbourhood, so it is gathered
+        // once for the bin and not again for each of them.
+        let mut around = crate::body::Bins::default();
+        let names: Vec<u32> = e.cells.iter().map(|c| c.id).collect();
         for i in 0..e.cells.len() {
-            let (x, y, z) = bin(e.cells[i].p);
+            let (x, y, z) = bin(places[i]);
             // Flatten the 27 adjacent Cartesian bins into a deterministic list.
-            let mut neighbors = Vec::new();
-            e.cells[i].state.nearby = 0.;
-            for yy in y - 1..=y + 1 {
-                for zz in z - 1..=z + 1 {
-                    for xx in x - 1..=x + 1 {
-                        if let Some(ids) = bins.get(&(xx, yy, zz)) {
-                            neighbors.extend(ids.iter().copied());
+            let neighbors = around.entry((x, y, z)).or_insert_with(|| {
+                let mut near = Vec::new();
+                for yy in y - 1..=y + 1 {
+                    for zz in z - 1..=z + 1 {
+                        for xx in x - 1..=x + 1 {
+                            if let Some(ids) = bins.get(&(xx, yy, zz)) {
+                                near.extend(ids.iter().copied());
+                            }
                         }
                     }
                 }
-            }
+                near
+            });
+            e.cells[i].state.nearby = 0.;
             // A cell that can steer feels which side other life is on, within
             // one field spacing: close-range scent. An eater is following its
             // food, so its own kind does not register; anything else is drawn
@@ -1684,15 +1708,14 @@ impl Habitat {
                     .tangent(me.p, me.heading + std::f32::consts::FRAC_PI_2);
                 let eater = me.activity(ENGULF).max(me.activity(9)) * me.bite() > 0.25;
                 let mut pull = 0.;
-                for &j in &neighbors {
-                    let other = &e.cells[j];
-                    let key = (me.id.min(other.id), me.id.max(other.id));
-                    if j == i || bonded.contains(&key) {
-                        continue;
-                    }
-                    let delta = other.p.sub(me.p);
+                for &j in neighbors.iter() {
+                    let delta = places[j].sub(me.p);
                     let d = delta.len();
                     if d < 1.6 && d > 1e-4 {
+                        let key = (me.id.min(names[j]), me.id.max(names[j]));
+                        if j == i || bonded.contains(&key) {
+                            continue;
+                        }
                         if !(eater && kin(i, j)) {
                             pull += delta.dot(left) / d * (1. - d / 1.6);
                         }
@@ -1700,11 +1723,24 @@ impl Habitat {
                 }
                 e.cells[i].state.nearby = (pull / (1. + pull.abs())).clamp(-1., 1.);
             }
-            for j in neighbors {
+            for &j in neighbors.iter() {
                 if j <= i {
                     continue;
                 }
-                let d = e.cells[j].p.sub(e.cells[i].p).len();
+                // Most of what is near is not near enough to matter, which a
+                // comparison of squares shows without a root. The margin
+                // leaves every close call to the exact test below.
+                let apart = places[j].sub(places[i]);
+                let limit = radii[i] + radii[j] + 0.12;
+                let wide = if armed && (currents[i] >= 0.05 || currents[j] >= 0.05) {
+                    limit.max(FEED_REACH)
+                } else {
+                    limit
+                };
+                if apart.dot(apart) > wide * wide * 1.01 {
+                    continue;
+                }
+                let d = apart.len();
                 // The feeding current: a free cell much smaller than a mouth's
                 // whole body is drawn toward the mouth. Cells held in a body
                 // are not, which is the first reason to live in one.
@@ -2158,11 +2194,14 @@ impl Habitat {
     /// floats or stands. The sea stands at a fixed level in a flat habitat and
     /// wherever it has pooled on a planet.
     pub(crate) fn submerged(&self, c: &Cell, radius: f32, seed: u32) -> (f64, f32) {
+        self.submerged_at(c, radius, seed, self.domain.coords(c.p))
+    }
+    /// As `submerged`, for a cell whose map coordinates are already known.
+    fn submerged_at(&self, c: &Cell, radius: f32, seed: u32, (x, z): (f32, f32)) -> (f64, f32) {
         let p = self.planet.as_ref().unwrap();
-        let (x, z) = self.domain.coords(c.p);
         let ground = self.domain.ground(x, z, seed) + p.relief_at(x, z);
         let (surface, altitude) = if self.domain.spherical() {
-            let depth = p.surface_depth(self.domain.locate(c.p)) as f32;
+            let depth = p.surface_depth(self.domain.index(x, z)) as f32;
             (ground + depth, c.p.len() - self.domain.radius())
         } else {
             (ground.max(0.12), c.p.y)
@@ -2414,6 +2453,9 @@ impl Habitat {
         // Material inventories do not change within the mechanical substeps.
         // Avoid repeated cbrt, mass sums and tree lookups; preserve force order.
         let mut submersion = Vec::with_capacity(e.cells.len());
+        // Where each cell is on the map, kept up as cells are moved, so the
+        // conversion is done once for each place a cell is at.
+        let mut places = Vec::with_capacity(e.cells.len());
         let properties: Vec<_> = e
             .cells
             .iter()
@@ -2421,7 +2463,9 @@ impl Habitat {
                 let m = c.material.as_ref().unwrap();
                 let mass = m.mass();
                 let radius = m.radius();
-                let wet = self.submerged(c, radius, core.config.seed).0;
+                let at = self.domain.coords(c.p);
+                places.push(at);
+                let wet = self.submerged_at(c, radius, core.config.seed, at).0;
                 submersion.push(wet as f32);
                 // Water carries whatever part of a cell is under it.
                 let weight = (GRAVITY * (mass - m.displaced() * wet)) as f32;
@@ -2440,10 +2484,9 @@ impl Habitat {
         // against its neighbours, as before. Without that a large body's
         // springs ring until it flies apart.
         let mut bodies: Vec<(Vec<usize>, Vec<f32>, f64)> = Vec::new();
-        for members in e.groups() {
-            if members.len() < 3 {
-                continue;
-            }
+        // Bodies neither form nor break while they are being moved.
+        let groups = e.groups();
+        for members in groups.iter().filter(|g| g.len() >= 3).cloned() {
             let mass: f64 = members.iter().map(|&i| properties[i].0).sum();
             let centre = members
                 .iter()
@@ -2522,9 +2565,12 @@ impl Habitat {
                 // instead of piling up where they were born. A body holds its course.
                 if !bonded[i] && submersion[i] > 0.1 {
                     let turn = core.random() * std::f32::consts::TAU;
-                    c.p = c
-                        .p
-                        .add(self.domain.tangent(c.p, turn).mul(JOSTLE * self.steering.mixing.sqrt()));
+                    c.p = c.p.add(
+                        self.domain
+                            .tangent_at(places[i].0, places[i].1, turn)
+                            .mul(JOSTLE * self.steering.mixing.sqrt()),
+                    );
+                    places[i] = self.domain.coords(c.p);
                 }
                 if motor <= 1e-4 {
                     continue;
@@ -2535,7 +2581,7 @@ impl Habitat {
                     c.heading = (c.heading + (core.random() - 0.5) * 0.5 * DT.sqrt())
                         .rem_euclid(std::f32::consts::TAU);
                 }
-                let site = self.domain.locate(c.p);
+                let site = self.domain.index(places[i].0, places[i].1);
                 let water = self
                     .planet
                     .as_ref()
@@ -2583,7 +2629,7 @@ impl Habitat {
                 if force <= 0. {
                     continue;
                 }
-                let direction = self.domain.tangent(c.p, c.heading);
+                let direction = self.domain.tangent_at(places[i].0, places[i].1, c.heading);
                 thrust[i] = direction.mul(force as f32);
                 let impulse = force * DT as f64;
                 if let Some(flow) = &mut self.fluid.surface {
@@ -2606,15 +2652,12 @@ impl Habitat {
         // and shared by mass, so swimmers in one body do not tear it apart;
         // motors pointing different ways simply cancel, which is wasted work.
         if thrust.iter().any(|t| t.x != 0. || t.y != 0. || t.z != 0.) {
-            for group in e.groups() {
-                if group.len() < 2 {
-                    continue;
-                }
+            for group in groups.iter().filter(|g| g.len() >= 2) {
                 let net = group
                     .iter()
                     .fold(V3::default(), |sum, &i| sum.add(thrust[i]));
                 let mass: f64 = group.iter().map(|&i| properties[i].0).sum();
-                for &i in &group {
+                for &i in group {
                     thrust[i] = net.mul((properties[i].0 / mass) as f32);
                 }
             }
@@ -2629,7 +2672,7 @@ impl Habitat {
         let bearings: Vec<f32> = springs.iter().map(|&(a, c, ..)| bearing(e, a, c)).collect();
         // Terrain and the field site under a cell change little within one
         // tick, so they are sampled on every fourth substep and reused between.
-        let mut sites: Vec<usize> = e.cells.iter().map(|c| self.domain.locate(c.p)).collect();
+        let mut sites: Vec<usize> = places.iter().map(|&(x, z)| self.domain.index(x, z)).collect();
         let mut terrain = vec![(0f32, false); e.cells.len()];
         for substep in 0..20 {
             let mut force = thrust.clone();
@@ -2870,7 +2913,7 @@ impl Habitat {
         let variation = self.mutation_factor(core.time);
         let focus = self.steering.focus();
         let mut daughters = Vec::new();
-        let mut degree = BTreeMap::<u32, usize>::new();
+        let mut degree = crate::body::Ids::default();
         for b in &e.bonds {
             *degree.entry(b.a).or_default() += 1;
             *degree.entry(b.b).or_default() += 1;

@@ -158,13 +158,25 @@ impl Ledger {
 impl Cell {
     /// Local membrane responses and short-lived cellular state. No resource or
     /// prey search across the world, target direction, fitness score or clock.
+    #[cfg(test)]
     pub(crate) fn physical_inputs(
         &mut self,
         solutes: &[[f64; crate::physical::SOLUTES]],
         degree: usize,
         domain: crate::domain::Domain,
     ) -> [f32; INPUTS] {
-        let site = domain.locate(self.p);
+        let at = domain.coords(self.p);
+        self.physical_inputs_at(solutes, degree, domain, at)
+    }
+    /// As `physical_inputs`, for a cell whose map coordinates are already known.
+    pub(crate) fn physical_inputs_at(
+        &mut self,
+        solutes: &[[f64; crate::physical::SOLUTES]],
+        degree: usize,
+        domain: crate::domain::Domain,
+        (x, z): (f32, f32),
+    ) -> [f32; INPUTS] {
+        let site = domain.index(x, z);
         let density = domain.area(site) / 2.56;
         let s = solutes[site].map(|v| v / density);
         let sensed = s[0] + s[5] * self.activity(15) as f64;
@@ -179,7 +191,7 @@ impl Cell {
         // Samples one membrane radius along the cell's inherited spatial
         // polarity. This is a scalar promoter input; it never sets a force.
         let r = self.radius();
-        let direction = domain.tangent(self.p, self.heading);
+        let direction = domain.tangent_at(x, z, self.heading);
         let fi = domain.locate(self.p.add(direction.mul(r)));
         let bi = domain.locate(self.p.sub(direction.mul(r)));
         let front = solutes[fi][0] * 2.56 / domain.area(fi);

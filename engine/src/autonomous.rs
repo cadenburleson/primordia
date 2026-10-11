@@ -438,7 +438,7 @@ impl Evolution {
             peak_generation: 0,
         }
     }
-    pub(crate) fn index(&self) -> BTreeMap<u32, usize> {
+    pub(crate) fn index(&self) -> crate::body::Ids {
         self.cells
             .iter()
             .enumerate()
@@ -475,11 +475,19 @@ impl Evolution {
                 }
             }
         }
-        let mut groups = BTreeMap::<usize, Vec<usize>>::new();
+        // A group's root is its lowest-numbered cell, so groups come out in
+        // the order their roots are met and each lists its cells in order.
+        let mut slot = vec![usize::MAX; root.len()];
+        let mut groups: Vec<Vec<usize>> = Vec::new();
         for i in 0..root.len() {
-            groups.entry(find(&mut root, i)).or_default().push(i);
+            let r = find(&mut root, i);
+            if slot[r] == usize::MAX {
+                slot[r] = groups.len();
+                groups.push(Vec::new());
+            }
+            groups[slot[r]].push(i);
         }
-        groups.into_values().collect()
+        groups
     }
     pub fn valid(&self) -> bool {
         let ids = self.index();

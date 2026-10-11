@@ -10,6 +10,8 @@ pub struct SurfaceFlow {
 }
 /// Static mesh geometry. It depends only on the domain (and, for the seeded
 /// ground height, the world seed), so it is built once instead of every tick.
+/// How many small steps the water takes in one tick.
+const SUBSTEPS: usize = 16;
 struct Mesh {
     areas: Vec<f64>,
     normals: Vec<V3>,
@@ -17,6 +19,9 @@ struct Mesh {
     ground: Vec<f32>,
     /// Edge endpoints, their tangent directions and geodesic length.
     edges: Vec<(usize, usize, V3, V3, f64)>,
+    /// For each edge, how strongly it evens out the speeds either side of it
+    /// in one substep, and how wide a front it carries water across.
+    spans: Vec<(f32, f64)>,
 }
 impl Mesh {
     fn of(d: Domain, seed: u32) -> std::rc::Rc<Mesh> {
@@ -52,8 +57,21 @@ impl Mesh {
                     )
                 })
                 .collect();
+            let edges: Vec<(usize, usize, V3, V3, f64)> = edges;
+            let areas: Vec<f64> = (0..count).map(|i| d.area(i)).collect();
+            let dt = DT as f64 / SUBSTEPS as f64;
+            let spans = edges
+                .iter()
+                .map(|&(i, j, _, _, length)| {
+                    (
+                        (0.06 * dt / (length * length)).min(0.04) as f32,
+                        areas[i].min(areas[j]).sqrt(),
+                    )
+                })
+                .collect();
             let mesh = std::rc::Rc::new(Mesh {
-                areas: (0..count).map(|i| d.area(i)).collect(),
+                areas,
+                spans,
                 ground: (0..count)
                     .map(|i| {
                         let (x, z) = d.point(i);
@@ -97,17 +115,23 @@ impl SurfaceFlow {
             .collect();
         // Small physical substeps, with conservative donor limiting at tiny polar
         // cells. The limiter reduces accuracy at extreme Courant numbers, not mass.
-        let dt = DT as f64 / 16.;
-        for _ in 0..16 {
-            let old = self.velocities.clone();
-            let mut change = vec![V3::default(); count];
-            for &(i, j, a, b, length) in geometry {
-                let hi = ground[i] + p.water[i] / areas[i];
-                let hj = ground[j] + p.water[j] / areas[j];
-                let acceleration = (0.3 * (hi - hj) / length * dt / 4.) as f32;
+        let dt = DT as f64 / SUBSTEPS as f64;
+        let fade = (-0.01 * dt).exp() as f32;
+        let mut old = self.velocities.clone();
+        let mut change = vec![V3::default(); count];
+        let mut level = vec![0.; count];
+        for _ in 0..SUBSTEPS {
+            old.copy_from_slice(&self.velocities);
+            change.fill(V3::default());
+            // The height of the water's surface, once for each site and not
+            // again for each of the edges that meet there.
+            for i in 0..count {
+                level[i] = ground[i] + p.water[i] / areas[i];
+            }
+            for (&(i, j, a, b, length), &(viscosity, _)) in geometry.iter().zip(&mesh.spans) {
+                let acceleration = (0.3 * (level[i] - level[j]) / length * dt / 4.) as f32;
                 change[i] = change[i].add(a.mul(acceleration));
                 change[j] = change[j].add(b.mul(acceleration));
-                let viscosity = (0.06 * dt / (length * length)).min(0.04) as f32;
                 let dv = old[j].sub(old[i]).mul(viscosity);
                 change[i] = change[i].add(dv);
                 change[j] = change[j].sub(dv);
@@ -118,14 +142,13 @@ impl SurfaceFlow {
                 self.velocities[i] = if p.water[i] < 1e-12 {
                     V3::default()
                 } else {
-                    tangent.mul((-0.01 * dt).exp() as f32)
+                    tangent.mul(fade)
                 };
             }
             // Each edge transfer also transports its donor's material and momentum.
-            for &(i, j, a, b, _) in geometry {
+            for (&(i, j, a, b, _), &(_, width)) in geometry.iter().zip(&mesh.spans) {
                 let speed = (self.velocities[i].dot(a) + self.velocities[j].dot(b)) as f64 * 0.5;
                 let (donor, receiver) = if speed >= 0. { (i, j) } else { (j, i) };
-                let width = areas[i].min(areas[j]).sqrt();
                 let amount = (speed.abs() * dt * width * p.water[donor] / areas[donor])
                     .min(p.water[donor] * 0.25);
                 if amount <= 0. {

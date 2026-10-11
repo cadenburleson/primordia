@@ -664,7 +664,11 @@ impl Habitat {
         }
     }
     pub(crate) fn particle_ecology(&mut self, e: &mut Evolution, core: &Core) {
-        let width = (e.cells.iter().map(Cell::radius).fold(0., f32::max)
+        // Each cell's size is worked out once here, and again only for a cell
+        // that has just fed and so grown.
+        let mut radii: Vec<f32> = e.cells.iter().map(Cell::radius).collect();
+        let dissolving = 1. - (-DT as f64 * 0.006).exp();
+        let width = (radii.iter().copied().fold(0., f32::max)
             + self
                 .systems
                 .particles
@@ -679,12 +683,15 @@ impl Habitat {
                 (p.z / width).floor() as i32,
             )
         };
-        let mut bins = BTreeMap::<_, Vec<usize>>::new();
-        for (i, c) in e.cells.iter().enumerate() {
-            bins.entry(key(c.p)).or_default().push(i);
+        // Cells are not moved here, so their places are read from one list.
+        let places: Vec<body::V3> = e.cells.iter().map(|c| c.p).collect();
+        let mut bins = crate::body::Bins::default();
+        for (i, &at) in places.iter().enumerate() {
+            bins.entry(key(at)).or_default().push(i);
         }
         for p in &mut self.systems.particles {
-            let site = self.domain.locate(p.p);
+            let (x, z) = self.domain.coords(p.p);
+            let site = self.domain.index(x, z);
             let up = self.domain.up(p.p);
             let fluid = if let Some(flow) = &self.fluid.surface {
                 flow.velocities[site]
@@ -699,7 +706,6 @@ impl Habitat {
             let (carried, falling) = if self.domain.spherical() {
                 let planet = self.planet.as_ref().unwrap();
                 let depth = planet.surface_depth(site) as f32;
-                let (x, z) = self.domain.coords(p.p);
                 let surface = self.domain.ground(x, z, core.config.seed) + planet.relief_at(x, z) + depth;
                 let above = p.p.len() - self.domain.radius() - surface;
                 // Something now and then throws a grain upward far faster
@@ -753,19 +759,22 @@ impl Habitat {
             } else {
                 p.p.y
             };
-            if altitude < floor {
+            let site = if altitude < floor {
                 p.p = p.p.add(up.mul(floor - altitude));
                 let speed = p.v.dot(up);
                 if speed < 0. {
                     p.v = p.v.sub(up.mul(speed));
                 }
-            }
-            let site = self.domain.locate(p.p);
+                self.domain.locate(p.p)
+            } else {
+                self.domain.index(x, z)
+            };
             for k in 0..crate::physical::SOLUTES {
-                let dissolved = p.solutes[k] * (1. - (-DT as f64 * 0.006).exp());
+                let dissolved = p.solutes[k] * dissolving;
                 p.solutes[k] -= dissolved;
                 self.solutes[site][k] += dissolved;
             }
+            let mut grain = p.radius();
             let (x, y, z) = key(p.p);
             for yy in y - 1..=y + 1 {
                 for zz in z - 1..=z + 1 {
@@ -774,10 +783,10 @@ impl Habitat {
                             continue;
                         };
                         for &i in neighbors {
-                            let c = &mut e.cells[i];
-                            if c.p.sub(p.p).len() > c.radius() + p.radius() {
+                            if places[i].sub(p.p).len() > radii[i] + grain {
                                 continue;
                             }
+                            let c = &mut e.cells[i];
                             let gate = c.activity(15).max(c.activity(9)) as f64;
                             let mineral_gate = c.activity(3) as f64;
                             let m = c.material.as_mut().unwrap();
@@ -816,6 +825,10 @@ impl Habitat {
                             let before = c.energy as f64;
                             c.energy = (before - mineral * 0.2) as f32;
                             self.heat += before - c.energy as f64;
+                            if extracted > 0. || mineral > 0. {
+                                radii[i] = c.radius();
+                                grain = p.radius();
+                            }
                             if extracted > 0. {
                                 c.state.meals += 1;
                                 e.meals += 1;

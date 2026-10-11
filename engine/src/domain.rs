@@ -17,6 +17,14 @@ pub struct Domain {
     #[serde(default)]
     pub shape: Shape,
 }
+struct Fixed {
+    domain: Domain,
+    bands: Vec<f64>,
+    normals: Vec<V3>,
+}
+thread_local! {
+    static FIXED: std::cell::RefCell<Vec<Fixed>> = const { std::cell::RefCell::new(Vec::new()) };
+}
 impl Default for Domain {
     fn default() -> Self {
         Self {
@@ -131,6 +139,13 @@ impl Domain {
             return V3::new(heading.cos(), 0., heading.sin());
         }
         let (x, z) = self.coords(p);
+        self.tangent_at(x, z, heading)
+    }
+    /// As `tangent`, for a point whose map coordinates are already known.
+    pub fn tangent_at(self, x: f32, z: f32, heading: f32) -> V3 {
+        if !self.spherical() {
+            return V3::new(heading.cos(), 0., heading.sin());
+        }
         let lon = x / self.radius();
         let lat = z / self.radius();
         let east = V3::new(lon.cos(), 0., -lon.sin());
@@ -159,7 +174,45 @@ impl Domain {
         if !self.spherical() {
             return self.spacing().powi(2) as f64;
         }
+        // Every site in a band of latitude has the same area, and this is
+        // asked for constantly, so each band's is worked out once.
         let row = i / self.grid;
+        self.fixed(|fixed| fixed.bands.get(row).copied())
+            .unwrap_or_else(|| self.band(row))
+    }
+    /// The outward direction at the middle of a field site.
+    pub fn site_normal(self, i: usize) -> V3 {
+        self.fixed(|fixed| fixed.normals.get(i).copied()).unwrap_or_else(|| {
+            let (x, z) = self.point(i);
+            self.normal(x, z)
+        })
+    }
+    /// Geometry that depends only on the world's size and shape, worked out
+    /// once and read from then on.
+    fn fixed<T>(self, read: impl FnOnce(&Fixed) -> T) -> T {
+        FIXED.with(|fixed| {
+            let mut fixed = fixed.borrow_mut();
+            if let Some(hit) = fixed.iter().find(|f| f.domain == self) {
+                return read(hit);
+            }
+            // A session only ever alternates between a planet, its nursery and a lab.
+            if fixed.len() >= 4 {
+                fixed.remove(0);
+            }
+            fixed.push(Fixed {
+                domain: self,
+                bands: (0..self.rows()).map(|row| self.band(row)).collect(),
+                normals: (0..self.sites())
+                    .map(|i| {
+                        let (x, z) = self.point(i);
+                        self.normal(x, z)
+                    })
+                    .collect(),
+            });
+            read(fixed.last().unwrap())
+        })
+    }
+    fn band(self, row: usize) -> f64 {
         let d = std::f64::consts::TAU / self.grid as f64;
         let low = -std::f64::consts::FRAC_PI_2 + row as f64 * d;
         (self.radius() as f64).powi(2) * d * ((low + d).sin() - low.sin())

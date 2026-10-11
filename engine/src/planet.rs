@@ -340,8 +340,7 @@ impl Planet {
         if !self.domain.spherical() {
             return (self.sunlight * (1. - 0.8 * self.cloud_cover)) as f64;
         }
-        let (x, z) = self.domain.point(site);
-        let n = self.domain.normal(x, z);
+        let n = self.domain.site_normal(site);
         let sun = body::V3::new(
             self.sun_direction[0],
             self.sun_direction[1],
@@ -353,8 +352,7 @@ impl Planet {
         if !self.domain.spherical() {
             return self.temperature;
         }
-        let (x, z) = self.domain.point(site);
-        let n = self.domain.normal(x, z);
+        let n = self.domain.site_normal(site);
         (self.temperature - n.y.abs() * 0.15 + self.illumination(site) as f32 * 0.04).clamp(0., 1.)
     }
     pub fn kinetics(&self, site: usize) -> f64 {

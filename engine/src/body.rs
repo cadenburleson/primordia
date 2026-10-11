@@ -700,3 +700,34 @@ mod tests {
         assert!(!soft.links.iter().any(|l| l.kind == 1));
     }
 }
+
+/// A quick hash for grid cells. The neighbour searches look a cell's
+/// surroundings up many thousands of times a tick, and an ordered map spent
+/// more time comparing keys than the physics spent on what it found. Lookups
+/// by key give the same answer whatever the hash, so results are unchanged.
+#[derive(Default, Clone, Copy)]
+pub(crate) struct Quick(u64);
+impl std::hash::Hasher for Quick {
+    fn finish(&self) -> u64 {
+        self.0
+    }
+    fn write(&mut self, bytes: &[u8]) {
+        for &b in bytes {
+            self.0 = (self.0.rotate_left(5) ^ b as u64).wrapping_mul(0x517c_c1b7_2722_0a95);
+        }
+    }
+    fn write_i32(&mut self, v: i32) {
+        self.write_u32(v as u32);
+    }
+    fn write_u32(&mut self, v: u32) {
+        self.0 = (self.0.rotate_left(5) ^ v as u64).wrapping_mul(0x517c_c1b7_2722_0a95);
+    }
+}
+/// Where each cell sits in the list, by its id; and a count for each id.
+pub(crate) type Ids = std::collections::HashMap<u32, usize, std::hash::BuildHasherDefault<Quick>>;
+/// A set of pairs of cell ids.
+pub(crate) type Pairs =
+    std::collections::HashSet<(u32, u32), std::hash::BuildHasherDefault<Quick>>;
+/// Which cells are in each cell of a search grid.
+pub(crate) type Bins =
+    std::collections::HashMap<(i32, i32, i32), Vec<usize>, std::hash::BuildHasherDefault<Quick>>;
