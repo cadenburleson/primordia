@@ -1225,7 +1225,13 @@ impl Habitat {
             let bonded = degree.get(&c.id).copied().unwrap_or(0) > 0;
             if !bonded {
                 c.state.fate = 0;
+                // A cell that has just come away from a body is the beginning
+                // of whatever body it goes on to build.
+                if c.state.tied {
+                    c.lifecycle.depth = 0;
+                }
             }
+            c.state.tied = bonded;
             c.expression = c.cellular_expression(inputs);
             if bonded && c.state.fate == 0 {
                 let (fate, drive) = BECOME.iter().enumerate().fold((0, 0.5), |best, (k, &a)| {
@@ -2909,7 +2915,10 @@ impl Habitat {
             child.state.light = 0.;
             child.state.light_contrast = 0.;
             child.lifecycle.root = e.cells[i].body_origin();
+            // Both daughters are one division further from the cell their body
+            // began as. A gene that reads this can stop a body growing at a size.
             child.lifecycle.depth = child.lifecycle.depth.saturating_add(1).min(1_000_000);
+            e.cells[i].lifecycle.depth = child.lifecycle.depth;
             let gamete = child.activity(crate::development::GAMETIC) > 0.25
                 && child.activity(crate::development::FUSOGEN) > 0.1
                 && core.random() < child.activity(crate::development::GAMETIC);

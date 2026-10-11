@@ -75,6 +75,8 @@ pub struct CellState {
     pub thirst: f32,
     /// Share of the cell under water, 0 to 1.
     pub under: f32,
+    /// Whether it was tied to a neighbour on the last tick.
+    pub tied: bool,
     /// How large this cell grows before it divides, beside the usual size.
     /// Zero in cells from before size was inherited: read it with `Cell::stature`.
     pub stature: f32,

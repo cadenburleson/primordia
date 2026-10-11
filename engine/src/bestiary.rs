@@ -33,6 +33,8 @@ const TOWARD_LIGHT: usize = INPUTS - 3;
 const TOWARD_SCENT: usize = INPUTS - 2;
 /// Promoter input that rises with the number of neighbours a cell is tied to.
 const BONDED: usize = 3;
+/// Promoter input that rises with each division since the cell its body began as: a thirty-second a division.
+const DIVISIONS: usize = 18;
 
 fn gene(action: usize, bias: f32, strength: f32, senses: &[(usize, f32)]) -> Gene {
     let mut promoter = [0.; INPUTS];
@@ -88,12 +90,23 @@ fn design(species: &str) -> Option<Vec<Gene>> {
         // divide again, and again: the egg cleaves, without growing, into a
         // ball of small cells that stay together and live on light. A cell
         // that comes loose grows into the next egg.
+        //
+        // It also counts. Its drive to divide falls with every division since
+        // the egg and stops at the sixth, so the body ends at a few dozen
+        // cells. Late in that count, a cell left with a single neighbour
+        // commits to a fate in which the glue gene is switched off; it comes
+        // away from the body, swims off, and alone it is the next egg.
         "volvox" => {
-            let mut g = without_glue();
+            let mut g: Vec<Gene> = without_glue().into_iter().filter(|g| g.action != 7).collect();
             g.extend([
                 gene(0, 1., 0.4, &[]),
-                gene(2, 2., 1., &[]),
+                gene(7, 0.375, 2., &[(DIVISIONS, -2.)]),
+                Gene { fates: 13, ..gene(2, 2., 1., &[]) },
                 gene(SIZE, 1., 0.9, &[(BONDED, -2.)]),
+                gene(crate::physical::BECOME[0], 0.6, 1., &[(DIVISIONS, 2.), (BONDED, -2.)]),
+                // A loose cell swims, which carries the egg clear of its
+                // parent; tied to two neighbours the motor is off.
+                gene(PROPEL, 0.6, 0.6, &[(BONDED, -2.)]),
             ]);
             g
         }
@@ -246,6 +259,10 @@ impl Core {
         if genes.iter().any(|g| g.action == ENGULF) {
             material.biomass = 0.6;
             material.fuel = 0.1;
+        }
+        // An egg is laid ready to hold its first daughters to it.
+        if species == "volvox" {
+            material.proteins[2] = 0.02;
         }
         // Everything a founder holds is in proportion to the size its genes set.
         let stature = genes
@@ -449,7 +466,7 @@ mod tests {
         assert!(size > 2.5, "alone, the cell is built large: {size}");
         // Watch it: the cell count, and the carbon in all of them together.
         let mut history = Vec::new();
-        for _ in 0..12 {
+        for _ in 0..30 {
             c.step(40);
             let cells: Vec<_> = of(&c, "Volvox").collect();
             history.push((cells.len(), cells.iter().map(|x| x.material.as_ref().unwrap().biomass).sum::<f64>()));
@@ -471,6 +488,22 @@ mod tests {
         let eight = history.iter().find(|h| h.0 >= 8).unwrap();
         assert!(eight.1 < start * 3.5, "eight cells from one egg's worth: {} from {start}", eight.1);
         assert!(e.valid());
+        // It stops: a body ends at a few dozen cells, and sheds loose cells
+        // that become the next eggs and the next bodies.
+        let mut sizes: Vec<usize> = e
+            .groups()
+            .into_iter()
+            .filter(|g| e.cells[g[0]].collection_sources.first().is_some_and(|s| s == "Volvox"))
+            .map(|g| g.len())
+            .collect();
+        sizes.sort_unstable();
+        eprintln!("bodies after {} cycles: {sizes:?}", c.time);
+        let bodies: Vec<usize> = sizes.iter().copied().filter(|s| *s >= 8).collect();
+        let eggs = sizes.iter().filter(|s| **s == 1).count();
+        assert!(bodies.len() >= 5 && eggs >= 5, "its loose daughters swim off and grow into more bodies: {} bodies, {eggs} loose cells", bodies.len());
+        // Most bodies end at a few dozen cells. (Kin bodies that touch can
+        // still join, so the largest in a crowded pond is bigger.)
+        assert!(bodies[bodies.len() / 2] <= 80, "a body stops growing: median {}", bodies[bodies.len() / 2]);
     }
 
     #[test]

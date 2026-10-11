@@ -390,7 +390,17 @@ Starters now come in sizes: Plankton (new: a free light-feeder a third of the us
 
 **Dividing.** A cell divides when it has grown to its size, holds enough energy and is ready; that is unchanged, and it is what single cells do in nature. Two faults were fixed. The cost of dividing now follows the cell's size. And on a planet near its cell limit each round of division starts at a different cell, where before the oldest cells took every place that opened up.
 
-**An egg that becomes a body** (the Volvox starter). Alone, its cell grows three times the usual size. Each neighbour a cell is tied to turns its size gene down, to nothing at three neighbours, and strong glue keeps daughters attached. So each daughter of the egg is already big enough to divide again: the egg cleaves into a ball of small cells without growing first, as an embryo does, and the ball then grows as its small cells feed on light. In the test pond one egg of 0.67 was 4 cells holding 1.30 at 30 cycles, 13 cells holding 1.95 at 40, and a single body of 380 cells at 120 cycles. Nothing yet tells it to stop growing.
+**An egg that becomes a body** (the Volvox starter). Alone, its cell grows three times the usual size. Each neighbour a cell is tied to turns its size gene down, to nothing at three neighbours, and strong glue keeps daughters attached. So each daughter of the egg is already big enough to divide again: the egg cleaves into a ball of small cells without growing first, as an embryo does, and the ball then grows as its small cells feed on light. In the test pond one egg of 0.67 was 4 cells holding 1.31 at 30 cycles and 13 cells holding 1.76 at 40.
+
+It also has a life cycle, built from three more ordinary genes:
+
+| Gene | Wiring | What it does |
+| --- | --- | --- |
+| Replication | falls with each division since the egg, silent at the sixth | The body stops growing at a few dozen cells |
+| Commitment to fate A, with the glue gene switched off in that fate | rises with divisions, falls with neighbours | Late on, a cell left with one neighbour lets go |
+| Motor | on when alone, off with two neighbours | The loose cell swims clear, and alone it is the next egg |
+
+For this, a cell's division count (`lifecycle.depth`) now rises in both daughters and starts again at nothing when a cell comes away from a body. One egg in the test pond became, in 300 cycles, a population of dozens of bodies (most of 6 to 40 cells; the largest several hundred, where kin bodies had joined) and hundreds of loose cells.
 
 **A hunter of hunters** (the Leviathan starter): three times the usual size before its mouth doubles it, and skinned, which makes it no kin of ordinary hunters, so it can swallow them.
 
@@ -410,14 +420,14 @@ Starters now come in sizes: Plankton (new: a free light-feeder a third of the us
 
 **Measured.**
 
-- Plant-eaters take 0.9–1.6% of what producers make, up from 0.2–0.6% at the start of the round. Earth's seas run at about 35%. **The 10% target was not met.**
+- Plant-eaters take 0.6–1.75% of what producers make, up from 0.2–0.6% at the start of the round; the best three-planet run, with every starter and room for plankton, gave 1.2–1.75%. Earth's seas run at about 35%. **The 10% target was not met.**
 - Hunters now breed (three to four generations deep) and hold 8–21 cells on a planet. Released into dense plankton, a hunter eats two to three times what it needs. Grazers and hunters still need restocking on most planets.
 - Decomposers, now small, took hold unaided on two planets in five (111–209 cells feeding on remains).
 - Bodies: 5–39% of cells live in bodies of four or more (6–15% before). The largest body was 14–58 cells; bodies of 30 or more appeared on one planet.
 - A nine-cell body at full drive covers 26.8 units in ten cycles and a twenty-five-cell body 29.0, against 14.6 for one cell.
 - Populations with the default starters: 1,539–3,264 cells.
 - Plankton fills a 4,096-cell planet within 400 cycles. Given room it levels off: with every starter seeded, a planet allowed 8,192 cells held 4,813 at 800 cycles (3,477 plankton) and one allowed 12,000 held 4,880 (3,798 plankton). Quick start therefore allows 8,192, and plankton is part of "Fill the seas with all of them". Those planets run at about 1.5 cycles a second natively on a busy machine, against 4–5 at 1,000–1,500 cells.
-- On those planets Volvox bodies stayed small (largest body 21–22 cells, 41–121 Volvox cells): in a sea with eaters they do not run away as they do alone in the test pond.
+- Three planets with every starter and an 8,192 limit ran 1,000 cycles and reloaded: 4,092–5,161 cells, 2,900–4,500 of them plankton, hunters 15–46.
 - A sessile colony of mouths starved: prey drift too slowly to reach it, so the Sponge starter was removed.
 - Algae painted on land 2.9 units above the sea did not stay: within 120 cycles all but three of 41 were in water.
 
@@ -425,7 +435,8 @@ Starters now come in sizes: Plankton (new: a free light-feeder a third of the us
 
 - **Eaters still take about a hundredth of what plants make.** Feeding currents, a faster metabolism with oxygen, sized cells, light-seeking and deeper seas together moved it from 0.2–0.6% to 0.9–1.6%. Catching food now works; what is left is that most producers are walled algae in clumps that only enzyme grazers can eat, and that a planet's cell limit fills with small cells before eaters can multiply.
 - **Something throws a loose grain of remains upward now and then**, far faster than anything in the sea moves. The cause is not found. A grain more than two units clear of the surface is set back down on it, and grains now have weight out of water; before that they drifted off the planet and made a save unreadable.
-- **A body does not know when to stop.** Volvox grows without limit, and its inner cells get no light. Cells that stop dividing when surrounded, and bodies that shed eggs, are not built.
+- **Volvox does little on a planet.** With every starter seeded it holds 11–190 cells and its bodies stay small (largest body on those planets 14–71 cells). Kin bodies that touch still join into one.
+- **No animal grows from an egg.** A Jelly starter (a big hunting egg cleaving into a ball of small mouths) was tried and removed: running a dozen genes at three times the usual size cost more than it caught, and all twelve starved within 120 cycles.
 - **Nothing anchors to land.** A plant on a slope slides or is washed down to the water. Land plants need a holdfast as well as a water store.
 - **No fish.** A long body swimming by a wave of muscle has not been built; it would have to pay its way as an eater first.
 - **A thick body's inner cells breathe as freely as its surface.** Gills and circulation have no job yet.
