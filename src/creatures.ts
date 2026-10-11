@@ -17,6 +17,20 @@ export const SPECIES:[string,string,string,string][]=[
   ['plankton','Plankton','#9bd66a','Tiny free light-feeder. Breeds fast; food for anything with a mouth'],
   ['leviathan','Leviathan','#7a2f8f','A very big cell that swallows hunters. Slow to breed'],
   ['volvox','Volvox','#3fbf8f','An egg that divides, without growing, into a ball of small cells'],
+  ['ulothrix','Ulothrix','#2e8f6b','A walled thread one cell wide. Grows at its ends'],
+  ['lettuce','Sea lettuce','#7ccf3a','A walled sheet one cell thick. Spreads at its edge'],
+  ['seaweed','Seaweed','#5c8f3a','A walled thread that holds on to the bottom'],
+  ['diatom','Diatom','#d9b45a','A light-feeder in a shell of glass, built from silica in the water'],
+  ['cyanobacterium','Cyanobacterium','#3fb7a8','A bacterium: a tiny rod that lives on light'],
+  ['bacillus','Bacillus','#c08a4f','A bacterium: a tiny rod that rots remains'],
+  ['archaeon','Archaeon','#c98f5a','A vent microbe. Lives on the chemistry of hot rock, without light'],
+  ['euglena','Euglena','#8fd15a','A long green swimmer with an eye-spot'],
+  ['dinoflagellate','Dinoflagellate','#e0603a','A swimming light-feeder that makes poison'],
+  ['paramecium','Paramecium','#c77bf0','A slipper-shaped swimmer that draws small cells into its mouth'],
+  ['heliozoan','Heliozoan','#b9c2dd','A drifting ball of spines that swallows what touches it'],
+  ['radiolarian','Radiolarian','#e6d28a','A drifting hunter with spines and a skeleton of glass'],
+  ['vorticella','Vorticella','#e58fd0','A mouth on a stalk. Grips the bottom and draws food to it'],
+  ['hydra','Hydra','#f0a04b','A small animal fixed to the bottom. Stings and swallows'],
   ['drifter','Drifter','#7fb8a4','The plain first cell']];
 
 /** Starters left out of "fill the seas": the plain first cell, which every other starter is built from. It can still be painted. */

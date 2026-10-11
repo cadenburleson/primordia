@@ -14,6 +14,22 @@ const chosenColor=new THREE.Color(CHOSEN_COLOR),complexColor=new THREE.Color('#f
 // The sea reads by its bed: turquoise over the shallows, navy over the deeps.
 // The surface itself stays clear enough to see what swims under it.
 const shallowsColor=new THREE.Color('#2f9dc2'),deepColor=new THREE.Color('#0a2a5c'),wetColor=new THREE.Color('#2a3a36'),surfaceShallow=new THREE.Color('#7fd0ea'),surfaceDeep=new THREE.Color('#2f7fd0');
+/** Twelve thin spikes standing out all round a cell of radius one. */
+function spikes(){
+  const points:number[]=[],normals:number[]=[],up=new THREE.Vector3(0,1,0),turn=new THREE.Quaternion(),place=new THREE.Matrix4();
+  const directions=new THREE.IcosahedronGeometry(1,0).getAttribute('position'),seen=new Set<string>();
+  for(let i=0;i<directions.count;i++){
+    const d=new THREE.Vector3().fromBufferAttribute(directions,i).normalize(),key=d.toArray().map(v=>v.toFixed(3)).join();
+    if(seen.has(key))continue;seen.add(key);
+    // A cone from just inside the surface to most of a radius beyond it.
+    const cone=new THREE.ConeGeometry(.16,1.1,5).toNonIndexed();
+    place.compose(d.clone().multiplyScalar(1.4),turn.setFromUnitVectors(up,d),new THREE.Vector3(1,1,1));cone.applyMatrix4(place);
+    points.push(...cone.getAttribute('position').array);normals.push(...cone.getAttribute('normal').array);cone.dispose();
+  }
+  const shape=new THREE.BufferGeometry();
+  shape.setAttribute('position',new THREE.Float32BufferAttribute(points,3));shape.setAttribute('normal',new THREE.Float32BufferAttribute(normals,3));
+  return shape;
+}
 const smooth=(a:number,b:number,v:number)=>{const t=Math.min(1,Math.max(0,(v-a)/(b-a)));return t*t*(3-2*t);};
 /** Height of standing water at a point, read from the pooled sites around it.
  * A sea lies level even where the ground under it is rough; NaN where nothing has pooled. */
@@ -50,6 +66,14 @@ export class WorldView {
   /** Walled cells are drawn as blocks: a plant cell is boxed in by its wall. */
   walled: THREE.InstancedMesh;
   private boxed=new Uint8Array(MAX_CELLS);
+  /** A cell given over to spines wears them: a ring of spikes drawn over its body. */
+  spined: THREE.InstancedMesh;
+  private spiky=new Uint8Array(MAX_CELLS);
+  /** A cell in a glass shell is drawn as the shell: a pillbox, as a diatom's is. */
+  shelled: THREE.InstancedMesh;
+  private glassy=new Uint8Array(MAX_CELLS);
+  /** For each cell, how many times longer than wide it is and the direction it lies along; zero for a round cell. */
+  private rods=new Float32Array(MAX_CELLS*4);
   bones: THREE.InstancedMesh;
   jointCuffs:THREE.InstancedMesh;
   jointMuscles:THREE.InstancedMesh;
@@ -129,6 +153,10 @@ export class WorldView {
     this.cells = new THREE.InstancedMesh(new THREE.SphereGeometry(1, 8, 6), new THREE.MeshStandardMaterial({roughness:1,metalness:0}), MAX_CELLS);
     this.walled = new THREE.InstancedMesh(new THREE.BoxGeometry(1.8,1.8,1.8), new THREE.MeshStandardMaterial({roughness:1,metalness:0}), MAX_CELLS);
     this.walled.instanceMatrix.setUsage(THREE.DynamicDrawUsage);this.walled.frustumCulled=false;this.walled.count=0;this.scene.add(this.walled);
+    this.spined = new THREE.InstancedMesh(spikes(), new THREE.MeshStandardMaterial({roughness:1,metalness:0}), MAX_CELLS);
+    this.spined.instanceMatrix.setUsage(THREE.DynamicDrawUsage);this.spined.frustumCulled=false;this.spined.count=0;this.scene.add(this.spined);
+    this.shelled = new THREE.InstancedMesh(new THREE.CylinderGeometry(1.15,1.15,1,12), new THREE.MeshStandardMaterial({roughness:.3,metalness:.15}), MAX_CELLS);
+    this.shelled.instanceMatrix.setUsage(THREE.DynamicDrawUsage);this.shelled.frustumCulled=false;this.shelled.count=0;this.scene.add(this.shelled);
     this.bones = new THREE.InstancedMesh(new THREE.CylinderGeometry(.06,.06,1,5),new THREE.MeshStandardMaterial({ color:'#dfdabd',roughness:.6 }), 22000);
     this.jointCuffs=new THREE.InstancedMesh(new THREE.TorusGeometry(.23,.026,6,14),new THREE.MeshStandardMaterial({color:'#e7e0bb',roughness:.4}),8000);
     this.jointMuscles=new THREE.InstancedMesh(new THREE.CylinderGeometry(.035,.035,1,6),new THREE.MeshStandardMaterial({roughness:.4}),16000);
@@ -348,18 +376,19 @@ export class WorldView {
         if(isPhysical){
           const p=(start+c)*CELL_STRIDE;role=cellType(physical[p+5]);chosen=isChosen(physical[p+5]);complex=isComplex(physical[p+5]);health=physical[p+7];
           temp.position.set(physical[p+1],physical[p+2],physical[p+3]);
+          for(let k=0;k<4;k++)this.rods[count*4+k]=physical[p+9+k];
           nodeKeys[start+c]=count;
         }else{
           const offset=bodyOffset(c,displayed,shape,data[o+8]).applyQuaternion(quat);
-          temp.position.set(x+offset.x,worldY+offset.y,z+offset.z);
+          temp.position.set(x+offset.x,worldY+offset.y,z+offset.z);this.rods[count*4]=0;
         }
         if(snapshot.ids[i]===this.selectedId){this.selectedBounds.box.expandByPoint(temp.position);selectedRadius=Math.max(selectedRadius,r);}
         color.setHSL(.30+pigment*.42,.35+chemo*.3,.48+photo*.16);
         if(materialTypes){if(role>0&&role<CELL_TYPES.length)color.set(CELL_TYPES[role].color);if(complex)color.lerp(complexColor,.3);if(chosen)color.lerp(chosenColor,.5);}
         else{if(role===1)color.set('#d8e5c4');if(role===2)color.set('#d88e72');if(role===3)color.set('#83c7d1');if(role===4)color.set('#ddb76b');if(role===5)color.set('#b5a2d9');}
         color.lerp(injuryColor,(1-health)*.8);
-        this.boxed[count]=materialTypes&&role===17?1:0;
-        this.cells.setColorAt(count,color);if(this.boxed[count])this.walled.setColorAt(count,color);this.overviewPositions.setXYZ(count,temp.position.x,temp.position.y,temp.position.z);
+        this.boxed[count]=materialTypes&&role===17?1:0;this.spiky[count]=materialTypes&&role===14?1:0;this.glassy[count]=materialTypes&&role===19?1:0;
+        this.cells.setColorAt(count,color);if(this.boxed[count])this.walled.setColorAt(count,color);if(this.spiky[count])this.spined.setColorAt(count,color);if(this.glassy[count])this.shelled.setColorAt(count,color);this.overviewPositions.setXYZ(count,temp.position.x,temp.position.y,temp.position.z);
         this.cellIds[count]=snapshot.ids[i];this.pickRadii[count]=r;count++;
       }
       if(snapshot.ids[i]===this.selectedId){
@@ -381,7 +410,7 @@ export class WorldView {
       if(kind===2)color.lerp(new THREE.Color('#ffdb9e'),activation*.7);
       this.bones.setColorAt(linkCount++,color);
     }
-    this.cells.count=count;this.walled.count=count;this.bones.count=linkCount;
+    this.cells.count=count;this.walled.count=count;this.spined.count=count;this.shelled.count=count;this.bones.count=linkCount;
     this.overviewCells.geometry.setDrawRange(0,count);this.overviewPositions.needsUpdate=true;this.applyCameraMode();
     for(let p=0;p<snapshot.jointData.length&&this.jointMotion.length<8000;p+=JOINT_STRIDE){
       const a=nodeKeys[snapshot.jointData[p]],b=nodeKeys[snapshot.jointData[p+1]],c=nodeKeys[snapshot.jointData[p+2]];
@@ -395,6 +424,8 @@ export class WorldView {
     this.animateBodies(1);
     if(this.cells.instanceColor)this.cells.instanceColor.needsUpdate=true;
     if(this.walled.instanceColor)this.walled.instanceColor.needsUpdate=true;
+    if(this.spined.instanceColor)this.spined.instanceColor.needsUpdate=true;
+    if(this.shelled.instanceColor)this.shelled.instanceColor.needsUpdate=true;
     if(this.bones.instanceColor)this.bones.instanceColor.needsUpdate=true;
     if(this.selectedId&&!snapshot.ids.includes(this.selectedId))this.selected.visible=false;
     const physics=snapshot.autonomous?.physics,flow=physics?.flow;
@@ -412,16 +443,23 @@ export class WorldView {
   }
   private animateBodies(_alpha:number){
     if(this.overviewCells.visible)return;
-    const a=new THREE.Vector3(),b=new THREE.Vector3(),c=new THREE.Vector3(),delta=new THREE.Vector3(),up=new THREE.Vector3(0,1,0);
+    const a=new THREE.Vector3(),b=new THREE.Vector3(),c=new THREE.Vector3(),delta=new THREE.Vector3(),up=new THREE.Vector3(0,1,0),forward=new THREE.Vector3(0,0,1);
     const sphere=!!this.config&&geometry(this.config).sphere;
     for(let i=0;i<this.cells.count;i++){
       // Each cell is one shape or the other; the one it is not shrinks to nothing.
-      const box=this.boxed[i]===1;
-      temp.position.fromArray(this.positions,i*3);temp.rotation.set(0,0,0);temp.scale.setScalar(box?0:this.pickRadii[i]);temp.updateMatrix();this.cells.setMatrixAt(i,temp.matrix);
-      if(box&&sphere)temp.quaternion.setFromUnitVectors(up,a.copy(temp.position).normalize());
-      temp.scale.setScalar(box?this.pickRadii[i]:0);temp.updateMatrix();this.walled.setMatrixAt(i,temp.matrix);
+      const box=this.boxed[i]===1,glass=this.glassy[i]===1,long=this.rods[i*4],r=this.pickRadii[i];
+      temp.position.fromArray(this.positions,i*3);temp.rotation.set(0,0,0);
+      // A rod holds what a ball of its radius would: thinner by as much as it is longer.
+      if(long>1&&!box&&!glass){const wide=r*Math.pow(long,-1/3);temp.quaternion.setFromUnitVectors(forward,a.set(this.rods[i*4+1],this.rods[i*4+2],this.rods[i*4+3]).normalize());temp.scale.set(wide,wide,wide*long);}
+      else temp.scale.setScalar(box||glass?0:r);
+      temp.updateMatrix();this.cells.setMatrixAt(i,temp.matrix);
+      temp.rotation.set(0,0,0);
+      if((box||glass)&&sphere)temp.quaternion.setFromUnitVectors(up,a.copy(temp.position).normalize());
+      temp.scale.setScalar(box?r:0);temp.updateMatrix();this.walled.setMatrixAt(i,temp.matrix);
+      temp.scale.setScalar(glass?r:0);temp.updateMatrix();this.shelled.setMatrixAt(i,temp.matrix);
+      temp.rotation.set(0,0,0);temp.scale.setScalar(this.spiky[i]===1?this.pickRadii[i]:0);temp.updateMatrix();this.spined.setMatrixAt(i,temp.matrix);
     }
-    this.walled.instanceMatrix.needsUpdate=true;
+    this.walled.instanceMatrix.needsUpdate=true;this.spined.instanceMatrix.needsUpdate=true;this.shelled.instanceMatrix.needsUpdate=true;
     for(const link of this.linkMotion){
       a.fromArray(this.positions,link.a*3);b.fromArray(this.positions,link.b*3);delta.subVectors(b,a);
       const length=delta.length();temp.position.copy(a).add(b).multiplyScalar(.5);
@@ -444,7 +482,7 @@ export class WorldView {
   private applyCameraMode(){
     const markers=this.cameraMode==='overview'&&!!this.config&&geometry(this.config).sphere&&(this.config.worldSize??64)>256;
     this.overviewCells.visible=markers;
-    for(const mesh of [this.cells,this.walled,this.bones,this.jointCuffs,this.jointMuscles,this.matter])mesh.visible=!markers;
+    for(const mesh of [this.cells,this.walled,this.spined,this.shelled,this.bones,this.jointCuffs,this.jointMuscles,this.matter])mesh.visible=!markers;
     if(markers)this.selected.visible=false;
     this.selectedBounds.visible=!markers&&!this.selectedBounds.box.isEmpty();
     this.renderDirty=true;

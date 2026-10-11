@@ -33,7 +33,7 @@ for(const physicalAssay of ['full','passive','scarcity']){
 const older=await readFile(new URL('../examples/physical-world.json',import.meta.url),'utf8');
 const migrated=new World(JSON.stringify(base));migrated.load(older);const old=JSON.parse(older),now=JSON.parse(migrated.save());
 assert.equal(now.autonomous.cells.length,old.autonomous.cells.length);assert.deepEqual(now.autonomous.physical.solutes.map(s=>s.slice(0,5)),old.autonomous.physical.solutes.map(s=>s.slice(0,5)));
-assert.ok(now.autonomous.physical.solutes.every(s=>s.length===10&&s[5]===0));
+assert.ok(now.autonomous.physical.solutes.every(s=>s.length===12&&s[5]===0));
 migrated.free();
 await writeFile(new URL('../docs/scale-results.json',import.meta.url),JSON.stringify({protocol:'Short eight-tick throughput samples plus four-tick exact continuation; all use a 64000 cell budget. Upper capacity is a guardrail, not a long-run 64000-cell performance claim.',results},null,2)+'\n');
 console.log('Scale WASM checks passed: configurable founders, ceiling, conservation, budget-only edits, fixed-state rendering, exact continuation, shared assays and old saves.');

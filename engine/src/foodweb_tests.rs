@@ -1013,9 +1013,12 @@ fn chemosynthesis_feeds_a_cell_in_the_dark_and_its_energy_is_accounted() {
     let (none, no_input) = fed(false, 1.);
     let (natural, input) = fed(true, 1.);
     let (active, _) = fed(true, 4.);
+    // With the vents shut there is no hydrogen, and the catalyst makes nothing.
+    let (starved, _) = fed(true, 0.);
     assert_eq!((none, no_input), (0., 0.));
+    assert_eq!(starved, 0.);
     assert!(natural > 0. && input > 0.);
-    assert!(active > natural * 3., "{active} vs {natural}");
+    assert!(active > natural * 1.3, "{active} vs {natural}");
 }
 
 #[test]

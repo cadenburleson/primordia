@@ -21,7 +21,7 @@ const has=(c:ProgramCell,action:number)=>built(c,action)>.25;
 /** The working parts a single cell can carry: its organs. */
 const PARTS:[string,(c:ProgramCell)=>boolean][]=[
   ['Chloroplasts (light harvest)',c=>has(c,0)],['Captured light-feeder',c=>(c.state?.symbiont??0)>0],['Vent catalyst',c=>has(c,37)],['Mouth',c=>has(c,34)],['Lysosomes (digestive enzymes)',c=>has(c,9)||has(c,15)],
-  ['Cell wall',c=>has(c,41)],['Large vacuole',c=>!!c.material?.body&&c.material.body.water>c.material.biomass*.1],['Skin',c=>has(c,14)],['Spines',c=>has(c,36)],['Venom',c=>has(c,35)],['Cilia (motor)',c=>has(c,32)],['Rudder',c=>has(c,33)],['Muscle fibre',c=>has(c,4)],['Fin',c=>has(c,42)],
+  ['Cell wall',c=>has(c,41)],['Glass shell',c=>has(c,45)],['Holdfast',c=>has(c,46)],['Large vacuole',c=>!!c.material?.body&&c.material.body.water>c.material.biomass*.1],['Skin',c=>has(c,14)],['Spines',c=>has(c,36)],['Venom',c=>has(c,35)],['Cilia (motor)',c=>has(c,32)],['Rudder',c=>has(c,33)],['Muscle fibre',c=>has(c,4)],['Fin',c=>has(c,42)],
   ['Sensors',c=>has(c,11)||has(c,16)||has(c,24)],['Signal channels',c=>has(c,12)],['Glue',c=>has(c,2)],['Growth compass',c=>has(c,20)],['Copying machinery',c=>has(c,7)],['Fat store',c=>!!c.material&&c.material.lipid/Math.max(c.material.biomass,1e-9)>.08]];
 const FATE_NAMES=['stem','fate A','fate B','fate C'];
 /** Which broad kind of life a body is, by the engine's own rule. */

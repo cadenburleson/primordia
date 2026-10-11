@@ -705,8 +705,9 @@ impl Habitat {
             // remains hang as tissue does and only mineral sinks.
             let (carried, falling) = if self.domain.spherical() {
                 let planet = self.planet.as_ref().unwrap();
-                let depth = planet.surface_depth(site) as f32;
-                let surface = self.domain.ground(x, z, core.config.seed) + planet.relief_at(x, z) + depth;
+                let bed = self.domain.ground(x, z, core.config.seed) + planet.relief_at(x, z);
+                let depth = planet.water_over(site, bed, core.config.seed);
+                let surface = bed + depth;
                 let above = p.p.len() - self.domain.radius() - surface;
                 // Something now and then throws a grain upward far faster
                 // than anything in the sea moves. Until that is found, a
@@ -725,7 +726,16 @@ impl Habitat {
             };
             p.v =
                 p.v.add(fluid.sub(p.v).mul(DT * 0.4 * carried))
-                    .sub(up.mul(DT * (falling + 0.03 * (p.solutes[2] / p.mass().max(1e-12)) as f32)));
+                    // Remains sink slowly, as marine snow does; mineral and
+                    // glass sink faster.
+                    .sub(up.mul(
+                        DT * (falling
+                            + crate::physical::SINKING
+                            + 0.03
+                                * ((p.solutes[2] + p.solutes[crate::physical::SILICA])
+                                    / (p.mass() + p.solutes[crate::physical::SILICA]).max(1e-12))
+                                    as f32),
+                    ));
             // Nothing in a sea moves faster than this.
             if p.v.len() > 10. {
                 p.v = p.v.mul(10. / p.v.len());

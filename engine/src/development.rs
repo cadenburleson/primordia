@@ -181,6 +181,7 @@ impl Habitat {
                     .mul(std::f32::consts::FRAC_1_SQRT_2);
                 (planet.illumination(self.domain.locate(c.p)) as f32
                     * self.light_fraction(self.domain.locate(c.p)) as f32
+                    * crate::physical::Habitat::fade(c.state.depth) as f32
                     * axis.dot(sun).max(0.)
                     * (1. - shade[i]).max(0.))
                 .clamp(0., 1.)

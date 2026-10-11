@@ -20,9 +20,9 @@ const a=steering(plain),b=steering(steered);
 assert.equal(b.goal,'movement');assert.ok(b.rounds>=5,'breeding rounds ran');assert.equal(a.rounds,0);
 assert.equal(b.light,6);assert.equal(b.mutationFactor,3);assert.equal(b.storm,0,'the storm has passed');
 for(const view of [a,b]){assert.ok(view.ladder.every(r=>r.stage>=0&&r.stage<=3&&r.progress>=0&&r.progress<=1));assert.equal(view.ladder[0].stage,3);assert.equal(view.losses.length,3);}
-// The gene vocabulary the UI lists: 45 abilities, 32 promoter inputs.
+// The gene vocabulary the UI lists: 48 abilities, 32 promoter inputs.
 const meta=JSON.parse(steered.metadata(JSON.parse(steered.metadata(0)).lineages[0].representative));
-assert.equal(meta.autonomous.actions.length,45);assert.ok(meta.selected.programCells.every(c=>c.expression.length===45&&c.genes.every(g=>g.promoter.length===32)));
+assert.equal(meta.autonomous.actions.length,48);assert.ok(meta.selected.programCells.every(c=>c.expression.length===48&&c.genes.every(g=>g.promoter.length===32)));
 // Favour, disasters, and exact continuation from a save.
 const body=JSON.parse(steered.metadata(0)).lineages[0].representative;
 send(steered,{kind:'favour',body,pressure:.03});assert.ok(steering(steered).favoured>0);

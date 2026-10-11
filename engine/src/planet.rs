@@ -35,6 +35,11 @@ pub struct Planet {
     pub eruptions: u32,
     pub mineral_input: f64,
     pub terrain_version: u32,
+    /// Standing vent fields on the sea bed: how strongly each site pours out
+    /// hydrogen from the hot rock under it, from none to one. Empty in
+    /// worlds saved before vents were permanent.
+    #[serde(default)]
+    pub vents: Vec<f32>,
 }
 
 fn default_season_strength() -> f32 { 1. }
@@ -54,7 +59,7 @@ mod tests {
         p.storm = 6.;
         p.storm_center = [0., 0.];
         let mut solutes = vec![[0.; crate::physical::SOLUTES]; GRID * GRID];
-        solutes[20 * GRID + 20] = [1., 0.5, 0.2, 0.1, 0.1, 0.3, 0.2, 0.1, 0.05, 0.4];
+        solutes[20 * GRID + 20] = [1., 0.5, 0.2, 0.1, 0.1, 0.3, 0.2, 0.1, 0.05, 0.4, 0.3, 0.2];
         let initial: [f64; crate::physical::SOLUTES] = std::array::from_fn(|k| solutes.iter().map(|s| s[k]).sum());
         // Disable only the volcanic random hazard by keeping this short and
         // tracking its explicit mineral input, should an eruption still occur.
@@ -179,7 +184,28 @@ impl Planet {
             eruptions: 0,
             mineral_input: 0.,
             terrain_version: 0,
+            vents: vec![0.; domain.sites()],
         }
+    }
+    /// Lay out the planet's vent fields: narrow lines across the sea bed,
+    /// as the ridges are where a young planet's crust pulls apart. They
+    /// stay where they are; eruptions come and go on top of them.
+    pub fn seed_vents(&mut self, seed: u32) {
+        self.vents = (0..self.domain.sites())
+            .map(|i| {
+                let (x, z) = self.domain.point(i);
+                let wave = if self.domain.spherical() {
+                    let n = self.domain.site_normal(i);
+                    crate::body::smooth_noise(n.x * 5. + n.y * 3. + 40., n.z * 5. - n.y * 3. + 40., seed.wrapping_add(911))
+                } else {
+                    crate::body::smooth_noise(x * 0.12 + 40., z * 0.12 + 40., seed.wrapping_add(911))
+                };
+                // A ridge runs where the noise crosses its middle value.
+                let ridge = 1. - (2. * wave - 1.).abs();
+                let under_water = !self.domain.spherical() || self.surface_depth(i) > 1.;
+                if under_water { ((ridge - 0.9) / 0.1).clamp(0., 1.) } else { 0. }
+            })
+            .collect();
     }
     pub fn initialize_surface(&mut self, seed: u32) {
         if !self.domain.spherical() {
@@ -228,6 +254,10 @@ impl Planet {
             + self.atmosphere
             + self.biological_water
             - self.initial_water
+    }
+    /// How strongly the bed at a site vents, from none to one.
+    pub fn vent(&self, site: usize) -> f64 {
+        self.vents.get(site).copied().unwrap_or(0.) as f64
     }
     pub fn valid(&self) -> bool {
         self.season_strength.is_finite() && (0.0..=2.).contains(&self.season_strength)
@@ -327,10 +357,23 @@ impl Planet {
     }
     /// Where a new arrival of this radius is set down: just under the surface
     /// where the water is deep enough to cover it, on the bottom elsewhere.
+    /// How high the water stands in a site. A sea lies level, whatever the
+    /// bed under it does.
+    pub fn sea_level(&self, site: usize, seed: u32) -> f32 {
+        crate::surface::site_ground(self.domain, seed, site)
+            + self.relief[site]
+            + self.surface_depth(site) as f32
+    }
+    /// The depth of water over a point in a site whose bed lies at `ground`:
+    /// more over a hollow, less over a rise, none where the bed stands clear.
+    /// (A mere film of water does not fill the hollows.)
+    pub fn water_over(&self, site: usize, ground: f32, seed: u32) -> f32 {
+        (self.sea_level(site, seed) - ground).max(0.) * (self.surface_depth(site) as f32 / 0.1).min(1.)
+    }
     pub fn berth(&self, x: f32, z: f32, r: f32, seed: u32) -> f32 {
         let floor = self.floor(x, z, r, seed);
         let depth = if self.domain.spherical() {
-            self.surface_depth(self.domain.index(x, z)) as f32
+            self.water_over(self.domain.index(x, z), floor - r, seed)
         } else {
             0.12 - (floor - r)
         };

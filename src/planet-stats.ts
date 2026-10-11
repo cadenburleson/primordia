@@ -38,11 +38,12 @@ const tile=(label:string,value:string,note='')=>`<div><span>${label}</span><stro
 function cycleTiles(c:CyclesView|undefined){
   if(!c)return '';
   const carbon=c.carbon.total||1,fixed=c.nitrogen.dissolved+c.nitrogen.living+c.nitrogen.remains||1;
-  const gas=(c.carbon.air??0)+c.carbon.dioxide,iron=c.iron?c.iron.dissolved+c.iron.rusted:0,salt=c.salt?c.salt.dissolved+c.salt.crust:0;
+  const gas=(c.carbon.air??0)+c.carbon.dioxide,iron=c.iron?c.iron.dissolved+c.iron.rusted:0,salt=c.salt?c.salt.dissolved+c.salt.crust:0,silica=c.silicon?c.silicon.dissolved+c.silicon.remains+c.silicon.living:0;
   return tile('CARBON DIOXIDE',`${pct(gas/carbon)} of all carbon`,`${pct((c.carbon.air??0)/(gas||1))} of it in the air · ${pct(c.carbon.living/carbon)} of carbon is alive`)
     +tile('NITROGEN',`${pct(c.nitrogen.dissolved/fixed)} free in the water`,`${pct(c.nitrogen.living/fixed)} in the living · ${pct(c.nitrogen.remains/fixed)} locked in remains`)
     +(iron?tile('IRON',`${pct(c.iron!.rusted/iron)} rusted`,c.iron!.rusted/iron<.5?'what is still dissolved soaks up free oxygen':'the seas have rusted out; oxygen is free to build'):'')
-    +(salt?tile('SALT',`${pct(c.salt!.dissolved/salt)} in the water`,`${pct(c.salt!.crust/salt)} left as crust on dry ground`):'');
+    +(salt?tile('SALT',`${pct(c.salt!.dissolved/salt)} in the water`,`${pct(c.salt!.crust/salt)} left as crust on dry ground`):'')
+    +(silica?tile('SILICA',`${pct(c.silicon!.dissolved/silica)} dissolved`,`${pct(c.silicon!.living/silica)} in living glass shells · ${pct(c.silicon!.remains/silica)} in the shells of the dead`):'');
 }
 const amount=(v:number)=>v>=100?Math.round(v).toLocaleString():v>=1?v.toFixed(1):v>=.01?v.toFixed(2):v>0?'<0.01':'0';
 /** Who eats whom, as a pyramid, and the planet's books: every amount counted, none made or lost. */

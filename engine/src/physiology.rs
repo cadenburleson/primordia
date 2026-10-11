@@ -80,6 +80,22 @@ pub struct CellState {
     /// How large this cell grows before it divides, beside the usual size.
     /// Zero in cells from before size was inherited: read it with `Cell::stature`.
     pub stature: f32,
+    /// How many times longer than wide this cell is. Zero or one is round.
+    pub aspect: f32,
+    /// How far under the water's surface the cell is, and how far above the bed.
+    pub depth: f32,
+    pub height: f32,
+    /// The way its motor points up or down: one is straight up, minus one
+    /// straight down, nothing level.
+    pub pitch: f32,
+    /// What its steering makes of up against down, as `turn` is of left
+    /// against right.
+    pub climb: f32,
+    /// Whether other life close by lies above it (positive) or below.
+    pub above: f32,
+    /// Whether the cell has hold of the ground, and where.
+    pub anchored: bool,
+    pub anchor: [f32; 3],
 }
 impl CellState {
     pub fn valid(&self) -> bool {
@@ -246,7 +262,11 @@ impl Cell {
     pub(crate) fn material_role(&self) -> u8 {
         let Some(m) = &self.material else { return 0 };
         use crate::physical::{CHEMO, ENGULF, FIN, PROPEL, SPINE, TOXIN, WALL};
-        if self.activity(WALL) > 0.25 {
+        if m.shell() > 0.25 {
+            19
+        } else if self.state.anchored {
+            20
+        } else if self.activity(WALL) > 0.25 {
             17
         } else if self.activity(FIN) > 0.25 {
             18

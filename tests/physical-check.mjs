@@ -18,9 +18,9 @@ for(const seed of [8042,1197,6219]){
   errors.forEach((v,i)=>{assert.ok(Math.abs(v)<1e-7,`Conservation ${seed}, ${state.time}: ${errors}`);maxErrors[i]=Math.max(maxErrors[i],Math.abs(v));});
   peakCells=Math.max(peakCells,state.autonomous.cells.length);
   assert.ok(state.autonomous.cells.every(c=>c.material.biomass>0&&c.material.proteins.every(v=>v>=0&&Number.isFinite(v))));
-  const cells=w.cell_data(),links=w.link_data();assert.equal(cells.length%9,0);assert.equal(links.length%6,0);
+  const cells=w.cell_data(),links=w.link_data();assert.equal(cells.length%13,0);assert.equal(links.length%6,0);
   assert.ok([...cells,...links].every(Number.isFinite));
-  for(let i=0;i<links.length;i+=6){assert.ok(links[i]<cells.length/9&&links[i+1]<cells.length/9);}
+  for(let i=0;i<links.length;i+=6){assert.ok(links[i]<cells.length/13&&links[i+1]<cells.length/13);}
   w.load(saved);assert.equal(w.save(),saved);
   if(sample%10===0)console.log(JSON.stringify({seed,cycle:state.time,cells:state.autonomous.cells.length,divisions:state.births,peakBody:meta.autonomous.peakBody,maxErrors}));
  }

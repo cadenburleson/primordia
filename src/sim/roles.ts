@@ -18,7 +18,9 @@ export const CELL_TYPES=[
   {name:'Mouth',color:'#d6249f'},
   {name:'Vent feeder',color:'#c98f5a'},
   {name:'Walled cell',color:'#4f9e4a'},
-  {name:'Fin',color:'#2f6be0'}
+  {name:'Fin',color:'#2f6be0'},
+  {name:'Glass shell',color:'#d9b45a'},
+  {name:'Holdfast',color:'#9a7b55'}
 ] as const;
 export const CHOSEN_COLOR='#ffd27a';
 /** Display flags the engine adds to a role: 64 for the player's chosen lineage, 32 for a complex cell carrying a captured symbiont, 128 for a cell committed to a fate. */

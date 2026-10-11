@@ -61,6 +61,10 @@ pub struct Cell {
     pub reserve: f32,
     #[serde(default)]
     pub signal: [f32; 3],
+    /// A rod-shaped cell: how many times longer it is than wide, and the
+    /// direction it lies along. All zero for a round cell.
+    #[serde(default)]
+    pub long: [f32; 4],
 }
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct Link {
@@ -236,6 +240,7 @@ impl Body {
                 health: 1.,
                 reserve: 0.,
                 signal: [0.; 3],
+                long: [0.; 4],
             });
         }
         let previous = std::mem::take(&mut self.links);

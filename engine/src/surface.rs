@@ -90,6 +90,10 @@ impl Mesh {
         })
     }
 }
+/// The seeded ground height at the middle of a site, before any relief.
+pub(crate) fn site_ground(d: Domain, seed: u32, site: usize) -> f32 {
+    Mesh::of(d, seed).ground[site]
+}
 impl SurfaceFlow {
     pub fn new(d: Domain) -> Self {
         Self {
@@ -214,7 +218,7 @@ mod tests {
         let (d, mut p, mut s, mut f) = fixture();
         let a = d.rows() / 2 * d.grid + d.grid - 1;
         let b = d.rows() / 2 * d.grid;
-        s[a] = [1., 2., 3., 4., 5., 6., 7., 8., 9., 10.];
+        s[a] = [1., 2., 3., 4., 5., 6., 7., 8., 9., 10., 11., 12.];
         let initial = s[a];
         for i in 0..d.sites() {
             let (x, z) = d.point(i);

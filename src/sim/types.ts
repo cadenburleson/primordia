@@ -5,7 +5,7 @@ export const WORLD_SIZE = 64;
 export const GRID = 40;
 export const MAX_POPULATION = 12000;
 export const STRIDE = 12;
-export const CELL_STRIDE = 9;
+export const CELL_STRIDE = 13;
 export const LINK_STRIDE = 6;
 export const JOINT_STRIDE = 9;
 export const MAX_BODY_CELLS = 64;
@@ -59,6 +59,8 @@ export interface CyclesView {
   iron?:{dissolved:number;rusted:number};
   /** Salt dissolved under standing water, and left as crust on ground that has dried. */
   salt?:{dissolved:number;crust:number;water:number};
+  /** Silica dissolved in the water, in the shells of the dead, and in the glass shells of the living. */
+  silicon?:{dissolved:number;remains:number;living:number};
   oxygen:{free:number;bound:number};
   energy:{sunlight:number;vents:number;heat:number;work:number;stored:number;start:number;error:number};
   /** Producers, plant-eaters, meat-eaters, top predators, then decomposers. `intake` is carbon per cycle. */

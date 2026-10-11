@@ -5,10 +5,10 @@ use body::{Cell as RenderCell, Link, V3};
 pub const MAX_CELLS: usize = 64000;
 pub const MAX_FOUNDERS: usize = 8192;
 pub const MAX_GENES: usize = 48;
-pub const ACTIONS: usize = 45;
+pub const ACTIONS: usize = 48;
 pub const INPUTS: usize = 32;
 /// Vocabulary sizes of earlier engine versions, padded with zeros on load.
-const OLD_ACTIONS: [usize; 8] = [10, 16, 21, 32, 38, 42, 43, 44];
+const OLD_ACTIONS: [usize; 9] = [10, 16, 21, 32, 38, 42, 43, 44, 45];
 const OLD_INPUTS: [usize; 4] = [8, 16, 20, 28];
 /// The last promoter inputs are signed left-minus-right senses.
 pub const LATERAL: usize = 4;
@@ -100,6 +100,9 @@ pub const ACTION_NAMES: [&str; ACTIONS] = [
     "Fins",
     "Sideways division",
     "Cell size",
+    "Glass shell",
+    "Holdfast",
+    "Rod shape",
 ];
 /// A cell is a stem cell (fate 0) or committed to one of three fates.
 pub const FATES: u8 = 4;
@@ -994,6 +997,15 @@ impl Evolution {
                         health: 1. - c.state.injury,
                         reserve: c.energy,
                         signal: [c.chemicals[0], c.chemicals[1], c.state.excitation],
+                        long: if c.state.aspect > 1. {
+                            let axis = self
+                                .physical
+                                .as_ref()
+                                .map_or(V3::new(1., 0., 0.), |h| h.domain.tangent(c.p, c.heading));
+                            [c.state.aspect, axis.x, axis.y, axis.z]
+                        } else {
+                            [0.; 4]
+                        },
                     });
                 }
                 for b in &group_bonds[g] {

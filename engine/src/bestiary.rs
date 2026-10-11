@@ -3,6 +3,7 @@
 //! case in the physics. Each starts as one cell with a founder's stores and
 //! has to build, feed and breed with the genes it was given, and those genes
 //! mutate from the first division on.
+use crate::physical::{CHEMO, ELONGATE, HOLDFAST, SHELL, TOXIN};
 use crate::{
     autonomous::{Cell, Gene, Genome, ACTIONS, INPUTS},
     body::V3,
@@ -14,7 +15,7 @@ use crate::{
 };
 
 /// Key and display name of every starter species.
-pub const SPECIES: [(&str, &str); 12] = [
+pub const SPECIES: [(&str, &str); 26] = [
     ("drifter", "Drifter"),
     ("alga", "Alga"),
     ("swimmer", "Swimmer"),
@@ -27,6 +28,20 @@ pub const SPECIES: [(&str, &str); 12] = [
     ("plankton", "Plankton"),
     ("leviathan", "Leviathan"),
     ("volvox", "Volvox"),
+    ("ulothrix", "Ulothrix"),
+    ("lettuce", "Sea lettuce"),
+    ("diatom", "Diatom"),
+    ("cyanobacterium", "Cyanobacterium"),
+    ("bacillus", "Bacillus"),
+    ("archaeon", "Archaeon"),
+    ("euglena", "Euglena"),
+    ("paramecium", "Paramecium"),
+    ("dinoflagellate", "Dinoflagellate"),
+    ("heliozoan", "Heliozoan"),
+    ("radiolarian", "Radiolarian"),
+    ("vorticella", "Vorticella"),
+    ("seaweed", "Seaweed"),
+    ("hydra", "Hydra"),
 ];
 /// Promoter inputs that carry a left-minus-right sense: fuel, light, scent, remains.
 const TOWARD_LIGHT: usize = INPUTS - 3;
@@ -76,6 +91,156 @@ fn design(species: &str) -> Option<Vec<Gene>> {
         "alga" => {
             let mut g = without_glue();
             g.extend([gene(0, 1., 0.4, &[]), gene(WALL, 1., 0.6, &[])]);
+            g
+        }
+        // A thread one cell wide. Walled cells divide along the body's own
+        // axis and stay cemented end to end, and only a cell at an end, with
+        // one neighbour or none, divides at all. The walls hold the line
+        // straight. A daughter that fails to stay cemented starts a new thread.
+        "ulothrix" => {
+            let mut g: Vec<Gene> = without_glue().into_iter().filter(|g| g.action != 7).collect();
+            g.extend([
+                gene(0, 1., 0.4, &[]),
+                gene(WALL, 1., 0.9, &[]),
+                gene(7, 0.6, 2., &[(BONDED, -2.)]),
+                // The second gene makes nothing; it cancels the turn the
+                // first would give each new cell, so the thread runs straight.
+                gene(POLARITY, 1., 0.9, &[]),
+                gene(POLARITY, -1., 0.9, &[]),
+            ]);
+            g
+        }
+        // A blade one cell thick. As the thread, but each division goes off
+        // at a slant to one side or the other, and any cell with fewer than
+        // three neighbours divides: the body spreads at its edge into a sheet.
+        "lettuce" => {
+            let mut g: Vec<Gene> = without_glue().into_iter().filter(|g| g.action != 7).collect();
+            g.extend([
+                gene(0, 1., 0.4, &[]),
+                gene(WALL, 1., 0.9, &[]),
+                gene(7, 1., 2., &[(BONDED, -2.)]),
+                gene(POLARITY, 1., 0.9, &[]),
+                gene(POLARITY, -1., 0.9, &[]),
+                gene(crate::physical::BROADEN, 0.5, 1., &[]),
+            ]);
+            g
+        }
+        // A single light-feeder in a shell of glass, laid down from silica
+        // dissolved in the water. The shell is cheap, makes the cell hard to
+        // swallow or digest, and weighs it down; and the cell cannot divide
+        // until each daughter's half is made whole, so where the silica runs
+        // out, diatoms stop.
+        "diatom" => {
+            let mut g = without_glue();
+            g.extend([gene(0, 1., 0.4, &[]), gene(SHELL, 1., 0.8, &[])]);
+            g
+        }
+        // The sea's first light-feeders: bacteria, small and rod-shaped.
+        "cyanobacterium" => {
+            let mut g = without_glue();
+            g.extend([gene(0, 1., 0.4, &[]), small(), gene(ELONGATE, 1., 0.5, &[])]);
+            g
+        }
+        // A rod-shaped bacterium of decay. A rod has more surface for its
+        // size than a ball, and it is through its surface that it feeds.
+        "bacillus" => {
+            let mut g = animal();
+            g.extend([gene(15, 1., 0.8, &[]), small(), gene(ELONGATE, 1., 0.9, &[])]);
+            g
+        }
+        // A microbe of the vents. It needs neither light nor food, only the
+        // chemistry of hot rock, and that is in the rock: it holds on to the
+        // bed and grows there as a mat.
+        "archaeon" => {
+            let mut g: Vec<Gene> = without_glue().into_iter().filter(|g| g.action != 0).collect();
+            g.extend([gene(CHEMO, 1., 0.8, &[]), small(), gene(HOLDFAST, 1., 0.8, &[])]);
+            g
+        }
+        // A long green swimmer with an eye-spot: it makes its food in the
+        // light, swims to find it, and soaks up what is dissolved in the dark.
+        "euglena" => {
+            let mut g = without_glue();
+            g.extend([
+                gene(0, 1., 0.4, &[]),
+                motor(),
+                eye(),
+                gene(STEER, 0.5, 1., &[(TOWARD_LIGHT, 1.5)]),
+                gene(ELONGATE, 1., 0.7, &[]),
+            ]);
+            g
+        }
+        // A slipper-shaped swimmer whose beating draws bacteria and the
+        // smallest algae into its mouth.
+        "paramecium" => {
+            let mut g = animal();
+            g.extend([
+                gene(ENGULF, 2., 1., &[]),
+                gene(SIZE, 1., 0.6, &[]),
+                motor(),
+                gene(STEER, 0.5, 1., &[(TOWARD_SCENT, 1.5)]),
+                gene(ELONGATE, 1., 0.6, &[]),
+            ]);
+            g
+        }
+        // A swimming light-feeder that makes poison: in numbers, a red tide.
+        "dinoflagellate" => {
+            let mut g = without_glue();
+            g.extend([
+                gene(0, 1., 0.4, &[]),
+                motor(),
+                eye(),
+                gene(STEER, 0.5, 1., &[(TOWARD_LIGHT, 1.5)]),
+                gene(TOXIN, 1., 0.5, &[]),
+            ]);
+            g
+        }
+        // A ball of spines that drifts and swallows whatever blunders into it.
+        "heliozoan" => {
+            let mut g = animal();
+            g.extend([gene(ENGULF, 2., 1., &[]), gene(SIZE, 1., 0.65, &[]), gene(SPINE, 1., 0.5, &[])]);
+            g
+        }
+        // As the heliozoan, with a skeleton of glass.
+        "radiolarian" => {
+            let mut g = animal();
+            g.extend([
+                gene(ENGULF, 2., 1., &[]),
+                gene(SIZE, 1., 0.65, &[]),
+                gene(SPINE, 1., 0.5, &[]),
+                gene(SHELL, 1., 0.5, &[]),
+            ]);
+            g
+        }
+        // A mouth on a stalk. It grips the bottom and its beating draws the
+        // small life of the water to it.
+        "vorticella" => {
+            let mut g = animal();
+            g.extend([gene(ENGULF, 2., 1., &[]), gene(SIZE, 1., 0.6, &[]), gene(HOLDFAST, 1., 0.8, &[])]);
+            g
+        }
+        // A thread of walled cells, as Ulothrix, that holds on to the bottom.
+        "seaweed" => {
+            let mut g: Vec<Gene> = without_glue().into_iter().filter(|g| g.action != 7).collect();
+            g.extend([
+                gene(0, 1., 0.4, &[]),
+                gene(WALL, 1., 0.9, &[]),
+                gene(7, 0.6, 2., &[(BONDED, -2.)]),
+                gene(POLARITY, 1., 0.9, &[]),
+                gene(POLARITY, -1., 0.9, &[]),
+                gene(HOLDFAST, 1., 0.8, &[]),
+            ]);
+            g
+        }
+        // A small animal fixed to the bottom: cells that stay together, grip
+        // the bed, sting what touches them and swallow it.
+        "hydra" => {
+            let mut g = animal();
+            g.extend([
+                gene(2, 1., 0.8, &[]),
+                gene(ENGULF, 2., 1., &[]),
+                gene(TOXIN, 1., 0.4, &[]),
+                gene(HOLDFAST, 1., 0.8, &[]),
+            ]);
             g
         }
         // A light feeder that swims toward the light.
@@ -260,9 +425,18 @@ impl Core {
             material.biomass = 0.6;
             material.fuel = 0.1;
         }
+        // The catalyst a vent cell lives by is part of what it is born with,
+        // as a light-feeder's is.
+        if genes.iter().any(|g| g.action == CHEMO) {
+            material.proteins[CHEMO] = 0.002;
+        }
         // An egg is laid ready to hold its first daughters to it.
         if species == "volvox" {
             material.proteins[2] = 0.02;
+        }
+        // What lives fixed to the bottom is set down ready to grip it.
+        if genes.iter().any(|g| g.action == HOLDFAST) {
+            material.proteins[HOLDFAST] = 0.02;
         }
         // Everything a founder holds is in proportion to the size its genes set.
         let stature = genes
@@ -326,6 +500,11 @@ impl Core {
             return Err("Release between 1 and 64 founders at a time".into());
         }
         let (name, json) = self.species_specimen(species)?;
+        // What lives on the rock's chemistry is set down where the rock is
+        // hottest, not where the light is.
+        let vents = design(species).is_some_and(|g| {
+            g.iter().any(|g| g.action == CHEMO) && !g.iter().any(|g| g.action == 0)
+        });
         let mut released = 0;
         for _ in 0..count * 12 {
             if released == count {
@@ -335,7 +514,7 @@ impl Core {
             // where the energy is, and an eater set down in the dark between
             // the lit patches never finds its food.
             let mut best: Option<(f32, f32, f64)> = None;
-            for _ in 0..4 {
+            for _ in 0..if vents { 16 } else { 4 } {
                 let d = self
                     .autonomous
                     .as_ref()
@@ -355,7 +534,11 @@ impl Core {
                     .planet
                     .as_ref()
                     .is_none_or(|p| !d.spherical() || p.surface_depth(site) > 0.5);
-                let light = h.light_fraction(site);
+                let light = if vents {
+                    h.planet.as_ref().map_or(0., |p| p.vent(site))
+                } else {
+                    h.light_fraction(site)
+                };
                 if wet && best.is_none_or(|spot| light > spot.2) {
                     best = Some((x, z, light));
                 }
@@ -504,6 +687,165 @@ mod tests {
         // Most bodies end at a few dozen cells. (Kin bodies that touch can
         // still join, so the largest in a crowded pond is bigger.)
         assert!(bodies[bodies.len() / 2] <= 80, "a body stops growing: median {}", bodies[bodies.len() / 2]);
+    }
+
+    /// The largest body of a species: how many neighbours its most tied
+    /// cell has, and how far it reaches along its three principal axes.
+    fn shape(c: &Core, name: &str) -> (usize, usize, [f32; 3]) {
+        let e = c.autonomous.as_ref().unwrap();
+        let body = e
+            .groups()
+            .into_iter()
+            .filter(|g| e.cells[g[0]].collection_sources.first().is_some_and(|s| s == name))
+            .max_by_key(Vec::len)
+            .unwrap();
+        let ids = e.index();
+        let mut ties = vec![0usize; e.cells.len()];
+        for b in &e.bonds {
+            ties[ids[&b.a]] += 1;
+            ties[ids[&b.b]] += 1;
+        }
+        let n = body.len() as f32;
+        let middle = body.iter().fold(V3::default(), |sum, &i| sum.add(e.cells[i].p.mul(1. / n)));
+        let offsets: Vec<V3> = body.iter().map(|&i| e.cells[i].p.sub(middle)).collect();
+        // Each axis in turn is the direction the body spreads furthest along,
+        // once the axes already found are taken out.
+        let mut axes: Vec<V3> = Vec::new();
+        let mut reach = [0.; 3];
+        for extent in &mut reach {
+            let mut axis = V3::new(0.37, 0.51, 0.77);
+            for _ in 0..60 {
+                let mut next = V3::default();
+                for d in &offsets {
+                    let d = axes.iter().fold(*d, |d, a| d.sub(a.mul(d.dot(*a))));
+                    next = next.add(d.mul(d.dot(axis)));
+                }
+                axis = next.normalized();
+            }
+            *extent = (offsets.iter().map(|d| d.dot(axis).powi(2)).sum::<f32>() / n).sqrt();
+            axes.push(axis);
+        }
+        (body.len(), body.iter().map(|&i| ties[i]).max().unwrap(), reach)
+    }
+
+    #[test]
+    fn walled_cells_that_divide_along_an_axis_grow_into_a_thread_or_a_sheet() {
+        let grown = |key: &str, name: &str, ticks: u32| {
+            let mut c = world();
+            c.steer(r#"{"kind":"light","scale":6}"#).unwrap();
+            c.steer(&format!(r#"{{"kind":"seed","species":"{key}","count":1}}"#)).unwrap();
+            // The largest body it grows to in that time, looked for every
+            // twenty cycles: in a pond bodies also break up and are eaten.
+            let mut found = (0, 0, [0.; 3]);
+            for _ in 0..ticks / 80 {
+                c.step(80);
+                let now = shape(&c, name);
+                if now.0 > found.0 {
+                    found = now;
+                }
+            }
+            assert!(c.autonomous.as_ref().unwrap().valid());
+            eprintln!("{name}: {} cells, at most {} neighbours, reach {:.2?}", found.0, found.1, found.2);
+            found
+        };
+        // A clump, for comparison: an alga's daughters go any way they like.
+        let (_, _, clump) = grown("alga", "Alga", 640);
+        // A thread: a line of cells with one neighbour at each end and two
+        // everywhere else, many times longer than it is wide.
+        let (cells, ties, reach) = grown("ulothrix", "Ulothrix", 640);
+        assert!(cells >= 8, "a thread of some length: {cells}");
+        assert!(ties <= 3, "a thread does not branch: {ties}");
+        assert!(reach[0] > 3. * reach[1], "long and thin: {reach:?}");
+        assert!(
+            reach[0] / reach[1] > 2. * clump[0] / clump[1],
+            "far thinner for its length than a clump: {reach:?} against {clump:?}"
+        );
+        // A sheet: broad two ways and one cell thick.
+        let (cells, _, reach) = grown("lettuce", "Sea lettuce", 640);
+        assert!(cells >= 15, "a sheet of some size: {cells}");
+        assert!(reach[1] > 0.4 * reach[0], "broad both ways: {reach:?}");
+        assert!(reach[2] < 0.4 * reach[1], "and thin: {reach:?}");
+        assert!(
+            reach[2] / reach[1] < 0.6 * clump[2] / clump[1],
+            "far flatter than a clump: {reach:?} against {clump:?}"
+        );
+    }
+
+    #[test]
+    fn single_cells_build_what_marks_them_out_and_silicon_is_never_made_or_lost() {
+        let grown = |key: &str, ticks: u32| {
+            let mut c = world();
+            c.steer(r#"{"kind":"light","scale":6}"#).unwrap();
+            c.steer(&format!(r#"{{"kind":"seed","species":"{key}","count":10}}"#)).unwrap();
+            let silicon = |c: &Core| {
+                let e = c.autonomous.as_ref().unwrap();
+                e.physical.as_ref().unwrap().silicon_total(&e.cells)
+            };
+            let before = silicon(&c);
+            c.step(ticks);
+            assert!(c.autonomous.as_ref().unwrap().valid());
+            // Whatever was built, died, sank and dissolved, the planet holds
+            // exactly the silicon it began with.
+            assert!((silicon(&c) - before).abs() < 1e-6 * before, "{key}: {} from {before}", silicon(&c));
+            c
+        };
+        let mean = |c: &Core, name: &str, of_cell: &dyn Fn(&Cell) -> f32| {
+            let cells: Vec<&Cell> = of(c, name).filter(|cell| cell.age > 10.).collect();
+            assert!(cells.len() >= 10, "{name} multiplied: {}", cells.len());
+            cells.iter().map(|cell| of_cell(cell)).sum::<f32>() / cells.len() as f32
+        };
+        // A diatom lives in a whole shell of glass, taken out of the water.
+        let c = grown("diatom", 720);
+        let shell = mean(&c, "Diatom", &|cell| cell.material.as_ref().unwrap().shell() as f32);
+        assert!(shell > 0.5, "diatoms are shelled: {shell}");
+        let e = c.autonomous.as_ref().unwrap();
+        let held: f64 = of(&c, "Diatom").map(|cell| cell.material.as_ref().unwrap().silica).sum();
+        assert!(held > 1., "and the glass is real silica: {held}");
+        assert!(e.cells.iter().filter(|cell| cell.material_role() == 19).count() >= 10);
+        // Bacteria are rods; a plain cell is round.
+        let c = grown("cyanobacterium", 480);
+        let long = mean(&c, "Cyanobacterium", &|cell| cell.state.aspect);
+        assert!(long > 2., "a cyanobacterium is a rod: {long}");
+        assert!(of(&c, "Cyanobacterium").all(|cell| cell.outline() >= 1.));
+        let c = grown("plankton", 480);
+        assert!(mean(&c, "Plankton", &|cell| cell.state.aspect) < 1.01);
+        // Seaweed holds on to the bottom.
+        let c = grown("seaweed", 720);
+        let held = mean(&c, "Seaweed", &|cell| if cell.state.anchored { 1. } else { 0. });
+        assert!(held > 0.3, "seaweed grips the bed: {held}");
+    }
+
+    #[test]
+    fn a_holdfast_keeps_a_cell_where_the_water_would_carry_it_off() {
+        // Founders of two kinds in the same stirred water. Those with a
+        // holdfast grip the bed where they first touch it and are still
+        // there sixty cycles later; the others have drifted on.
+        let drift = |key: &str, name: &str| {
+            let mut c = world();
+            c.steer(r#"{"kind":"mixing","scale":3}"#).unwrap();
+            c.steer(&format!(r#"{{"kind":"seed","species":"{key}","count":8}}"#)).unwrap();
+            for cell in &mut c.autonomous.as_mut().unwrap().cells {
+                cell.cooldown = 1e6; // none divides: this is about staying put
+            }
+            c.step(120);
+            let held = of(&c, name).any(|cell| cell.state.anchored);
+            let start: Vec<(u32, V3)> = of(&c, name)
+                .filter(|cell| cell.state.anchored == held)
+                .map(|cell| (cell.id, cell.p))
+                .collect();
+            c.step(240);
+            let moved: Vec<f32> = of(&c, name)
+                .filter_map(|cell| start.iter().find(|s| s.0 == cell.id).map(|s| cell.p.sub(s.1).len()))
+                .collect();
+            assert!(!moved.is_empty());
+            (moved.iter().sum::<f32>() / moved.len() as f32, start.len())
+        };
+        let (held, gripping) = drift("vorticella", "Vorticella");
+        let (loose, _) = drift("heliozoan", "Heliozoan");
+        eprintln!("moved in 60 cycles: {gripping} gripping {held:.2}, loose {loose:.2}");
+        assert!(gripping >= 4, "most of them have hold of the bed: {gripping}");
+        assert!(held < 0.3, "a held cell stays where it gripped: {held}");
+        assert!(loose > 0.5, "a loose one drifts: {loose}");
     }
 
     #[test]

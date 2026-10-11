@@ -9,21 +9,21 @@ for(const [seed,temperature,kind] of [[8042,.48,'tidal'],[6219,.22,'alien'],[119
  const w=new World(JSON.stringify({...base,seed,temperature,kind}));w.start_physical();
  const founder=JSON.parse(w.save());
  assert.equal(founder.autonomous.cells.length,64);
- assert.ok(founder.autonomous.cells.every(c=>c.material.proteins.length===45&&c.material.lipid===0&&c.genome.genes.every(g=>[0,1,2,7].includes(g.action))));
+ assert.ok(founder.autonomous.cells.every(c=>c.material.proteins.length===48&&c.material.lipid===0&&c.genome.genes.every(g=>[0,1,2,7].includes(g.action))));
  const maxErrors=[0,0,0,0];let peakCells=64,peakMixed=0,peakJoints=0,peakStorage=0,peakExcited=0,elapsed=0;
  for(let sample=0;sample<25;sample++){
   const start=performance.now();w.step(40);elapsed+=performance.now()-start;
   const meta=JSON.parse(w.metadata(0)),a=meta.autonomous,p=a.physics,planet=a.planet;
   const errors=[p.massError,p.mineralError,p.energyError,planet.waterError];
   errors.forEach((e,k)=>{assert.ok(Number.isFinite(e)&&Math.abs(e)<1e-7,`Conservation ${seed}/${meta.stats.time}: ${errors}`);maxErrors[k]=Math.max(maxErrors[k],Math.abs(e));});
-  assert.equal(a.actions.length,45);assert.equal(a.resources.detritus.length,1600);assert.equal(planet.relief.length,1600);
+  assert.equal(a.actions.length,48);assert.equal(a.resources.detritus.length,1600);assert.equal(planet.relief.length,1600);
   assert.ok(a.resources.detritus.every(v=>Number.isFinite(v)&&v>=0));
   assert.ok(a.physiology.ledger.excreted>0);
   peakCells=Math.max(peakCells,meta.stats.cells);peakMixed=Math.max(peakMixed,a.physiology.mixedBodies);peakJoints=Math.max(peakJoints,p.joints);peakStorage=Math.max(peakStorage,a.physiology.lipid);peakExcited=Math.max(peakExcited,a.physiology.excited);
   const saved=w.save();w.load(saved);assert.equal(w.save(),saved);
   const display=w.display_world();const data=display.cell_data(),links=display.link_data(),joints=display.joint_data();
-  assert.equal(data.length/9,meta.stats.cells);assert.ok([...data,...links,...joints].every(Number.isFinite));
-  for(let k=0;k<links.length;k+=6)assert.ok(links[k]<data.length/9&&links[k+1]<data.length/9);
+  assert.equal(data.length/13,meta.stats.cells);assert.ok([...data,...links,...joints].every(Number.isFinite));
+  for(let k=0;k<links.length;k+=6)assert.ok(links[k]<data.length/13&&links[k+1]<data.length/13);
   assert.equal(w.save(),saved);display.free();
   if(sample%5===0)console.log(JSON.stringify({seed,cycles:meta.stats.time,cells:meta.stats.cells,divisions:a.divisions,weather:planet.weather,eruptions:planet.eruptions,mixed:a.physiology.mixedBodies}));
  }

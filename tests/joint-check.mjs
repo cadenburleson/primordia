@@ -30,7 +30,7 @@ for(const seed of [8042,1197,6219]){
   resumed.load(world.save());world.step(37);resumed.step(37);assert.equal(world.save(),resumed.save());assert.deepEqual(world.joint_data(),resumed.joint_data());
   world.replay_best(true);assert.equal(JSON.parse(world.metadata(1)).selected.cells,1);world.step(52);
   const selected=JSON.parse(world.metadata(1)).selected;assert.equal(selected.cells,12);assert.equal(selected.body.joints.length,8);
-  const packed=world.joint_data(),cellCount=world.cell_data().length/9;assert.equal(packed.length,8*9);
+  const packed=world.joint_data(),cellCount=world.cell_data().length/13;assert.equal(packed.length,8*9);
   for(let i=0;i<packed.length;i+=9){for(let k=0;k<3;k++)assert.ok(packed[i+k]>=0 && packed[i+k]<cellCount);assert.ok(packed[i+3]<packed[i+4]);}
   if(seed===8042)await writeFile(new URL('../examples/jointed-lab.json',import.meta.url),world.save()+'\n');
   const malformed=JSON.parse(world.save());malformed.organisms[0].body.joints[0].segments[0]=999;assert.throws(()=>resumed.load(JSON.stringify(malformed)));

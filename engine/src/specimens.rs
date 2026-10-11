@@ -278,11 +278,17 @@ impl Core {
                 .atan2(direction.dot(d.tangent(c.p, 0.)));
             c.v = V3::default();
             c.state.ground = false;
+            c.state.anchored = false;
             c.state.flux = observations::Flux::default();
             c.state.motor_work = 0.;
             c.state.meals = 0;
             c.collection_sources = vec![s.name.clone()];
         }
+        // What lives fixed to the bottom is set down on it.
+        let settles = s
+            .cells
+            .iter()
+            .any(|c| c.genome.genes.iter().any(|g| g.action == crate::physical::HOLDFAST));
         let lift = s
             .cells
             .iter()
@@ -290,7 +296,11 @@ impl Core {
                 // Afloat just under the surface where there is sea, else on the ground.
                 let (x, z) = d.coords(c.p);
                 h.planet.as_ref().map_or(ground(c.p) + c.radius(), |p| {
-                    p.berth(x, z, c.radius(), self.config.seed)
+                    if settles {
+                        p.floor(x, z, c.radius(), self.config.seed) - 0.02
+                    } else {
+                        p.berth(x, z, c.radius(), self.config.seed)
+                    }
                 }) + 0.02
                     - if d.spherical() {
                         c.p.len() - d.radius()

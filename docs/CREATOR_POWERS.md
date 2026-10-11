@@ -431,6 +431,118 @@ For this, a cell's division count (`lifecycle.depth`) now rises in both daughter
 - A sessile colony of mouths starved: prey drift too slowly to reach it, so the Sponge starter was removed.
 - Algae painted on land 2.9 units above the sea did not stay: within 120 cycles all but three of 41 were in water.
 
+## Shapes: threads, sheets and spines
+
+Every cell is a ball, and nothing in a genome codes for a cell's own shape. Shape belongs to bodies. Two gaps in the physics kept every body a clump, and both are closed.
+
+| Rule | Before | Now |
+| --- | --- | --- |
+| A cell that divides along an axis | Kept every neighbour it had; the daughter was tied to its parent alone, so each division sprouted a side branch | Splits its ties with its daughter: a neighbour on the daughter's side is the daughter's, and a neighbour that touches both stays cemented to both |
+| A wall | Bore weight but bent freely, so a chain of walled cells crumpled | Holds the angle between a cell's neighbours, as mineral does (a full wall as firmly as a cell a tenth mineral) |
+
+The first applies to any cell whose polarity protein is more than half built; the second to any walled cell with two neighbours. With them, three ordinary genes make a shape:
+
+| Starter | Genes on top of light and a wall | What grows |
+| --- | --- | --- |
+| Ulothrix | Polarity (divide along the body's axis); replication that falls with each neighbour, silent at two | A straight thread one cell wide that grows at its ends. A daughter that fails to stay cemented starts a new thread |
+| Sea lettuce | The same, with the broadening gene sending each division off at a slant, and replication silent at three neighbours | A flat sheet one cell thick that spreads at its edge |
+
+Measured in the test pond from one founder, as the reach of the largest body along its three principal axes:
+
+| | Cells | Most neighbours | Reach |
+| --- | --- | --- | --- |
+| Alga (no axis) | 14 | 4 | 0.85 × 0.37 × 0.29 |
+| Ulothrix | 8 | 2 | 1.61 × 0.13 × 0.04 |
+| Sea lettuce | 46 | 4 | 1.62 × 1.08 × 0.21 |
+
+On two planets seeded with every starter, both held their own for 600 cycles and the worlds reloaded: Ulothrix 46 and 111 cells, Sea lettuce 74 and 370. Wall joints cost about 1% of the engine's time.
+
+A cell given over to spines is now drawn with them, so a Thornback is a spiked ball.
+
+## Silicon, holdfasts, rods and a roster of single cells
+
+Three more genes (48 in all) and one more dissolved element.
+
+**Silicon.** Silica is dissolved in every sea (somewhat more of it than usable nitrogen, as on Earth). Nothing makes or destroys it: it is in the water, in the glass shells of the living, or in the shells of the dead until they dissolve again, and a test holds the total to one part in a million.
+
+| The glass-shell gene | |
+| --- | --- |
+| Builds | A shell of silica taken out of the water, up to a fifth of the cell's living matter |
+| Costs | A twentieth of a unit of energy for each unit laid down: far less than a wall of carbon |
+| Protects | A whole shell slows digestion and swallowing as spines do, and a feeding current lets go of it |
+| Weighs | Glass is twice as dense as water, so a shelled cell sinks where a bare one hangs |
+| Limits | A shelled cell cannot divide until its shell is whole. Each daughter takes half and must find the rest, so where silica runs out, diatoms stop |
+
+**Holdfast.** A cell with the holdfast protein grips whatever bed it comes to rest on. From then on a short springy stalk pulls it back to that spot; it lets go if the protein is no longer made or the stalk is drawn out past about a cell's width. In stirred water a gripped cell moved 0.00 units in sixty cycles while loose ones drifted about one. Starters with a holdfast are set down on the sea bed, ready to grip. A daughter that touches the bed grips it; one that does not drifts off, as a settling larva does.
+
+**Rod shape.** A third gene sets how long a rod a cell grows as, from round to four times as long as wide. A rod has more membrane than a ball of the same volume (a quarter more at four to one), and everything a cell takes in through its surface rises with it. Rods are drawn as rods. In collisions a cell is still a ball of its volume.
+
+**Starters.** Twelve more, each built from ordinary genes:
+
+| | Starter | What it is |
+| --- | --- | --- |
+| Bacteria and archaea | Cyanobacterium | A tiny rod living on light |
+| | Bacillus | A tiny rod rotting remains |
+| | Archaeon | A tiny vent microbe living on the chemistry of hot rock, in the dark |
+| Single cells with more to them | Diatom | A light-feeder in a glass shell |
+| | Euglena | A long green swimmer with an eye-spot |
+| | Dinoflagellate | A swimming light-feeder that makes poison |
+| | Paramecium | A slipper-shaped swimmer with a mouth and a feeding current |
+| | Heliozoan | A drifting ball of spines with a mouth |
+| | Radiolarian | The same with a skeleton of glass |
+| | Vorticella | A mouth on a stalk, fixed to the bottom |
+| Bodies fixed to the bottom | Seaweed | A walled thread that holds on |
+| | Hydra | Cells that stay together, grip the bed, sting and swallow |
+
+On two planets seeded with all 26 starters, after 600 cycles and a reload:
+
+| Holds its own | Cells |
+| --- | --- |
+| Cyanobacterium | 1,454 and 2,015 |
+| Plankton | 757 and 661 |
+| Diatom | 675 and 118 |
+| Archaeon | 263 and 103 |
+| Seaweed | 219 and 179 |
+| Alga | 113 and 275 |
+| Bacillus | 10 and 80 |
+
+Every eater, old and new (Paramecium, Heliozoan, Radiolarian, Vorticella, Hydra, Hunter, Grazer, Leviathan), stays near the eight-cell floor at which a kept species is restocked, as do Euglena and Dinoflagellate, which thrive alone but lose to smaller cells on a shared planet. In the pond the new eaters were well fed (38 to over 1,000 meals each) and still dwindled, which is the old unsolved problem of eaters, not a new one.
+
+Not built:
+
+- **Spirals, comma shapes and amoebas.** The outline gene makes rods only, and nothing changes its outline from moment to moment.
+- **Silica entering and leaving the planet.** None is buried and none weathers out of rock; the sea's stock recycles.
+- **Coccolithophores and foraminifera.** Their shells are chalk, and calcium is still lumped with phosphorus as one mineral that a cell binds only thinly.
+
+## Depth: a sea with a top and a bottom
+
+Cells always had a height in the water, but nothing made it matter: motors pushed along the surface only, eddies stirred sideways only, and a cell on the deep bed was lit and fed exactly as one at the surface. Now:
+
+| | Before | Now |
+| --- | --- | --- |
+| Light | The same at every depth | Each unit of water leaves about three quarters of it. The median sea bed (2.6 units down) gets under half of the surface's light, the deepest (8.7) about a fourteenth |
+| The rock's chemistry | Fed a vent feeder anywhere in the water above it | Feeds what lies on the bed, and falls to about a third one unit above it |
+| Eddies | Sideways | Up and down as well, at a quarter strength, never out of the water or into the bed |
+| The sea's surface | Followed every rise and hollow of the bed inside a map square, so a floating cell could be far under it | Level across each square: deeper over a hollow, shallower over a rise, dry where the bed stands clear |
+| Motors | Along the surface | Wherever the cell points. Every cell has a pitch as well as a heading; a free swimmer tumbles in both |
+| Steering | Left against right | Up against down as well, by the same genes and the same four senses: light is brighter above, other life is wherever it is, remains lie below, dissolved food is the same at every depth |
+| Loose remains | Hung in the water unless mineral | Settle slowly, as marine snow does; mineral and glass faster |
+
+So where a cell lives is now something it has to get right. In the deepest sea a light-harvester made 13 times as much at the surface as on the bed, and a vent feeder over five thousand times as much on the bed as at the surface. A Swimmer set down on that bed was at the surface within 100 cycles; Plankton set beside it was still 2.7 units down.
+
+The Archaeon starter now has a holdfast and is set down at the hottest vents: the chemistry it lives on is in the rock, so it grips the bed there.
+
+After 600 cycles with every starter, species sort themselves by depth (median, one planet):
+
+| | Under the surface | Above the bed |
+| --- | --- | --- |
+| Swimmer, Euglena, Dinoflagellate (seek light) | 0.0 | 2–4 |
+| Plankton (drifts) | 0.5 | 1.5–1.8 |
+| Diatom (sinks) | 0.8–1.4 | 2–3 |
+| Seaweed, Archaeon, Hydra, Vorticella (hold on) | 0.1–2.5 | 0.0 |
+
+**What it cost.** The living world is smaller and far less steady. With depth off, the same planets held about 3,700 cells at 600 cycles with a fifth of their oxygen free. With it on, three runs held 2,632, 861 and 688 cells, and free oxygen stood at 0.19, 0.06 and 0.03. Light-feeders that are not at the very top now earn less, the first bloom is weaker, and where it is too weak oxygen never builds and everything stays slow. Vent microbes, which held 103–263 cells when vents fed the whole water column, now sit at the restocking floor even when set down at vents; why they do not spread along the bed is not yet found. Seaweed does well only where the bed is shallow.
+
 ## Not solved
 
 - **Eaters still take about a hundredth of what plants make.** Feeding currents, a faster metabolism with oxygen, sized cells, light-seeking and deeper seas together moved it from 0.2–0.6% to 0.9–1.6%. Catching food now works; what is left is that most producers are walled algae in clumps that only enzyme grazers can eat, and that a planet's cell limit fills with small cells before eaters can multiply.
@@ -440,7 +552,7 @@ For this, a cell's division count (`lifecycle.depth`) now rises in both daughter
 - **Nothing anchors to land.** A plant on a slope slides or is washed down to the water. Land plants need a holdfast as well as a water store.
 - **No fish.** A long body swimming by a wave of muscle has not been built; it would have to pay its way as an eater first.
 - **A thick body's inner cells breathe as freely as its surface.** Gills and circulation have no job yet.
-- Sulfur and silicon are not simulated. Iron and salt do not yet affect life.
+- Sulfur is not simulated. Iron and salt do not yet affect life.
 
 - **Decomposers barely live.** A cell living on remains alone stays at the restocking floor. A decomposer that also soaked up dissolved food cut the planet's population by a third.
 - **No cell fixes nitrogen from the air.** Only lightning does.
@@ -469,7 +581,7 @@ For this, a cell's division count (`lifecycle.depth`) now rises in both daughter
 ## Checks
 
 ```sh
-cargo test --profile preview --manifest-path engine/Cargo.toml --lib   # 161 tests
+cargo test --profile preview --manifest-path engine/Cargo.toml --lib   # 167 tests
 npm run check:steering   # the shipped WASM, through the same API the UI uses
 npm run check:scheduler && npm run check:nursery-ui && npm run check:brush-ui
 npm run build

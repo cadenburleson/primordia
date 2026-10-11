@@ -33,7 +33,7 @@ export const RUNGS:Record<string,RungCopy>={
 const STAGES=['Not yet','Gene appeared','First working cells','Established'] as const;
 const MARKS=['○','◔','◑','●'];
 const KINDS=[{name:'Simple cells',color:'#7fb8a4'},{name:'Plant-like',color:'#4f9e4a'},{name:'Fungus-like',color:'#c9a27a'},{name:'Animal-like',color:'#ff9d3c'}];
-const SPECIES_COLORS:Record<string,string>={Drifter:'#7fb8a4',Alga:'#4f9e4a',Swimmer:'#ff9d3c',Grazer:'#b77bf0',Hunter:'#d6249f',Thornback:'#8f9bb8',Rower:'#2f6be0',Courter:'#f58fc0'};
+const SPECIES_COLORS:Record<string,string>={Drifter:'#7fb8a4',Alga:'#4f9e4a',Swimmer:'#ff9d3c',Grazer:'#b77bf0',Hunter:'#d6249f',Thornback:'#8f9bb8',Rower:'#2f6be0',Courter:'#f58fc0',Decomposer:'#a9865b',Plankton:'#9bd66a',Leviathan:'#7a2f8f',Volvox:'#3fbf8f',Ulothrix:'#2e8f6b','Sea lettuce':'#7ccf3a',Seaweed:'#5c8f3a',Diatom:'#d9b45a',Cyanobacterium:'#3fb7a8',Bacillus:'#c08a4f',Archaeon:'#c98f5a',Euglena:'#8fd15a',Dinoflagellate:'#e0603a',Paramecium:'#c77bf0',Heliozoan:'#b9c2dd',Radiolarian:'#e6d28a',Vorticella:'#e58fd0',Hydra:'#f0a04b'};
 const DIETS=[{name:'Light feeders',color:'#e8cf6a'},{name:'Soup feeders',color:'#6fb8a8'},{name:'Decomposers',color:'#a08a6c'},{name:'Vent feeders',color:'#c98f5a'},{name:'Herbivores',color:'#8fd15a'},{name:'Omnivores',color:'#f08a4b'},{name:'Carnivores',color:'#d6249f'}];
 
 export type LadderAction={kind:'steer';action:SteerAction;note:string}|{kind:'powers'};
