@@ -331,10 +331,106 @@ The rule for this round: energy and matter are never made or destroyed, only cha
 - Producers take in 58–93 units of carbon a cycle. Plant-eaters take in 0.5–1.1% of that (Earth: about 10%). Meat-eaters take 5–29% of what plant-eaters do.
 - Tests: a six-cell soft body standing on one cell is loaded to twice its strength and injured; on bone, wall or fibre the load is 0.22–0.47 and it is unhurt. A signal reaching the fourth nerve cell is nine times stronger with fat.
 
+## Elements, feeding currents and size
+
+Built after researching what carbon-based life is made of and how food chains and body size work on Earth. Each change was measured on three planets (seeds 8042, 77, 5; 1,200 cycles; eight starter species; Fast pace).
+
+**The periodic table** (`src/elements.ts`, data in `src/elements-data.ts` from PubChem). Planet → "Periodic table" shows all 118 elements. A temperature slider shows each pure element as solid, liquid or gas from its real melting and boiling points; it starts at the planet's own temperature (0.3 on the engine's scale is 0 °C, and each 0.1 is about 11 degrees). Nine elements are tracked on the planet and show where their stock is: hydrogen (as water), carbon, nitrogen, oxygen, phosphorus and calcium (together, as the mineral of rock and bone), iron, and sodium and chlorine (together, as salt). Sulfur and silicon are not simulated.
+
+**Matter is counted in carbon atoms.**
+
+| Compound | Nitrogen | Energy per carbon | Weight per carbon |
+| --- | --- | --- | --- |
+| Sugar (fuel) | none | 1 | 1 |
+| Protein and tissue | 0.15 | 1 | 1 |
+| Cell wall (cellulose) | none | 1 | 1 |
+| Fat | none | 1.3 | 0.47 |
+
+Laying fat down gives off the carbon it does not keep as carbon dioxide; burning it pays the extra energy at once. Stored fat costs a fifth of tissue's upkeep.
+
+**The planet's own chemistry** (`Habitat::planet_chemistry`). One rule moves each substance between air, water and ground:
+
+| Substance | Air | Water | Ground |
+| --- | --- | --- | --- |
+| Water | vapour | seas | snow and ice |
+| Carbon dioxide | gas | dissolved; cold water holds more | remains, lying or buried under silt |
+| Nitrogen | gas no cell can use | dissolved | bound in remains, lying or buried |
+| Oxygen | free | (mixed with the air) | bound in rust, water and carbon dioxide |
+| Iron | none | dissolved | rust on the sea bed |
+| Salt | none | dissolved | crust where water has dried |
+| Phosphorus and calcium | none | dissolved mineral | bone; the rock itself is not counted |
+
+- Silt buries 0.3% of lying remains each cycle. Buried carbon holds its energy and leaves oxygen free; the planet's heat burns 0.05% of it back out each cycle with free oxygen.
+- Free oxygen rusts dissolved iron out of the sea, which takes about 8% of a planet's oxygen before any can build up.
+- **Phosphorus** (`P_RATIO` 0.01) is needed to grow and repair. Self-feeders take it from dissolved mineral, animals get it in food, bone lends it, and dead tissue gives it straight back to the water.
+
+A world saved under older rules has its books reset the first time it runs (`Habitat.chemistry`).
+
+**Feeding currents.** A mouth draws in free cells within 1.5 units that its body could swallow, as strongly as it could swallow them, and lets go of spiny or walled ones. A cell held in a body is not drawn. Related changes:
+
+- The rate a cell can burn fuel now comes from oxygen (`0.035 + 0.12 × max(uptake, air)`), so an active life waits for oxygen.
+- Hunters are released full grown (a mouth has to be bigger than its prey).
+- Swimmers, Grazers and Hunters carry a light-sensing spot. Before this no starter could sense light at all.
+- Starters are released in the best lit of four spots of open water.
+- The sea keeps stirring a free cell until it is nine tenths out of the water.
+
+**Size.** Water drags on a body as a whole, by how far it reaches, so a compact body meets far less drag for its mass. A cell enclosed by its body pays half the upkeep of a free one. New planets' ocean basins are cut three times deeper: the sea had been about two cell diameters deep on average, and big cells ran aground across a third of it.
+
+**Cell size** (`SIZE`, gene 44; `Cell::stature`). Size is inherited. A regulatory gene sets how large a cell grows before it divides: a quarter of the usual size when silent, the usual size at half drive, four times at full drive. A genome without the gene makes cells of the usual size, so older organisms are unchanged. What size does follows from geometry:
+
+| Follows the cell's surface (two-thirds power of its bulk) | Follows its metabolism (three-quarter power) | Follows its bulk |
+| --- | --- | --- |
+| Light harvest, uptake of food, nitrogen and phosphorus | The rate it can burn fuel | The energy it can hold |
+| What a mouth or enzymes take in a tick | Upkeep, protein building, growth | The energy and size it needs to divide, and what dividing costs |
+| A motor's thrust | | |
+
+In the test, under a bright star, a cell a third of the usual size harvests 1.65 times its own carbon a cycle and first divides after 16 cycles; a usual cell 1.38 and 20; a cell three times the usual size 0.94 and 30.
+
+Starters now come in sizes: Plankton (new: a free light-feeder a third of the usual size) and Decomposers are small, Grazers twice the usual size, Hunters half as large again with a mouth that doubles it.
+
+**Dividing.** A cell divides when it has grown to its size, holds enough energy and is ready; that is unchanged, and it is what single cells do in nature. Two faults were fixed. The cost of dividing now follows the cell's size. And on a planet near its cell limit each round of division starts at a different cell, where before the oldest cells took every place that opened up.
+
+**An egg that becomes a body** (the Volvox starter). Alone, its cell grows three times the usual size. Each neighbour a cell is tied to turns its size gene down, to nothing at three neighbours, and strong glue keeps daughters attached. So each daughter of the egg is already big enough to divide again: the egg cleaves into a ball of small cells without growing first, as an embryo does, and the ball then grows as its small cells feed on light. In the test pond one egg of 0.67 was 4 cells holding 1.30 at 30 cycles, 13 cells holding 1.95 at 40, and a single body of 380 cells at 120 cycles. Nothing yet tells it to stop growing.
+
+**A hunter of hunters** (the Leviathan starter): three times the usual size before its mouth doubles it, and skinned, which makes it no kin of ordinary hunters, so it can swallow them.
+
+**Planets.** A 512-unit planet sits between 256 and 1,024. Quick start now allows 8,192 cells.
+
+**Two faults that threw things off the planet** (and made saves unreadable):
+
+- Dragging on a body as a whole had removed the water's damping of movement inside it, so a big body's springs rang until it flew apart. Each cell's movement against its own body is damped again at its own rate.
+- A bond or a bump sized for an ordinary cell threw a small one about. Bonds and contact forces between cells lighter than a newborn of the usual size are now weaker in proportion. No cell moves faster than 30 units a cycle.
+
+**Other faults found by releasing hunters into dense plankton.**
+
+- The feeding current's work was priced twelve times dearer than a motor's. It is now priced the same.
+- A motor kept pushing a cell up a beach until it was nearly dry. Thrust now fades from 70% submerged and is gone at 30%.
+- Loose grains had no weight out of water and were carried at the water's speed even in a film over nearly dry ground. Water now carries a grain only as far as it covers it, and a grain in air falls.
+- A mouth kept trying to swallow spiny prey and was pricked to death. It now lets go: the more fully armed the prey, the less it tries.
+
+**Measured.**
+
+- Plant-eaters take 0.9–1.6% of what producers make, up from 0.2–0.6% at the start of the round. Earth's seas run at about 35%. **The 10% target was not met.**
+- Hunters now breed (three to four generations deep) and hold 8–21 cells on a planet. Released into dense plankton, a hunter eats two to three times what it needs. Grazers and hunters still need restocking on most planets.
+- Decomposers, now small, took hold unaided on two planets in five (111–209 cells feeding on remains).
+- Bodies: 5–39% of cells live in bodies of four or more (6–15% before). The largest body was 14–58 cells; bodies of 30 or more appeared on one planet.
+- A nine-cell body at full drive covers 26.8 units in ten cycles and a twenty-five-cell body 29.0, against 14.6 for one cell.
+- Populations with the default starters: 1,539–3,264 cells.
+- Plankton fills a 4,096-cell planet within 400 cycles. Given room it levels off: with every starter seeded, a planet allowed 8,192 cells held 4,813 at 800 cycles (3,477 plankton) and one allowed 12,000 held 4,880 (3,798 plankton). Quick start therefore allows 8,192, and plankton is part of "Fill the seas with all of them". Those planets run at about 1.5 cycles a second natively on a busy machine, against 4–5 at 1,000–1,500 cells.
+- On those planets Volvox bodies stayed small (largest body 21–22 cells, 41–121 Volvox cells): in a sea with eaters they do not run away as they do alone in the test pond.
+- A sessile colony of mouths starved: prey drift too slowly to reach it, so the Sponge starter was removed.
+- Algae painted on land 2.9 units above the sea did not stay: within 120 cycles all but three of 41 were in water.
+
 ## Not solved
 
-- **Plants pass almost nothing up the chain.** Plant-eaters take in 0.5–1.1% of what producers make, against about a tenth on Earth. Raising the bite rate fivefold did not help: a grazer finds a prey every fifteen to twenty cycles and needs one every five to eight.
-- **Nothing has colonised land.** A skinned, walled, water-pumping plant painted on the driest ground did worse than a plain alga (15 survivors against 46 after 200 cycles), so no land plant ships yet.
+- **Eaters still take about a hundredth of what plants make.** Feeding currents, a faster metabolism with oxygen, sized cells, light-seeking and deeper seas together moved it from 0.2–0.6% to 0.9–1.6%. Catching food now works; what is left is that most producers are walled algae in clumps that only enzyme grazers can eat, and that a planet's cell limit fills with small cells before eaters can multiply.
+- **Something throws a loose grain of remains upward now and then**, far faster than anything in the sea moves. The cause is not found. A grain more than two units clear of the surface is set back down on it, and grains now have weight out of water; before that they drifted off the planet and made a save unreadable.
+- **A body does not know when to stop.** Volvox grows without limit, and its inner cells get no light. Cells that stop dividing when surrounded, and bodies that shed eggs, are not built.
+- **Nothing anchors to land.** A plant on a slope slides or is washed down to the water. Land plants need a holdfast as well as a water store.
+- **No fish.** A long body swimming by a wave of muscle has not been built; it would have to pay its way as an eater first.
+- **A thick body's inner cells breathe as freely as its surface.** Gills and circulation have no job yet.
+- Sulfur and silicon are not simulated. Iron and salt do not yet affect life.
+
 - **Decomposers barely live.** A cell living on remains alone stays at the restocking floor. A decomposer that also soaked up dissolved food cut the planet's population by a third.
 - **No cell fixes nitrogen from the air.** Only lightning does.
 - **Fermentation still gives half the energy of breathing**, not a fifteenth.
@@ -362,7 +458,7 @@ The rule for this round: energy and matter are never made or destroyed, only cha
 ## Checks
 
 ```sh
-cargo test --profile preview --manifest-path engine/Cargo.toml --lib   # 152 tests
+cargo test --profile preview --manifest-path engine/Cargo.toml --lib   # 161 tests
 npm run check:steering   # the shipped WASM, through the same API the UI uses
 npm run check:scheduler && npm run check:nursery-ui && npm run check:brush-ui
 npm run build

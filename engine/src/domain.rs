@@ -37,7 +37,7 @@ impl Domain {
     pub fn valid(self) -> bool {
         [40, 80, 160].contains(&self.grid)
             && (self.span == 0.
-                || (self.grid == 160 && [1024., 8192., 64000.].contains(&self.span)))
+                || (self.grid == 160 && [512., 1024., 8192., 64000.].contains(&self.span)))
     }
     pub fn spherical(self) -> bool {
         self.shape == Shape::Sphere

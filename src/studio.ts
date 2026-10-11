@@ -47,12 +47,14 @@ function carried(b:Bearing|undefined,breath:number|null){
   return `<span class="eyebrow">WHERE IT LIVES</span><p><strong>${where}</strong>${b.depth>=.05?`, in water ${b.depth.toFixed(1)} deep`:''}. ${load}${air}${stand}${dry}${thirst}</p>`;
 }
 /** Its place in the food chain, and what is holding its growth back. */
-function chain(f:{level:string;steps:number;scavenged:number;nitrogenShort:number;bone:number;fat:number}|undefined,nerves:number){
+function chain(f:{level:string;steps:number;scavenged:number;nitrogenShort:number;phosphorusShort?:number;stature?:number;bone:number;fat:number}|undefined,nerves:number){
   if(!f)return '';
   const what:Record<string,string>={Producers:'It builds itself from carbon dioxide, water, nitrogen and light, and gives off oxygen','Plant-eaters':'It is built from the producers it eats','Meat-eaters':'It is built from plant-eaters','Top predators':'It is built from other meat-eaters',Decomposers:'It is built from remains and dissolved matter, and frees the nitrogen in them'};
-  const short=f.nitrogenShort>.3?` <strong>Short of nitrogen</strong>: its growth is running at ${Math.round((1-f.nitrogenShort)*100)}% of what its food allows.`:'';
+  const short=f.nitrogenShort>.3?` <strong>Short of nitrogen</strong>: its growth is running at ${Math.round((1-f.nitrogenShort)*100)}% of what its food allows.`:(f.phosphorusShort??0)>.3?` <strong>Short of phosphorus</strong>: its growth is running at ${Math.round((1-f.phosphorusShort!)*100)}% of what its food allows. Bone would lend it some.`:'';
   const sheath=nerves>0&&f.fat>.08?` Fat sheathes its nerves: signals cross between its cells ${(1+3*f.fat).toFixed(1)} times faster.`:'';
-  return `<p class="body-function-note"><strong>${f.level}</strong> · level ${(f.steps+1).toFixed(1)} of the food chain. ${what[f.level]??''}.${short}${sheath}</p>`;
+  // Cell size: small cells feed and breed fast for their size; big ones swallow the small and cost less to run for their size.
+  const st=f.stature??1,size=st<.6?` Its cells are small, ${st.toFixed(2)} of the usual size: quick to feed and breed.`:st>1.6?` Its cells are large, ${st.toFixed(1)} times the usual size: slower to breed, able to swallow the small.`:'';
+  return `<p class="body-function-note"><strong>${f.level}</strong> · level ${(f.steps+1).toFixed(1)} of the food chain. ${what[f.level]??''}.${short}${sheath}${size}</p>`;
 }
 /** A body's build: bone, joints, muscle, feet and stores, counted from its cells. */
 function bodyPlan(cells:ProgramCell[],joints:number){

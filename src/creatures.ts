@@ -9,12 +9,18 @@ export const SPECIES:[string,string,string,string][]=[
   ['alga','Alga','#4f9e4a','A walled plant. Grows in clumps'],
   ['swimmer','Swimmer','#ff9d3c','Swims toward the light'],
   ['grazer','Grazer','#b77bf0','Digests what it touches'],
-  ['hunter','Hunter','#d6249f','Swallows smaller cells whole'],
+  ['hunter','Hunter','#d6249f','A big cell that draws in and swallows smaller ones'],
   ['thornback','Thornback','#8f9bb8','Spines and skin: hard to eat'],
   ['rower','Rower','#2f6be0','Beats muscle and rows on fins'],
   ['courter','Courter','#f58fc0','Its gametes find a mate and fuse'],
-  ['decomposer','Decomposer','#a9865b','Rots remains and frees their nitrogen'],
+  ['decomposer','Decomposer','#a9865b','Tiny. Rots remains and frees their nitrogen'],
+  ['plankton','Plankton','#9bd66a','Tiny free light-feeder. Breeds fast; food for anything with a mouth'],
+  ['leviathan','Leviathan','#7a2f8f','A very big cell that swallows hunters. Slow to breed'],
+  ['volvox','Volvox','#3fbf8f','An egg that divides, without growing, into a ball of small cells'],
   ['drifter','Drifter','#7fb8a4','The plain first cell']];
+
+/** Starters left out of "fill the seas": the plain first cell, which every other starter is built from. It can still be painted. */
+const SOLO=new Set(['drifter']);
 
 export const creaturesHTML=`<aside id="creatures-panel" class="guide-panel creatures-panel" aria-label="Creatures" hidden>
 <div class="drawer-heading"><span class="eyebrow">CREATURES</span><button data-close-panel class="icon-button" aria-label="Close creatures">×</button></div>
@@ -39,7 +45,7 @@ export class Creatures {
       const [key,name]=SPECIES.find(s=>s[0]===b.dataset.species)!;
       this.paint({token:`species:${key}`,name,species:key});
     };
-    $('seed-all').onclick=()=>{const sustain=$<HTMLInputElement>('sustain-species').checked;for(const [species] of SPECIES)if(species!=='drifter')this.steer({kind:'seed',species,count:24,sustain});};
+    $('seed-all').onclick=()=>{const sustain=$<HTMLInputElement>('sustain-species').checked;for(const [species] of SPECIES)if(!SOLO.has(species))this.steer({kind:'seed',species,count:24,sustain});};
     $('sustain-species').onchange=()=>this.steer({kind:'sustain',on:$<HTMLInputElement>('sustain-species').checked});
   }
   get sustain(){return $<HTMLInputElement>('sustain-species').checked;}

@@ -38,8 +38,11 @@ const tile=(label:string,value:string,note='')=>`<div><span>${label}</span><stro
 function cycleTiles(c:CyclesView|undefined){
   if(!c)return '';
   const carbon=c.carbon.total||1,fixed=c.nitrogen.dissolved+c.nitrogen.living+c.nitrogen.remains||1;
-  return tile('CARBON DIOXIDE',`${pct(c.carbon.dioxide/carbon)} of all carbon`,`${pct(c.carbon.living/carbon)} is alive · ${pct(c.carbon.remains/carbon)} lies in remains`)
-    +tile('NITROGEN',`${pct(c.nitrogen.dissolved/fixed)} free in the water`,`${pct(c.nitrogen.living/fixed)} in the living · ${pct(c.nitrogen.remains/fixed)} locked in remains`);
+  const gas=(c.carbon.air??0)+c.carbon.dioxide,iron=c.iron?c.iron.dissolved+c.iron.rusted:0,salt=c.salt?c.salt.dissolved+c.salt.crust:0;
+  return tile('CARBON DIOXIDE',`${pct(gas/carbon)} of all carbon`,`${pct((c.carbon.air??0)/(gas||1))} of it in the air · ${pct(c.carbon.living/carbon)} of carbon is alive`)
+    +tile('NITROGEN',`${pct(c.nitrogen.dissolved/fixed)} free in the water`,`${pct(c.nitrogen.living/fixed)} in the living · ${pct(c.nitrogen.remains/fixed)} locked in remains`)
+    +(iron?tile('IRON',`${pct(c.iron!.rusted/iron)} rusted`,c.iron!.rusted/iron<.5?'what is still dissolved soaks up free oxygen':'the seas have rusted out; oxygen is free to build'):'')
+    +(salt?tile('SALT',`${pct(c.salt!.dissolved/salt)} in the water`,`${pct(c.salt!.crust/salt)} left as crust on dry ground`):'');
 }
 const amount=(v:number)=>v>=100?Math.round(v).toLocaleString():v>=1?v.toFixed(1):v>=.01?v.toFixed(2):v>0?'<0.01':'0';
 /** Who eats whom, as a pyramid, and the planet's books: every amount counted, none made or lost. */
@@ -50,14 +53,14 @@ export function foodWebHTML(s:Snapshot){
   const pass=(k:number)=>chain[k].intake>1e-6?`<div class="web-pass">↑ ${c.efficiency[k]>=.001?(c.efficiency[k]*100).toFixed(c.efficiency[k]<.1?1:0):'<0.1'}% passed up</div>`:'';
   const rows=[3,2,1,0].map(k=>row(chain[k],k)+(k>0?pass(k-1):'')).join('');
   const e=c.energy,inflow=e.sunlight+e.vents||1,part=(v:number,of:number)=>pct(v/(of||1));
-  const n=c.nitrogen,all=n.air+n.dissolved+n.living+n.remains||1,carbon=c.carbon.total||1;
+  const n=c.nitrogen,all=n.air+n.dissolved+n.living+n.remains+(n.buried??0)||1,carbon=c.carbon.total||1;
   const miss=Math.max(Math.abs(c.carbon.error)/carbon,Math.abs(n.error)/all,Math.abs(e.error)/Math.max(inflow+e.start,1));
   return `<div class="power-head"><span class="eyebrow">WHO EATS WHOM</span><strong>carbon held at each level</strong></div>
 <div class="web-pyramid">${rows}${row(rot,4)}</div>
 <p class="power-note">Producers build themselves from carbon dioxide, water, nitrogen and light, and give off oxygen. Everything above them is built from what it eats. On Earth each level passes up about a tenth of what it takes in; the rest is burned for energy and lost as heat.</p>
 <div class="power-head"><span class="eyebrow">NOTHING MADE, NOTHING LOST</span><strong>${miss<1e-6?'the books balance':`${(miss*100).toFixed(4)}% unaccounted`}</strong></div>
-<dl class="web-books"><dt>Carbon</dt><dd>${part(c.carbon.dioxide,carbon)} carbon dioxide · ${part(c.carbon.living,carbon)} alive · ${part(c.carbon.remains,carbon)} remains · ${part(c.carbon.dissolved,carbon)} dissolved food</dd>
-<dt>Nitrogen</dt><dd>${part(n.air,all)} in the air · ${part(n.dissolved,all)} in the water · ${part(n.living,all)} alive · ${part(n.remains,all)} remains</dd>
+<dl class="web-books"><dt>Carbon</dt><dd>${part(c.carbon.air??0,carbon)} carbon dioxide in the air · ${part(c.carbon.dioxide,carbon)} in the water · ${part(c.carbon.living,carbon)} alive · ${part(c.carbon.remains,carbon)} remains · ${part(c.carbon.buried??0,carbon)} buried · ${part(c.carbon.dissolved,carbon)} dissolved food</dd>
+<dt>Nitrogen</dt><dd>${part(n.air,all)} in the air · ${part(n.dissolved,all)} in the water · ${part(n.living,all)} alive · ${part(n.remains+(n.buried??0),all)} in remains, lying or buried</dd>
 <dt>Oxygen</dt><dd>${part(c.oxygen.free,c.oxygen.free+c.oxygen.bound)} free · the rest bound in water and carbon dioxide</dd>
 <dt>Energy</dt><dd>${amount(e.start)} held at the start + ${amount(inflow)} in from the star and vents = ${amount(e.heat)} given off as heat + ${amount(e.work)} spent moving + ${amount(e.stored)} still held in food and life</dd></dl>`;
 }

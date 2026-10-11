@@ -2,6 +2,8 @@
 import {CELL_TYPES,cellType} from './sim/roles';
 import type {Snapshot} from './sim/types';
 const $=<T extends HTMLElement=HTMLElement>(id:string)=>document.getElementById(id) as T;
+// A creature's name comes from whoever made its file, so it is never trusted as markup.
+const esc=(s:string)=>s.replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]!));
 export const feedHTML=`<div id="feed" class="feed" hidden><span class="eyebrow">HAPPENING NOW</span><ol id="feed-list"></ol></div>`;
 interface Item {key:string;time:number;text:string;body:number;kind:'meal'|'mating'}
 const VERBS:Record<string,string>={engulfed:'swallowed','living biomass':'is digesting','matrix / fibers':'is eating into'};
@@ -35,6 +37,6 @@ export class Feed {
     const signature=this.items.map(i=>`${i.key}${i.body}`).join('|');
     host.hidden=!this.items.length;
     if(signature===this.signature)return;this.signature=signature;
-    $('feed-list').innerHTML=this.items.map(i=>`<li class="${i.kind}"${i.body?` data-body="${i.body}" role="button" tabindex="0" title="Go to it"`:''}><i aria-hidden="true"></i><span>${i.text}</span></li>`).join('');
+    $('feed-list').innerHTML=this.items.map(i=>`<li class="${i.kind}"${i.body?` data-body="${Number(i.body)}" role="button" tabindex="0" title="Go to it"`:''}><i aria-hidden="true"></i><span>${esc(i.text)}</span></li>`).join('');
   }
 }

@@ -415,6 +415,7 @@ impl Core {
         let mut arrivals = s.cells;
         for m in arrivals.iter_mut().filter_map(|c| c.material.as_mut()) {
             m.nitrogen = m.nitrogen.max(m.bound_nitrogen() * 0.5);
+            m.phosphorus = m.phosphorus.max(m.bound_phosphorus() * 0.5);
         }
         next.cells.extend(arrivals);
         next.bonds.extend(s.bonds);

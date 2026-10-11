@@ -5,10 +5,10 @@ use body::{Cell as RenderCell, Link, V3};
 pub const MAX_CELLS: usize = 64000;
 pub const MAX_FOUNDERS: usize = 8192;
 pub const MAX_GENES: usize = 48;
-pub const ACTIONS: usize = 44;
+pub const ACTIONS: usize = 45;
 pub const INPUTS: usize = 32;
 /// Vocabulary sizes of earlier engine versions, padded with zeros on load.
-const OLD_ACTIONS: [usize; 7] = [10, 16, 21, 32, 38, 42, 43];
+const OLD_ACTIONS: [usize; 8] = [10, 16, 21, 32, 38, 42, 43, 44];
 const OLD_INPUTS: [usize; 4] = [8, 16, 20, 28];
 /// The last promoter inputs are signed left-minus-right senses.
 pub const LATERAL: usize = 4;
@@ -99,6 +99,7 @@ pub const ACTION_NAMES: [&str; ACTIONS] = [
     "Cell wall",
     "Fins",
     "Sideways division",
+    "Cell size",
 ];
 /// A cell is a stem cell (fate 0) or committed to one of three fates.
 pub const FATES: u8 = 4;
@@ -1142,6 +1143,8 @@ impl Evolution {
                     "steps": mean(&|c| c.state.trophic),
                     "scavenged": mean(&|c| c.state.scavenged),
                     "nitrogenShort": mean(&|c| c.state.nitrogen_short),
+                    "phosphorusShort": mean(&|c| c.state.phosphorus_short),
+                    "stature": mean(&|c| c.stature() as f32),
                     "bone": mean(&|c| c.material.as_ref().map_or(0., |m| m.bone() as f32)),
                     "fat": mean(&|c| c.material.as_ref().map_or(0., |m| m.sheath() as f32)),
                 });

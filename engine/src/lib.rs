@@ -140,7 +140,7 @@ impl Config {
         if !["local", "global"].contains(&self.founder_spread.as_str()) {
             return Err("Invalid founder distribution".into());
         }
-        if ![64, 128, 256, 1024, 8192, 64000].contains(&self.world_size) {
+        if ![64, 128, 256, 512, 1024, 8192, 64000].contains(&self.world_size) {
             return Err("Unsupported habitat span".into());
         }
         if self.world_size > 256 && self.world_shape != domain::Shape::Sphere {

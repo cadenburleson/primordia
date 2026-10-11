@@ -291,7 +291,9 @@ fn light_feeders_free_oxygen_the_air_carries_it_and_breathing_doubles_what_fuel_
             h.tick(&mut e, &mut core);
         }
         assert!(balanced(&h, &e), "{:?}", h.errors(&e.cells));
-        (e.food_energy, e.cells[0].state.breath)
+        // Energy captured for each unit of fuel burned.
+        let burned: f64 = e.cells.iter().map(|c| c.state.flux.waste).sum();
+        (e.food_energy / burned, e.cells[0].state.breath)
     };
     let ((breathing, full), (fermenting, none)) = (gained(1.), gained(0.));
     eprintln!("energy from the same fuel: {breathing} breathing, {fermenting} without oxygen");
@@ -1626,4 +1628,380 @@ fn fat_sheathed_nerves_carry_a_signal_further_along_a_body() {
     let (lean, fat) = (reach(0.), reach(0.3));
     eprintln!("signal reaching the fourth cell: lean {lean}, fat-sheathed {fat}");
     assert!(fat > lean * 1.5 && fat > 0.05, "{lean} against {fat}");
+}
+
+#[test]
+fn matter_is_counted_in_carbon_and_fat_holds_more_energy_at_less_weight() {
+    use crate::physical::{CO2, FAT_ENERGY, FAT_WEIGHT};
+    // A fed cell lays fat down. The carbon it does not keep leaves as carbon
+    // dioxide, and no energy is made or lost in the exchange.
+    let (_, mut e, mut h) = fixture();
+    build(&mut e, 0, crate::physiology::LIPID);
+    e.cells[0].material.as_mut().unwrap().fuel = 0.4;
+    rebase(&mut h, &e);
+    let (fuel, dioxide) = (0.4, h.solutes.iter().map(|s| s[CO2]).sum::<f64>());
+    for _ in 0..40 {
+        h.reserves_and_repair(&mut e.cells[0]);
+    }
+    let m = e.cells[0].material.as_ref().unwrap();
+    let (fat, spent) = (m.lipid, fuel - m.fuel);
+    let given_off = h.solutes.iter().map(|s| s[CO2]).sum::<f64>() - dioxide;
+    eprintln!("{spent} of sugar became {fat} of fat and {given_off} of carbon dioxide");
+    assert!(fat > 0.01 && (fat * FAT_ENERGY - spent).abs() < 1e-9, "the same energy in fewer carbons");
+    assert!((fat + given_off - spent).abs() < 1e-9, "every carbon accounted for");
+    assert!(balanced(&h, &e), "{:?}", h.errors(&e.cells));
+
+    // The same carbon as fat weighs under half what it does as tissue, and a
+    // starving cell gets the extra energy back when it burns it.
+    let lean = e.cells[1].material.as_ref().unwrap().mass();
+    e.cells[1].material.as_mut().unwrap().lipid = 0.1;
+    let gained = e.cells[1].material.as_ref().unwrap().mass() - lean;
+    assert!((gained - 0.1 * FAT_WEIGHT).abs() < 1e-12, "fat weighs {gained} for 0.1 of carbon");
+    build(&mut e, 1, crate::physiology::LIPID);
+    e.cells[1].energy = 1.;
+    rebase(&mut h, &e);
+    let before = e.cells[1].energy;
+    for _ in 0..8 {
+        h.reserves_and_repair(&mut e.cells[1]);
+    }
+    let m = e.cells[1].material.as_ref().unwrap();
+    assert!(m.lipid < 0.1 && e.cells[1].energy > before, "burning fat pays at once");
+    assert!(balanced(&h, &e), "{:?}", h.errors(&e.cells));
+}
+
+#[test]
+fn a_wall_is_built_of_carbon_alone_and_needs_no_nitrogen() {
+    use crate::physical::NITROGEN;
+    // Two cells with fuel and no nitrogen anywhere: one told to build a wall,
+    // the other to build a motor.
+    let (mut core, mut e, mut h) = fixture();
+    e.cells[1].p = V3::new(0., 5., 9.);
+    for s in &mut h.solutes {
+        s[NITROGEN] = 0.;
+    }
+    for (c, action) in e.cells.iter_mut().zip([WALL, PROPEL]) {
+        c.genome.genes = vec![always(action)];
+        let m = c.material.as_mut().unwrap();
+        m.fuel = 0.3;
+        m.nitrogen = 0.;
+        m.proteins = [0.; crate::autonomous::ACTIONS];
+    }
+    rebase(&mut h, &e);
+    for _ in 0..40 {
+        h.tick(&mut e, &mut core);
+    }
+    let (wall, motor) = (
+        e.cells[0].material.as_ref().unwrap(),
+        e.cells[1].material.as_ref().unwrap(),
+    );
+    eprintln!("with no nitrogen: wall built {}, motor built {}", wall.proteins[WALL], motor.proteins[PROPEL]);
+    assert!(wall.proteins[WALL] > 0.01, "a wall needs no nitrogen");
+    assert!(motor.proteins[PROPEL] < 1e-9, "a motor is protein and cannot be built without it");
+    assert!(wall.bound_nitrogen() < crate::physical::N_RATIO * wall.biomass + 1e-12, "a wall holds none");
+    assert!(balanced(&h, &e), "{:?}", h.errors(&e.cells));
+}
+
+#[test]
+fn a_feeding_current_draws_free_small_cells_to_a_body_of_mouths_and_spares_the_bonded() {
+    // A row of four mouths, and one small free cell a little way off.
+    let drawn = |mouths: bool, held: bool| {
+        let genes = if mouths { vec![always(ENGULF)] } else { vec![always(0)] };
+        let materials: &[usize] = if mouths { &[ENGULF] } else { &[] };
+        let (mut core, mut e, mut h) = row(5, genes, materials);
+        for c in &mut e.cells[..4] {
+            for k in [0, 1] {
+                c.material.as_mut().unwrap().proteins[k] = 0.; // an animal harvests no light
+            }
+        }
+        // The fifth cell is prey: a stranger, small, a body length from the row.
+        e.bonds.truncate(3);
+        let prey = &mut e.cells[4];
+        prey.genome.id = 300;
+        prey.genome.genes = vec![always(0), always(7), always(1)];
+        prey.material.as_mut().unwrap().proteins[2] = 0.;
+        prey.material.as_mut().unwrap().proteins[ENGULF] = 0.;
+        prey.material.as_mut().unwrap().biomass = 0.12;
+        prey.p = V3::new(3. * 0.44 + 1.1, 12., 0.);
+        if held {
+            // The same cell, held in a body of its own kind.
+            let id = e.cells[4].id;
+            let mut partner = e.cells[4].clone();
+            partner.id = id + 100;
+            partner.p = V3::new(3. * 0.44 + 1.5, 12., 0.);
+            e.cells.push(partner);
+            e.bonds.push(Bond { a: id, b: id + 100, rest: 0.4, integrity: 1., activation: 0., stiffness: 0. });
+        }
+        rebase(&mut h, &e);
+        let start = e.cells[4].p.sub(e.cells[3].p).len();
+        let mut nearest = start;
+        for _ in 0..24 {
+            h.tick(&mut e, &mut core);
+            if e.cells.len() < 5 {
+                break;
+            }
+            nearest = nearest.min(e.cells[4].p.sub(e.cells[3].p).len());
+        }
+        let eaten: f64 = e.cells[..4].iter().map(|c| c.state.flux.prey).sum();
+        (start - nearest, eaten)
+    };
+    let (pulled, eaten) = drawn(true, false);
+    let (drifted, none) = drawn(false, false);
+    let (spared, _) = drawn(true, true);
+    eprintln!("free cell came {pulled} closer to mouths (ate {eaten}), {drifted} closer to a body with none, {spared} when held in a body");
+    assert!(pulled > 0.4 && eaten > 0.02, "the current brought it in and it was eaten: {pulled}, {eaten}");
+    assert!(drifted < 0.2 && none == 0., "no mouths, no current: {drifted}");
+    assert!(spared < pulled * 0.4, "a cell held in a body is not drawn: {spared}");
+}
+
+#[test]
+fn a_bigger_compact_body_swims_faster_and_its_inner_cells_cost_less_to_run() {
+    // A square sheet of `n` by `n` motor cells, all heading the same way.
+    let swum = |n: usize| {
+        let (mut core, mut e, mut h) = row(n * n, vec![always(PROPEL)], &[PROPEL]);
+        e.bonds.clear();
+        let id: Vec<u32> = e.cells.iter().map(|c| c.id).collect();
+        for k in 0..n * n {
+            let (x, z) = (k % n, k / n);
+            e.cells[k].p = V3::new(x as f32 * 0.44, 12., z as f32 * 0.44);
+            for (other, near) in [(k + 1, x + 1 < n), (k + n, z + 1 < n)] {
+                if near {
+                    e.bonds.push(Bond { a: id[k].min(id[other]), b: id[k].max(id[other]), rest: 0.44, integrity: 1., activation: 0., stiffness: 0. });
+                }
+            }
+        }
+        rebase(&mut h, &e);
+        let centre = |e: &Evolution| e.cells.iter().fold(V3::default(), |s, c| s.add(c.p)).mul(1. / e.cells.len() as f32);
+        let start = centre(&e);
+        for _ in 0..40 {
+            for c in &mut e.cells {
+                c.energy = 8.; // this is about speed, not endurance
+            }
+            h.tick(&mut e, &mut core);
+        }
+        (centre(&e).sub(start).x, e.cells.len())
+    };
+    let ((one, _), (nine, _), (many, kept)) = (swum(1), swum(3), swum(5));
+    eprintln!("ten cycles of swimming: one cell {one}, a body of nine {nine}, a body of twenty-five {many}");
+    assert_eq!(kept, 25, "the body held together");
+    assert!(nine > one * 1.3 && many > nine, "a bigger body is faster: {one}, {nine}, {many}");
+
+    // The same cell alone and wrapped in six neighbours: what it pays to stay alive.
+    let upkeep = |bonds: usize| {
+        let (mut core, mut e, mut h) = row(7, vec![always(7)], &[]);
+        e.bonds.truncate(0);
+        let id: Vec<u32> = e.cells.iter().map(|c| c.id).collect();
+        for k in 1..=bonds {
+            e.bonds.push(Bond { a: id[0].min(id[k]), b: id[0].max(id[k]), rest: 0.44, integrity: 1., activation: 0., stiffness: 0. });
+        }
+        for c in &mut e.cells {
+            c.material.as_mut().unwrap().fuel = 0.;
+            c.material.as_mut().unwrap().proteins = [0.; crate::autonomous::ACTIONS];
+            c.energy = 8.;
+        }
+        rebase(&mut h, &e);
+        h.physiology(&mut e, &core);
+        let before = e.cells[0].energy;
+        h.physiology(&mut e, &core);
+        let _ = &mut core;
+        before - e.cells[0].energy
+    };
+    let (alone, enclosed) = (upkeep(0), upkeep(6));
+    eprintln!("upkeep a tick: alone {alone}, enclosed {enclosed}");
+    assert!(enclosed < alone * 0.6 && enclosed > alone * 0.4, "{alone} against {enclosed}");
+}
+
+#[test]
+fn the_planets_own_chemistry_moves_matter_between_air_water_and_ground_and_makes_none() {
+    use crate::physical::{CO2, IRON, REMAINS_N, SALT};
+    let sum = |h: &Habitat, k: usize| h.solutes.iter().map(|s| s[k]).sum::<f64>();
+    // Carbon dioxide: a sea with none takes it from the air until they balance.
+    let (_, e, mut h) = fixture();
+    for s in &mut h.solutes {
+        s[CO2] = 0.;
+    }
+    rebase(&mut h, &e);
+    let air = h.air_carbon;
+    for _ in 0..400 {
+        h.planet_chemistry(0.25);
+    }
+    let dissolved = sum(&h, CO2);
+    eprintln!("air held {air}; after a hundred cycles the air holds {} and the water {dissolved}", h.air_carbon);
+    assert!(dissolved > air * 0.3 && h.air_carbon < air * 0.7, "the sea took carbon dioxide from the air");
+    assert!((h.air_carbon + dissolved - air).abs() < 1e-9, "and none was made");
+
+    // Remains are silted over; the planet's heat burns buried carbon back
+    // out with free oxygen. Carbon, nitrogen and energy all still balance.
+    let (_, e, mut h) = fixture();
+    for s in &mut h.solutes {
+        s[5] = 1.;
+        s[REMAINS_N] = 0.1;
+    }
+    rebase(&mut h, &e);
+    let lying = sum(&h, 5);
+    for _ in 0..400 {
+        h.planet_chemistry(0.25);
+    }
+    eprintln!("of {lying} remains, {} still lie and {} are buried", sum(&h, 5), h.buried_carbon);
+    assert!(sum(&h, 5) < lying * 0.8 && h.buried_carbon > lying * 0.15 && h.buried_nitrogen > 0.);
+    assert!(balanced(&h, &e), "{:?}", h.errors(&e.cells));
+    // With nothing left lying to bury, more comes out than goes in.
+    for s in &mut h.solutes {
+        s[5] = 0.;
+        s[REMAINS_N] = 0.;
+    }
+    rebase(&mut h, &e);
+    let (buried, oxygen) = (h.buried_carbon, h.oxygen());
+    h.steering.vents = 8.;
+    for _ in 0..400 {
+        h.planet_chemistry(0.25);
+    }
+    assert!(h.buried_carbon < buried && h.oxygen() < oxygen, "outgassing burns buried carbon with free oxygen");
+    assert!(balanced(&h, &e) && h.systems.gas_error(&e.cells).abs() < 1e-7, "{:?}", h.errors(&e.cells));
+
+    // Iron stays dissolved in a sea without oxygen and rusts out of one with it.
+    let rusted = |air: f64| {
+        let (_, e, mut h) = fixture();
+        h.oxygenate(air);
+        let (iron, oxygen) = (sum(&h, IRON), h.oxygen());
+        for _ in 0..400 {
+            h.planet_chemistry(0.25);
+        }
+        assert!((sum(&h, IRON) + h.rusted_iron - iron).abs() < 1e-9, "iron is neither made nor lost");
+        assert!(h.systems.gas_error(&e.cells).abs() < 1e-7);
+        (h.rusted_iron / iron, oxygen - h.oxygen())
+    };
+    let ((none, _), (most, taken)) = (rusted(0.), rusted(1.));
+    eprintln!("iron rusted: {none} without oxygen, {most} with it, taking {taken} of the free oxygen");
+    assert!(none == 0. && most > 0.9 && taken > 0.);
+    assert!(sum(&h, SALT) > 0., "every world has salt");
+}
+
+#[test]
+fn phosphorus_comes_from_rock_is_lent_by_bone_and_passes_on_in_food() {
+    use crate::physical::P_RATIO;
+    // A fed cell with nitrogen to spare, in a sea with dissolved mineral or
+    // with none, and with or without bone of its own.
+    let grown = |sea: f64, bone: f64| {
+        let (mut core, mut e, mut h) = fixture();
+        e.cells[1].p = V3::new(0., 5., 9.);
+        for s in &mut h.solutes {
+            s[2] = sea;
+        }
+        for c in &mut e.cells {
+            c.genome.genes = vec![always(7)];
+            let m = c.material.as_mut().unwrap();
+            m.fuel = 0.3;
+            m.nitrogen = 0.1;
+            m.phosphorus = 0.;
+            m.mineral = bone;
+        }
+        rebase(&mut h, &e);
+        let before = biomass(&e, 0);
+        for _ in 0..80 {
+            h.tick(&mut e, &mut core);
+        }
+        assert!(balanced(&h, &e), "{:?}", h.errors(&e.cells));
+        (biomass(&e, 0) - before, e.cells[0].state.phosphorus_short)
+    };
+    let ((fed, _), (starved, short), (lent, _)) = (grown(0.2, 0.), grown(0., 0.), grown(0., 0.02));
+    eprintln!("growth with dissolved mineral {fed}, with none {starved}, with none but bone {lent}");
+    assert!(fed > 0.05 && starved < fed * 0.2 && short > 0.5, "{fed}, {starved}, {short}");
+    assert!(lent > starved * 3. && lent > 0.02, "bone lends its phosphorus: {lent}");
+
+    // An eater gets the phosphorus of what it digests.
+    let (mut core, mut e, mut h) = fixture();
+    for k in [0, 1] {
+        e.cells[0].material.as_mut().unwrap().proteins[k] = 0.;
+    }
+    e.cells[0].material.as_mut().unwrap().phosphorus = 0.;
+    build(&mut e, 0, 9);
+    e.cells[0].genome.genes = vec![always(9)];
+    e.cells[1].genome.id = 300;
+    rebase(&mut h, &e);
+    for _ in 0..40 {
+        for (i, c) in e.cells.iter_mut().enumerate() {
+            c.p = V3::new(i as f32 * 0.4, 5., 0.);
+            c.v = V3::default();
+            c.state.injury = 0.;
+        }
+        h.tick(&mut e, &mut core);
+    }
+    let eater = e.cells[0].material.as_ref().unwrap();
+    assert!(e.cells[0].state.flux.prey > 0.01 && eater.phosphorus > 0., "{}", eater.phosphorus);
+    assert!(P_RATIO > 0. && balanced(&h, &e), "{:?}", h.errors(&e.cells));
+}
+
+#[test]
+fn a_cells_size_is_inherited_and_sets_how_it_feeds_breeds_and_what_it_costs() {
+    use crate::physical::SIZE;
+    // One light-feeding cell of each size, alone in the same lit sea.
+    let lived = |drive: f32| {
+        let (mut core, mut e, mut h) = fixture();
+        e.cells.truncate(1);
+        for s in &mut h.solutes {
+            s[0] = 0.;
+            s[1] = 1.;
+        }
+        let stature = 4f64.powf(2. * drive as f64 - 1.);
+        h.steering.light = 6.; // a bright star, as new planets have
+        h.steering.mutation_scale = 0.; // this is about one size, not about size evolving
+        let c = &mut e.cells[0];
+        c.genome.genes = vec![always(0), always(7), Gene { action: SIZE, promoter: [0.; INPUTS], bias: 1., strength: drive, fates: 15 }];
+        c.cooldown = 0.;
+        let m = c.material.as_mut().unwrap();
+        m.biomass *= stature;
+        m.nitrogen = 1.;
+        m.phosphorus = 1.;
+        m.fuel = 0.;
+        for p in &mut m.proteins {
+            *p *= stature;
+        }
+        m.proteins[0] = 0.02 * stature;
+        c.energy = 4. * stature as f32;
+        rebase(&mut h, &e);
+        let start = e.cells[0].material.as_ref().unwrap().biomass;
+        let (mut harvest, mut divided) = (0., None);
+        for k in 0..400 {
+            for c in &mut e.cells {
+                c.state.thirst = 0.;
+            }
+            h.tick(&mut e, &mut core);
+            if k == 7 {
+                harvest = e.cells[0].state.flux.photosynthesis / 2.;
+            }
+            if divided.is_none() && e.cells.len() > 1 {
+                divided = Some((k + 1) as f32 / 4.);
+            }
+        }
+        assert!(balanced(&h, &e), "{:?}", h.errors(&e.cells));
+        let size = e.cells.iter().map(|c| c.material.as_ref().unwrap().biomass).fold(0., f64::max);
+        (start, harvest, divided.unwrap_or(f32::INFINITY), size, e.cells[0].state.stature)
+    };
+    let (small, usual, big) = (lived(0.1), lived(0.5), lived(0.9));
+    for (name, r) in [("small", small), ("usual", usual), ("big", big)] {
+        eprintln!("{name}: starts at {:.3}, harvests {:.4} a cycle ({:.3} per unit of itself), first divides after {} cycles, grows to {:.3}", r.0, r.1, r.1 / r.0, r.2, r.3);
+    }
+    assert!((usual.4 - 1.).abs() < 1e-6 && small.4 < 0.4 && big.4 > 2.5, "size follows the gene");
+    assert!(big.1 > usual.1 && usual.1 > small.1, "a bigger cell harvests more");
+    assert!(small.1 / small.0 > usual.1 / usual.0 && usual.1 / usual.0 > big.1 / big.0, "but less for its size");
+    assert!(small.2 < usual.2 && usual.2 < big.2, "and a smaller cell breeds sooner: {} {} {}", small.2, usual.2, big.2);
+    assert!(small.3 < usual.3 * 0.5 && big.3 > usual.3 * 2., "cells stay the size their genes set");
+}
+
+#[test]
+fn a_mid_sized_planet_runs_and_reloads() {
+    let mut c = Core::new(Config {
+        initial_cells: 24,
+        world_size: 512,
+        world_shape: crate::domain::Shape::Sphere,
+        ..Config::default()
+    })
+    .unwrap();
+    c.start_physical();
+    c.step(40);
+    let e = c.autonomous.as_ref().unwrap();
+    let h = e.physical.as_ref().unwrap();
+    assert_eq!((h.domain.size(), h.domain.grid), (512., 160));
+    assert!(e.valid(), "{:?}", h.errors(&e.cells));
+    assert!(Core::load(&serde_json::to_string(&c).unwrap()).is_ok());
 }

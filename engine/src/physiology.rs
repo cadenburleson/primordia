@@ -64,6 +64,8 @@ pub struct CellState {
     pub scavenged: f32,
     /// How far short of nitrogen its growth is running, 0 to 1.
     pub nitrogen_short: f32,
+    /// How far short of phosphorus, once it has the nitrogen.
+    pub phosphorus_short: f32,
     /// On land: the body's weight beside what its footing can carry. Past 1
     /// the cells it stands on are being crushed.
     pub load: f32,
@@ -73,6 +75,9 @@ pub struct CellState {
     pub thirst: f32,
     /// Share of the cell under water, 0 to 1.
     pub under: f32,
+    /// How large this cell grows before it divides, beside the usual size.
+    /// Zero in cells from before size was inherited: read it with `Cell::stature`.
+    pub stature: f32,
 }
 impl CellState {
     pub fn valid(&self) -> bool {
@@ -182,7 +187,7 @@ impl Cell {
         [
             food,
             (s[2] / (0.1 + s[2])) as f32,
-            (self.energy / 10.).min(1.),
+            (self.energy / (10. * self.stature() as f32)).min(1.),
             (degree as f32 / 6.).min(1.),
             self.chemicals[0],
             self.chemicals[1],
@@ -278,10 +283,11 @@ impl Habitat {
     pub(crate) fn reserves_and_repair(&mut self, c: &mut Cell) {
         let enzyme = c.activity(LIPID) as f64;
         let repair = c.activity(REPAIR) as f64;
+        let stature = c.stature();
         let m = c.material.as_mut().unwrap();
         // Fat is laid down whenever a cell is comfortably fed, not only when
         // it is glutted, and it is kept until the cell is truly short.
-        let amount = if c.energy > 5. {
+        let amount = if c.energy as f64 > 5. * stature {
             (DT as f64 * 0.025 * enzyme)
                 .min((m.fuel - m.biomass * 0.25).max(0.))
                 .min((m.biomass * 1.5 - m.lipid).max(0.))
@@ -289,23 +295,36 @@ impl Habitat {
         } else {
             0.
         };
+        // Sugar is turned into fat by stripping its oxygen off as carbon
+        // dioxide, so fewer carbons hold the same energy.
+        let fat = amount / crate::physical::FAT_ENERGY;
+        let site = self.domain.locate(c.p);
         m.fuel -= amount;
-        m.lipid += amount;
-        self.physiology.lipid_stored += amount;
+        m.lipid += fat;
+        self.solutes[site][crate::physical::CO2] += amount - fat;
+        self.physiology.lipid_stored += fat;
         self.spend(c, amount * 0.2, false);
         let m = c.material.as_mut().unwrap();
-        if c.energy < 2.5 {
+        if (c.energy as f64) < 2.5 * stature {
+            // Burning fat hands its carbon to the cell's fuel and its extra
+            // energy to the cell at once. What will not fit is lost as heat.
             let used = (DT as f64 * 0.035 * enzyme).min(m.lipid);
             m.lipid -= used;
             m.fuel += used;
             self.physiology.lipid_used += used;
+            let extra = used * (crate::physical::FAT_ENERGY - 1.) * crate::physical::Q;
+            let before = c.energy as f64;
+            c.energy = (before + extra).min(9. * stature) as f32;
+            self.heat += extra - (c.energy as f64 - before);
         }
         let repaired = (DT as f64 * 0.008 * repair * c.state.injury as f64)
             .min(m.fuel)
             .min(c.energy as f64 / 0.6)
-            .min(m.nitrogen / crate::physical::N_RATIO);
+            .min(m.nitrogen / crate::physical::N_RATIO)
+            .min(m.phosphorus / crate::physical::P_RATIO);
         m.fuel -= repaired;
         m.nitrogen = (m.nitrogen - repaired * crate::physical::N_RATIO).max(0.);
+        m.phosphorus = (m.phosphorus - repaired * crate::physical::P_RATIO).max(0.);
         m.biomass += repaired;
         c.state.injury = (c.state.injury - repaired as f32 / (m.biomass as f32).max(0.02)).max(0.);
         self.physiology.repairs += repaired;

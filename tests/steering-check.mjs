@@ -20,9 +20,9 @@ const a=steering(plain),b=steering(steered);
 assert.equal(b.goal,'movement');assert.ok(b.rounds>=5,'breeding rounds ran');assert.equal(a.rounds,0);
 assert.equal(b.light,6);assert.equal(b.mutationFactor,3);assert.equal(b.storm,0,'the storm has passed');
 for(const view of [a,b]){assert.ok(view.ladder.every(r=>r.stage>=0&&r.stage<=3&&r.progress>=0&&r.progress<=1));assert.equal(view.ladder[0].stage,3);assert.equal(view.losses.length,3);}
-// The gene vocabulary the UI lists: 44 abilities, 32 promoter inputs.
+// The gene vocabulary the UI lists: 45 abilities, 32 promoter inputs.
 const meta=JSON.parse(steered.metadata(JSON.parse(steered.metadata(0)).lineages[0].representative));
-assert.equal(meta.autonomous.actions.length,44);assert.ok(meta.selected.programCells.every(c=>c.expression.length===44&&c.genes.every(g=>g.promoter.length===32)));
+assert.equal(meta.autonomous.actions.length,45);assert.ok(meta.selected.programCells.every(c=>c.expression.length===45&&c.genes.every(g=>g.promoter.length===32)));
 // Favour, disasters, and exact continuation from a save.
 const body=JSON.parse(steered.metadata(0)).lineages[0].representative;
 send(steered,{kind:'favour',body,pressure:.03});assert.ok(steering(steered).favoured>0);
@@ -45,7 +45,7 @@ send(steered,{kind:'unfavour'});assert.equal(steering(steered).favoured,0);
   send(w,{kind:'nitrogen',change:-.5});const b2=books();assert.ok(Math.abs(b2.nitrogen.dissolved-b1.nitrogen.dissolved*.5)<1e-6*b1.nitrogen.dissolved&&Math.abs(sum(b2.nitrogen)-sum(b0.nitrogen))<1e-6*sum(b0.nitrogen));
   assert.throws(()=>send(w,{kind:'nitrogen',change:0}));assert.throws(()=>send(w,{kind:'nitrogen',change:2}));
   const sea=()=>JSON.parse(w.metadata(0)).autonomous.planet.water;
-  const dry=sea();send(w,{kind:'water',change:.3});const flooded=sea();assert.ok(flooded>dry*1.2);send(w,{kind:'water',change:-.5});assert.ok(Math.abs(sea()-flooded*.5)<1e-6*flooded);
+  const dry=sea();send(w,{kind:'water',change:.3});const flooded=sea();assert.ok(flooded>dry*1.05);send(w,{kind:'water',change:-.5});assert.ok(Math.abs(sea()-flooded*.5)<1e-6*flooded);
   assert.throws(()=>send(w,{kind:'water',change:5}));
   const hunter=w.species_specimen('hunter');assert.equal(JSON.parse(w.inspect_specimen(hunter)).name,'Hunter');
   assert.throws(()=>w.species_specimen('dragon'));

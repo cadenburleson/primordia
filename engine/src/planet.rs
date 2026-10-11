@@ -54,7 +54,7 @@ mod tests {
         p.storm = 6.;
         p.storm_center = [0., 0.];
         let mut solutes = vec![[0.; crate::physical::SOLUTES]; GRID * GRID];
-        solutes[20 * GRID + 20] = [1., 0.5, 0.2, 0.1, 0.1, 0.3, 0.2, 0.1];
+        solutes[20 * GRID + 20] = [1., 0.5, 0.2, 0.1, 0.1, 0.3, 0.2, 0.1, 0.05, 0.4];
         let initial: [f64; crate::physical::SOLUTES] = std::array::from_fn(|k| solutes.iter().map(|s| s[k]).sum());
         // Disable only the volcanic random hazard by keeping this short and
         // tracking its explicit mineral input, should an eruption still occur.
@@ -138,6 +138,8 @@ mod tests {
 /// surface lies below this, as on Earth. Life is made of water and cannot
 /// live out of it without skin, support and a way to carry water.
 const SEA_LEVEL: f64 = 0.95;
+/// How many times deeper a new planet's sea bed lies than its bare ground would put it.
+const BASIN: f64 = 3.;
 const AIR_CAPACITY: f64 = 0.2;
 /// Share of the air's excess water that falls each cycle.
 const RAIN_OUT: f64 = 0.07;
@@ -185,8 +187,12 @@ impl Planet {
         }
         for i in 0..self.domain.sites() {
             let (x, z) = self.domain.point(i);
-            self.water[i] =
-                (SEA_LEVEL - self.domain.ground(x, z, seed) as f64).max(0.002) * self.domain.area(i);
+            // Ocean basins are cut deep: three times as far below the sea as
+            // the bare ground lies, so that a body many cells across has
+            // water to swim in and is not aground wherever it goes.
+            let below = (SEA_LEVEL - self.domain.ground(x, z, seed) as f64).max(0.);
+            self.relief[i] = (-(BASIN - 1.) * below).max(-8.) as f32;
+            self.water[i] = (below - self.relief[i] as f64).max(0.002) * self.domain.area(i);
         }
         self.atmosphere = (0..self.domain.sites())
             .map(|i| self.domain.area(i) * 0.2)
@@ -343,7 +349,7 @@ impl Planet {
         );
         (self.sunlight * (1. - 0.8 * self.cloud_cover) * n.dot(sun).max(0.)) as f64
     }
-    fn temperature_at(&self, site: usize) -> f32 {
+    pub(crate) fn temperature_at(&self, site: usize) -> f32 {
         if !self.domain.spherical() {
             return self.temperature;
         }

@@ -10,6 +10,7 @@ export const worldToolsHTML=`
   <div class="panel-intro"><span class="eyebrow">PLANET</span><h1 id="active-world-title">Your planet</h1></div>
   <section id="planet-stats" class="planet-stats" aria-label="The planet now"></section>
   <details class="planet-web"><summary>Food web and the planet’s books</summary><section id="planet-web" aria-label="Who eats whom"></section></details>
+  <button id="open-elements" class="observe-button">Periodic table <span>↗</span></button>
   <p id="world-tools-unavailable" class="setup-note" hidden>Return to the main cellular world to use these tools.</p>
   <fieldset id="world-tool-controls" class="world-tool-controls" disabled>
     <nav class="shape-tabs" aria-label="Planet tools"><button data-shape="climate" class="active" aria-pressed="true">Sky &amp; sea</button><button data-shape="surface" aria-pressed="false">Terrain</button><button data-shape="events" aria-pressed="false">Events</button></nav>

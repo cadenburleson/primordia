@@ -181,7 +181,7 @@ mod tests {
         p.initialize_surface(8042);
         for i in 0..d.sites() {
             let (x, z) = d.point(i);
-            p.water[i] = (4. - d.ground(x, z, 8042) as f64) * d.area(i);
+            p.water[i] = (4. - d.ground(x, z, 8042) as f64 - p.relief[i] as f64) * d.area(i);
         }
         p.initial_water = p.water.iter().sum::<f64>() + p.atmosphere;
         (d, p, vec![[0.; crate::physical::SOLUTES]; d.sites()], SurfaceFlow::new(d))
@@ -191,7 +191,7 @@ mod tests {
         let (d, mut p, mut s, mut f) = fixture();
         let a = d.rows() / 2 * d.grid + d.grid - 1;
         let b = d.rows() / 2 * d.grid;
-        s[a] = [1., 2., 3., 4., 5., 6., 7., 8.];
+        s[a] = [1., 2., 3., 4., 5., 6., 7., 8., 9., 10.];
         let initial = s[a];
         for i in 0..d.sites() {
             let (x, z) = d.point(i);

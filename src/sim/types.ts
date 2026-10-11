@@ -53,14 +53,20 @@ export interface CompetitionView {directionalSensing:boolean;foodEnergy:number;p
 export interface Bearing {submerged:number;weight:number;depth:number;sinks:number;load?:number;feet?:number;dry?:number;thirst?:number}
 /** Where the planet's carbon, nitrogen, oxygen and energy are, and how much life feeds at each level. `error` is what the books fail to account for. */
 export interface CyclesView {
-  carbon:{dioxide:number;dissolved:number;living:number;remains:number;total:number;error:number};
-  nitrogen:{air:number;dissolved:number;living:number;remains:number;total:number;error:number};
+  /** `dioxide` is what is dissolved in the water; `air` is the same gas in the air; `buried` is remains under silt. */
+  carbon:{air?:number;buried?:number;dioxide:number;dissolved:number;living:number;remains:number;total:number;error:number};
+  nitrogen:{buried?:number;air:number;dissolved:number;living:number;remains:number;total:number;error:number};
+  iron?:{dissolved:number;rusted:number};
+  /** Salt dissolved under standing water, and left as crust on ground that has dried. */
+  salt?:{dissolved:number;crust:number;water:number};
   oxygen:{free:number;bound:number};
   energy:{sunlight:number;vents:number;heat:number;work:number;stored:number;start:number;error:number};
   /** Producers, plant-eaters, meat-eaters, top predators, then decomposers. `intake` is carbon per cycle. */
   levels:{name:string;cells:number;carbon:number;intake:number}[];
   /** Share of each level's intake that the next level up takes in. */
   efficiency:number[];
+  /** Each element this world tracks and where its stock is, in that element's own units. */
+  elements?:{symbol:string;note:string;air:number;water:number;ground:number;life:number}[];
 }
 export interface BodyStores {water:number;solutes:number[];gas:number[];matrix:number;fibers:number;polymers:{sequence:number[];amount:number}[]}
 export interface MaterialInventory {biomass:number;fuel:number;mineral:number;lipid:number;proteins:number[];body?:BodyStores}
@@ -128,7 +134,9 @@ export interface OrganismView {observation?:BodyObservation;programCells?:Progra
   /** How the water carries this body: share under water, weight borne beside its land weight, depth below, and its weight fully submerged. */
   bearing?:Bearing;
   /** Where the body sits in the food chain, and what limits it. */
-  feeding?:{level:string;steps:number;scavenged:number;nitrogenShort:number;bone:number;fat:number}; id: number; lineage: number; name: string; generation: number; age: number; cells: number; energy: number; genes: number[]; development:number[]; regulation:{rules:number[][];growth:number[]}|null; anatomy:Anatomy|null; body:PhysicalBody; meals:number; feedingCooldown:number; family:number; offspring:number; parent: number; mate: number; x: number; z: number }
+  feeding?:{level:string;steps:number;scavenged:number;nitrogenShort:number;phosphorusShort?:number;
+    /** How large its cells grow before dividing, beside the usual size (1). */
+    stature?:number;bone:number;fat:number}; id: number; lineage: number; name: string; generation: number; age: number; cells: number; energy: number; genes: number[]; development:number[]; regulation:{rules:number[][];growth:number[]}|null; anatomy:Anatomy|null; body:PhysicalBody; meals:number; feedingCooldown:number; family:number; offspring:number; parent: number; mate: number; x: number; z: number }
 export interface SaveData {
   version: 1|2|3|4; config: WorldConfig; rng: number; time: number; next_id: number; next_lineage: number;
   births: number; deaths: number; mating: number; organisms: (Omit<Organism, 'genes'> & { genes: number[] })[];

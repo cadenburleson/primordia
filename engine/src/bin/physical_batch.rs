@@ -148,6 +148,15 @@ fn run() -> Result<(), String> {
         view["diet"], view["captures"], view["kinds"], view["species"],
         view["oxygen"].as_f64().unwrap_or(0.), view["breath"].as_f64().unwrap_or(0.), view["restocked"]
     );
+    let mut sizes: Vec<usize> = e.groups().iter().map(Vec::len).collect();
+    sizes.sort_unstable();
+    let at_least = |n: usize| sizes.iter().filter(|s| **s >= n).count();
+    let in_bodies: usize = sizes.iter().filter(|s| **s >= 4).sum();
+    eprintln!(
+        "bodies largest {} · of 4+ {} · of 10+ {} · of 30+ {} · cells in bodies of 4+ {:.0}%",
+        sizes.last().copied().unwrap_or(0), at_least(4), at_least(10), at_least(30),
+        in_bodies as f64 * 100. / e.cells.len().max(1) as f64
+    );
     let cycles = e.physical.as_ref().unwrap().cycles(e);
     let part = |pool: &str, keys: &[&str]| {
         keys.iter()

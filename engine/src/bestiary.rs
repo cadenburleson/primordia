@@ -7,14 +7,14 @@ use crate::{
     autonomous::{Cell, Gene, Genome, ACTIONS, INPUTS},
     body::V3,
     development::{FUSOGEN, GAMETIC, POLARITY},
-    physical::{Inventory, ENGULF, FIN, PROPEL, SPINE, STEER, WALL},
+    physical::{Inventory, ENGULF, FIN, PROPEL, SIZE, SPINE, STEER, WALL},
     physiology::{BARRIER, CHANNEL},
     specimens::Specimen,
     *,
 };
 
 /// Key and display name of every starter species.
-pub const SPECIES: [(&str, &str); 9] = [
+pub const SPECIES: [(&str, &str); 12] = [
     ("drifter", "Drifter"),
     ("alga", "Alga"),
     ("swimmer", "Swimmer"),
@@ -24,10 +24,15 @@ pub const SPECIES: [(&str, &str); 9] = [
     ("rower", "Rower"),
     ("courter", "Courter"),
     ("decomposer", "Decomposer"),
+    ("plankton", "Plankton"),
+    ("leviathan", "Leviathan"),
+    ("volvox", "Volvox"),
 ];
 /// Promoter inputs that carry a left-minus-right sense: fuel, light, scent, remains.
 const TOWARD_LIGHT: usize = INPUTS - 3;
 const TOWARD_SCENT: usize = INPUTS - 2;
+/// Promoter input that rises with the number of neighbours a cell is tied to.
+const BONDED: usize = 3;
 
 fn gene(action: usize, bias: f32, strength: f32, senses: &[(usize, f32)]) -> Gene {
     let mut promoter = [0.; INPUTS];
@@ -55,6 +60,14 @@ fn design(species: &str) -> Option<Vec<Gene>> {
         without_glue().into_iter().filter(|g| g.action > 1).collect::<Vec<_>>()
     };
     let motor = || gene(PROPEL, 0.6, 0.6, &[]);
+    // How large the cell grows before it divides: a third of the usual size
+    // for the small, twice it for a grazer, half as large again for a hunter
+    // (whose mouth then doubles it).
+    let small = || gene(SIZE, 1., 0.1, &[]);
+    // A light-sensing spot. What feeds on light lives where the light is,
+    // so an eater that swims toward it from afar finds its food; the scent
+    // of life takes over close by.
+    let eye = || gene(crate::development::PHOTIC, 1., 0.5, &[]);
     let mut genes = match species {
         "drifter" => basic.clone(),
         // Plant-like: a strong light harvester in a wall. Sisters stay cemented.
@@ -66,7 +79,38 @@ fn design(species: &str) -> Option<Vec<Gene>> {
         // A light feeder that swims toward the light.
         "swimmer" => {
             let mut g = without_glue();
-            g.extend([motor(), gene(STEER, 0.5, 1., &[(TOWARD_LIGHT, 1.5)])]);
+            g.extend([motor(), eye(), gene(STEER, 0.5, 1., &[(TOWARD_LIGHT, 1.5)])]);
+            g
+        }
+        // An egg that becomes a body. Alone, the cell grows three times the
+        // usual size. Each neighbour it is tied to turns its size gene down,
+        // to nothing at three, so each daughter is already big enough to
+        // divide again, and again: the egg cleaves, without growing, into a
+        // ball of small cells that stay together and live on light. A cell
+        // that comes loose grows into the next egg.
+        "volvox" => {
+            let mut g = without_glue();
+            g.extend([
+                gene(0, 1., 0.4, &[]),
+                gene(2, 2., 1., &[]),
+                gene(SIZE, 1., 0.9, &[(BONDED, -2.)]),
+            ]);
+            g
+        }
+        // A hunter of hunters: three times the usual size before its mouth
+        // doubles it, and skinned, which also makes it no kin of the smaller
+        // hunters it can therefore swallow. Slow to breed, as big things are.
+        "leviathan" => {
+            let mut g = animal();
+            g.extend([
+                gene(ENGULF, 2., 1., &[]),
+                gene(SIZE, 1., 0.9, &[]),
+                gene(crate::physiology::BARRIER, 1., 0.5, &[]),
+                gene(crate::physiology::REPAIR, 1., 0.4, &[]),
+                motor(),
+                eye(),
+                gene(STEER, 0.5, 1., &[(TOWARD_SCENT, 1.5), (TOWARD_LIGHT, 0.8)]),
+            ]);
             g
         }
         // A free cell living in the dark on what the dead leave, as the sea's
@@ -74,7 +118,15 @@ fn design(species: &str) -> Option<Vec<Gene>> {
         // bound in them.
         "decomposer" => {
             let mut g = animal();
-            g.push(gene(15, 1., 0.8, &[]));
+            g.extend([gene(15, 1., 0.8, &[]), small()]);
+            g
+        }
+        // The sea's small free light-feeders: no wall, no glue, a third the
+        // usual size. Small cells feed and breed fast for their size, and
+        // anything with a mouth can swallow them whole.
+        "plankton" => {
+            let mut g = without_glue();
+            g.extend([gene(0, 1., 0.4, &[]), small()]);
             g
         }
         // An animal: it has given up the light, digests whatever it touches,
@@ -83,8 +135,10 @@ fn design(species: &str) -> Option<Vec<Gene>> {
             let mut g = animal();
             g.extend([
                 gene(9, 1., 0.8, &[]),
+                gene(SIZE, 1., 0.75, &[]),
                 motor(),
-                gene(STEER, 0.5, 1., &[(TOWARD_SCENT, 1.5)]),
+                eye(),
+                gene(STEER, 0.5, 1., &[(TOWARD_SCENT, 1.5), (TOWARD_LIGHT, 0.8)]),
             ]);
             g
         }
@@ -93,8 +147,10 @@ fn design(species: &str) -> Option<Vec<Gene>> {
             let mut g = animal();
             g.extend([
                 gene(ENGULF, 2., 1., &[]),
+                gene(SIZE, 1., 0.65, &[]),
                 motor(),
-                gene(STEER, 0.5, 1., &[(TOWARD_SCENT, 1.5)]),
+                eye(),
+                gene(STEER, 0.5, 1., &[(TOWARD_SCENT, 1.5), (TOWARD_LIGHT, 0.8)]),
             ]);
             g
         }
@@ -185,6 +241,24 @@ impl Core {
                 *p = 0.;
             }
         }
+        // A hunter is released full grown: a mouth has to be bigger than
+        // what it swallows, and a newborn one is not.
+        if genes.iter().any(|g| g.action == ENGULF) {
+            material.biomass = 0.6;
+            material.fuel = 0.1;
+        }
+        // Everything a founder holds is in proportion to the size its genes set.
+        let stature = genes
+            .iter()
+            .find(|g| g.action == SIZE)
+            .map_or(1., |g| 4f64.powf(2. * (g.bias.clamp(0., 1.) * g.strength).clamp(0., 1.) as f64 - 1.));
+        material.biomass *= stature;
+        material.fuel *= stature;
+        material.nitrogen *= stature;
+        material.phosphorus *= stature;
+        for p in &mut material.proteins {
+            *p *= stature;
+        }
         let founder = Cell {
             collection_sources: vec![],
             material: Some(material),
@@ -192,6 +266,7 @@ impl Core {
             state: crate::physiology::CellState {
                 trophic: if genes.iter().any(|g| g.action == 0) { 0. } else { 1. },
                 scavenged: if species == "decomposer" { 1. } else { 0. },
+                stature: stature as f32,
                 ..Default::default()
             },
             lifecycle: crate::development::Lifecycle::default(),
@@ -202,7 +277,7 @@ impl Core {
             genome: Genome { id: 1, genes },
             p: V3::default(),
             v: V3::default(),
-            energy: 5.,
+            energy: 5. * stature as f32,
             age: 0.,
             cooldown: 0.,
             chemicals: [0.; 2],
@@ -239,13 +314,17 @@ impl Core {
             if released == count {
                 break;
             }
-            let (x, z, wet) = {
-                let h = self
+            // Of a few spots of open water, the best lit: life gathers
+            // where the energy is, and an eater set down in the dark between
+            // the lit patches never finds its food.
+            let mut best: Option<(f32, f32, f64)> = None;
+            for _ in 0..4 {
+                let d = self
                     .autonomous
                     .as_ref()
                     .and_then(|e| e.physical.as_ref())
-                    .ok_or("Starter species need the current cellular world")?;
-                let d = h.domain;
+                    .ok_or("Starter species need the current cellular world")?
+                    .domain;
                 let width = d.half() * 2.;
                 let (a, b) = (self.random(), self.random());
                 let (x, z) = if d.spherical() {
@@ -254,12 +333,17 @@ impl Core {
                     ((a - 0.5) * (width - 6.), (b - 0.5) * (width - 6.))
                 };
                 let h = self.autonomous.as_ref().unwrap().physical.as_ref().unwrap();
+                let site = d.index(x, z);
                 let wet = h
                     .planet
                     .as_ref()
-                    .is_none_or(|p| !d.spherical() || p.surface_depth(d.index(x, z)) > 0.5);
-                (x, z, wet)
-            };
+                    .is_none_or(|p| !d.spherical() || p.surface_depth(site) > 0.5);
+                let light = h.light_fraction(site);
+                if wet && best.is_none_or(|spot| light > spot.2) {
+                    best = Some((x, z, light));
+                }
+            }
+            let (x, z, wet) = best.map_or((0., 0., false), |spot| (spot.0, spot.1, true));
             // Every starter species begins in the water, as life did.
             if wet && self.place_specimen(&json, x, z).is_ok() {
                 released += 1;
@@ -353,6 +437,40 @@ mod tests {
         assert!(share("Rower", 4) > 0.5 && share("Rower", FIN) > 0.5, "rowers have muscle and fins");
         assert!(share("Courter", FUSOGEN) > 0.5, "courters can fuse");
         assert!(c.autonomous.as_ref().unwrap().valid());
+    }
+
+    #[test]
+    fn an_egg_cleaves_into_a_body_of_small_cells_without_growing_first() {
+        let mut c = world();
+        c.steer(r#"{"kind":"light","scale":6}"#).unwrap();
+        c.steer(r#"{"kind":"seed","species":"volvox","count":1}"#).unwrap();
+        let egg = of(&c, "Volvox").next().unwrap();
+        let (start, size) = (egg.material.as_ref().unwrap().biomass, egg.stature());
+        assert!(size > 2.5, "alone, the cell is built large: {size}");
+        // Watch it: the cell count, and the carbon in all of them together.
+        let mut history = Vec::new();
+        for _ in 0..12 {
+            c.step(40);
+            let cells: Vec<_> = of(&c, "Volvox").collect();
+            history.push((cells.len(), cells.iter().map(|x| x.material.as_ref().unwrap().biomass).sum::<f64>()));
+        }
+        eprintln!("egg of {start:.2}: cells and their total biomass every ten cycles {history:?}");
+        let e = c.autonomous.as_ref().unwrap();
+        let body = e
+            .groups()
+            .into_iter()
+            .filter(|g| e.cells[g[0]].collection_sources.first().is_some_and(|s| s == "Volvox"))
+            .max_by_key(Vec::len)
+            .unwrap();
+        let small = body.iter().filter(|&&i| e.cells[i].stature() < 0.6).count();
+        eprintln!("largest body {} cells, {small} of them small", body.len());
+        assert!(body.len() >= 8, "the egg became a body: {}", body.len());
+        assert!(small * 5 >= body.len() * 4, "of small cells: {small} of {}", body.len());
+        // Cleavage: by the time there were eight cells they held little more
+        // than the egg did, where eight ordinary cells would hold several times it.
+        let eight = history.iter().find(|h| h.0 >= 8).unwrap();
+        assert!(eight.1 < start * 3.5, "eight cells from one egg's worth: {} from {start}", eight.1);
+        assert!(e.valid());
     }
 
     #[test]

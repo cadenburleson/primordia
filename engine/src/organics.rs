@@ -339,6 +339,7 @@ impl Habitat {
             let taken = requested.min(available).min(c.energy as f64 / 0.35);
             let paid = self.spend(c, taken * 0.35, false);
             self.systems.pump_work += paid;
+            let stature = c.stature();
             let m = c.material.as_mut().unwrap();
             m.body.water += taken;
             if let Some(p) = &mut self.planet {
@@ -432,7 +433,7 @@ impl Habitat {
             let respiration = (dt * 0.08 * gates[GAS])
                 .min(m.fuel)
                 .min(m.body.gas[0] * 2.)
-                .min(((9. - c.energy as f64) / Q).max(0.));
+                .min(((9. * stature - c.energy as f64) / Q).max(0.));
             m.fuel -= respiration;
             m.body.gas[0] -= respiration * 0.5;
             m.body.gas[1] += respiration * 0.5;
@@ -550,6 +551,7 @@ impl Habitat {
             m.biomass -= lysed;
             self.solutes[site][5] += lysed;
             self.solutes[site][crate::physical::REMAINS_N] += lysed * crate::physical::N_RATIO;
+            self.solutes[site][2] += lysed * crate::physical::P_RATIO;
             let osmotic = m.body.solutes.iter().sum::<f64>() / m.body.water.max(0.002);
             c.state.pressure = ((m.body.water / capacity.max(0.002) - 0.7).max(0.) * 0.8
                 + osmotic / (1. + osmotic) * 0.2)
@@ -690,9 +692,38 @@ impl Habitat {
                 let u = self.fluid.velocity(site);
                 body::V3::new(u[0] as f32, 0., u[1] as f32)
             };
+            // Water carries a grain only as far as it covers it: a film over
+            // nearly dry ground moves almost nothing, however fast it runs.
+            // Out of the water a grain has its full weight and falls. In it,
+            // remains hang as tissue does and only mineral sinks.
+            let (carried, falling) = if self.domain.spherical() {
+                let planet = self.planet.as_ref().unwrap();
+                let depth = planet.surface_depth(site) as f32;
+                let (x, z) = self.domain.coords(p.p);
+                let surface = self.domain.ground(x, z, core.config.seed) + planet.relief_at(x, z) + depth;
+                let above = p.p.len() - self.domain.radius() - surface;
+                // Something now and then throws a grain upward far faster
+                // than anything in the sea moves. Until that is found, a
+                // grain well clear of the surface is set back down on it.
+                if above > 2. {
+                    p.p = up.mul(self.domain.radius() + surface + p.radius());
+                    p.v = p.v.sub(up.mul(p.v.dot(up)));
+                }
+                if above > 0. {
+                    (0., crate::physical::GRAVITY as f32)
+                } else {
+                    ((depth / (2. * p.radius())).min(1.), 0.)
+                }
+            } else {
+                (1., 0.)
+            };
             p.v =
-                p.v.add(fluid.sub(p.v).mul(DT * 0.4))
-                    .sub(up.mul(DT * 0.03 * (p.solutes[2] / p.mass().max(1e-12)) as f32));
+                p.v.add(fluid.sub(p.v).mul(DT * 0.4 * carried))
+                    .sub(up.mul(DT * (falling + 0.03 * (p.solutes[2] / p.mass().max(1e-12)) as f32)));
+            // Nothing in a sea moves faster than this.
+            if p.v.len() > 10. {
+                p.v = p.v.mul(10. / p.v.len());
+            }
             p.p = p.p.add(p.v.mul(DT));
             // Loose grains ride the same eddies as free cells, so what is shed
             // in one spot scatters as it sinks instead of hanging in a column.

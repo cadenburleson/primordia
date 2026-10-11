@@ -36,6 +36,8 @@ pub struct Flux {
     pub nitrogen: f64,
     /// Spare nitrogen given off into the water.
     pub nitrogen_given: f64,
+    /// Times its feeding current drew a free cell toward it.
+    pub drawn: f64,
 }
 impl Flux {
     /// Everything this cell has taken in as fuel, from any source.
@@ -75,6 +77,7 @@ impl Flux {
         self.fed += b.fed;
         self.nitrogen += b.nitrogen;
         self.nitrogen_given += b.nitrogen_given;
+        self.drawn += b.drawn;
     }
     pub fn valid(&self) -> bool {
         [
@@ -104,6 +107,7 @@ impl Flux {
             self.fed,
             self.nitrogen,
             self.nitrogen_given,
+            self.drawn,
         ]
         .iter()
         .all(|x| x.is_finite() && *x >= 0.)

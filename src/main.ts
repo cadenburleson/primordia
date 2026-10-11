@@ -15,6 +15,7 @@ import {Collection,organismBrowserHTML,saveOrganismHTML} from './collection';
 import {Creatures,creaturesHTML} from './creatures';
 import type {SavedSpecimen,SpecimenMessage,ChampionMessage} from './sim/types';
 import {WorldTools,worldToolsHTML,geneEditorHTML,brushToolbarHTML,type EditorMessage} from './world-tools';
+import {ElementsTable,elementsHTML} from './elements';
 import {progressHTML,updateProgress} from './progress';
 import {Ladder,ladderHTML,ladderHUD,milestoneHTML,type LadderAction} from './ladder';
 import {Feed,feedHTML} from './feed';
@@ -73,7 +74,7 @@ document.querySelector('#app')!.innerHTML=`
         </div>
       </section>
       <section class="panel-section run-setup" id="run-setup"><div class="section-label"><span>02</span> SCALE &amp; STARTING LIFE</div>
-        <div class="capacity-row"><label for="world-size">World size <small>Planet circumference / habitat width</small></label><select id="world-size"><option value="64">64 units</option><option value="128">128 units</option><option value="256">256 units</option><option value="1024" selected>1,024 · regional planet</option><option value="8192">8,192 · large planet</option><option value="64000">64,000 · vast planet</option></select></div>
+        <div class="capacity-row"><label for="world-size">World size <small>Planet circumference / habitat width</small></label><select id="world-size"><option value="64">64 units</option><option value="128">128 units</option><option value="256">256 units</option><option value="512">512 · mid-sized planet</option><option value="1024" selected>1,024 · regional planet</option><option value="8192">8,192 · large planet</option><option value="64000">64,000 · vast planet</option></select></div>
         <div class="capacity-row"><label for="initial-cells">Starting cells <small>1–8,192 single-cell founders</small></label><input id="initial-cells" type="number" min="1" max="8192" step="1" value="256"></div>
         <div class="capacity-row"><label for="cell-budget">Living-cell limit <small>100–64,000 cells · must fit your starting population</small></label><input id="cell-budget" type="number" min="100" max="64000" step="1" value="8192"></div>
         <p id="setup-impact" class="setup-impact" aria-live="polite"></p><details class="setup-details"><summary>Seed, placement &amp; resource pattern</summary>
@@ -143,6 +144,7 @@ document.querySelector('#app')!.innerHTML=`
   <div id="toast" role="status"></div><input id="file-input" type="file" accept="application/json,.json" hidden>
   <dialog id="creation-dialog" aria-label="Create a new world"><button id="close-creation" class="icon-button" aria-label="Close world creation">${icon('x')}</button><div id="creation-dialog-content"></div></dialog>
   ${geneEditorHTML}
+  ${elementsHTML}
   <dialog id="labs-dialog" aria-labelledby="labs-title"><button id="close-labs" class="icon-button" aria-label="Close labs">${icon('x')}</button><span class="eyebrow">OPTIONAL EXPERIMENTS</span><h2 id="labs-title">Labs &amp; comparisons</h2><p>The main world already includes the current cellular and physical mechanisms. Experiments explore specific conditions; they do not unlock features.</p><p id="labs-active-note" class="setup-note" hidden>Return to the main world before starting another experiment.</p>
     <section class="labs-section"><h3>Current engine experiments</h3><p>A fresh population uses your current world's settings. The main run is held while the experiment runs.</p><div class="labs-actions"><button id="shared-passive" class="observe-button">${icon('activity')} Passive mechanics</button><small>Contraction is disabled to observe physical structure and contact.</small><button id="shared-scarcity" class="observe-button">${icon('leaf')} Scarce resources</button><small>Starts with less fuel. Evolution and all physical mechanisms remain available.</small></div></section>
     <details class="setup-details legacy-labs"><summary>Legacy comparisons</summary><p>Older supplied traits and precursor bodies use earlier models. The locomotion and joint comparisons select movement scores. Their results do not demonstrate autonomous evolution in the main world.</p><div class="labs-actions"><button id="start-lab" class="observe-button">${icon('activity')} Locomotion comparison</button><button id="start-joints" class="observe-button">${icon('bone')} Joint comparison</button><button id="start-tissue" class="observe-button">${icon('microscope')} Tissue comparison</button><div id="competition-entry"><label for="competing-founders">Starting competitors</label><select id="competing-founders"><option value="24">24 cells</option><option value="48" selected>48 cells</option><option value="96">96 cells</option></select><button id="start-population" class="observe-button">${icon('dna')} Competing ecosystem comparison</button></div></div></details>
@@ -162,6 +164,7 @@ inspection=new Inspection(send,(x,z)=>{view.focusLocation(x,z);syncViewNote();},
 });
 collection=new Collection(send,id=>select(id,true),startPlacement,toast,openTab,placeOnPlanet,count=>guide?.collectionChanged(count),()=>creatures?.refresh());
 creatures=new Creatures(send,source=>{cancelPlacement();return worldTools.armLife(source,creatures.sustain);},toast);
+const elementsTable=new ElementsTable();$('open-elements').addEventListener('click',()=>elementsTable.open());
 worldTools=new WorldTools(send,startSurfaceTool,cancelPlacement,startPlacement,toast,openTab,layer=>{
   if(layer==='surface')view.setOverlay(false);else{view.resourceField=layer as typeof view.resourceField;$<HTMLSelectElement>('resource-kind').value=layer;view.setOverlay(true);}
   syncLayerLegend();inspection.render();
@@ -266,7 +269,7 @@ function setCreatingWorld(value:boolean){
 }
 function validSetup(c:WorldConfig){
   const reject=(message:string,field:string)=>{if($<HTMLDialogElement>('creation-dialog').open){clearCreationFeedback();creationFeedback(message,true,field);}else toast(message);return false;};
-  if(![64,128,256,1024,8192,64000].includes(c.worldSize??64))return reject('Choose a supported world size.','world-size');
+  if(![64,128,256,512,1024,8192,64000].includes(c.worldSize??64))return reject('Choose a supported world size.','world-size');
   if((c.worldSize??64)>256&&c.worldShape!=='sphere')return reject('Worlds larger than 256 units need spherical geometry.','world-shape');
   if(!Number.isInteger(c.initialCells)||c.initialCells!<1||c.initialCells!>8192)return reject('Starting cells must be a whole number from 1 to 8,192.','initial-cells');
   if(!Number.isInteger(c.capacity)||c.capacity<100||c.capacity>64000)return reject('Living-cell limit must be a whole number from 100 to 64,000. Update this value, then create your planet.','cell-budget');
@@ -291,7 +294,7 @@ for(const id of ['initial-cells','cell-budget'])$(id).addEventListener('input',u
 function createPhysical(){if(creatingWorld)return;const next=physicalSetup();clearCreationFeedback();if(!validSetup(next))return;setCreatingWorld(true);creationFeedback(`Creating your planet with ${fmt(next.initialCells!)} starting cells. Loading the engine and preparing the world…`);setupConfig={...next};speed=Number($<HTMLSelectElement>('setup-pace').value);$<HTMLSelectElement>('simulation-speed').value=String(speed);$<HTMLSelectElement>('run-priority').value=speed===0?'evolution':'live';send({type:'display-priority',mode:speed===0?'evolution':'live'});selectedId=null;autoselect=true;paused=false;view.select(null);specimen.update(null);$('loading').hidden=false;$('loading').classList.add('preparing-world');const star=Number($<HTMLSelectElement>('setup-star').value),push=$<HTMLSelectElement>('setup-push').value;send({type:'init',config:next,steering:[...(star===1?[]:[{kind:'light' as const,scale:star}]),...(next.kind==='volcanic'?[{kind:'vents' as const,scale:4}]:[]),...(push==='natural'?[]:[{kind:'mutation' as const,scale:push==='fastest'?4:2},{kind:'sharing' as const,scale:1}]),...($<HTMLSelectElement>('setup-air').value==='1'?[{kind:'oxygen' as const,level:1}]:[])]});send({type:'control',speed});updatePause();}
 $('create-physical').addEventListener('click',createPhysical);
 $('creation-panel').addEventListener('input',()=>{if(!creatingWorld)clearCreationFeedback();});
-$('fast-setup').addEventListener('click',()=>{setupConfig={...PRESETS.tidal,worldSize:128,initialCells:64,capacity:4096};syncSetupControls();$<HTMLSelectElement>('setup-pace').value='0';clearCreationFeedback();creationFeedback('Quick start ready: a small planet, 64 starting cells, room for 4,096. Create your planet to begin.');});
+$('fast-setup').addEventListener('click',()=>{setupConfig={...PRESETS.tidal,worldSize:128,initialCells:64,capacity:8192};syncSetupControls();$<HTMLSelectElement>('setup-pace').value='0';clearCreationFeedback();creationFeedback('Quick start ready: a small planet, 64 starting cells, room for 4,096. Create your planet to begin.');});
 $('fast-evolution').addEventListener('click',()=>{if(!snapshot)return;if(worldTools.painting){toast('Finish the brush stroke first.');return;}worldTools.stopBrush();speed=0;paused=false;$<HTMLSelectElement>('simulation-speed').value='0';$<HTMLSelectElement>('run-priority').value='evolution';send({type:'display-priority',mode:'evolution'});send({type:'control',speed,paused:false});updatePause();openTab('progress');toast('Fast-forwarding. The planet redraws less often so generations pass sooner.');});
 $('run-priority').addEventListener('change',()=>send({type:'display-priority',mode:$<HTMLSelectElement>('run-priority').value as 'live'|'evolution'}));
 $('population-history').addEventListener('toggle',drawChart);
@@ -548,7 +551,7 @@ worker.onmessage=async(event:MessageEvent<Snapshot|SpecimenMessage|EditorMessage
   const changed=!snapshot||snapshot.config.seed!==data.config.seed||snapshot.config.kind!==data.config.kind||snapshot.config.name!==data.config.name||snapshot.config.worldSize!==data.config.worldSize||snapshot.config.worldShape!==data.config.worldShape;
   snapshot=data;view.update(data);$('loading').hidden=true;$('loading').classList.remove('preparing-world');document.querySelector('.workspace')!.classList.remove('awaiting-world');for(const id of ['pause','save','open-labs','simulation-speed','run-priority','focus-life','reset-camera','resource-layer','settings'])($(id) as HTMLButtonElement).disabled=false;
   if(editorSelectionPending){editorSelectionPending=false;selectedId=data.selection||null;view.select(selectedId);}
-  worldTools.update(data);
+  worldTools.update(data);elementsTable.update(data);
   if(changed){cancelPlacement();config=data.config;syncControls();}
   if(pendingLoad){pendingLoad=false;config=data.config;syncControls();toast('Saved world restored. Evolution continues from its saved state.');}
   if(data.lab&&selectedId!==1){select(1,true);}

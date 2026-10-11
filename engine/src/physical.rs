@@ -5,7 +5,7 @@ use crate::body::V3;
 use crate::*;
 
 const DX: f64 = 64. / GRID as f64;
-const Q: f64 = 3.; // chemical energy per unit of reduced organic matter
+pub(crate) const Q: f64 = 3.; // chemical energy per unit of reduced organic matter
 const FLUID_MASS: f64 = 20.; // solvent mass in each lattice site
 const WATER_DENSITY: f64 = 3.;
 /// Oxygen freed for each unit of fuel made from light, and used for each
@@ -33,6 +33,22 @@ const BOND_DAMPING: f32 = 3.;
 /// cycle. Only a cell that has given up the light digests at this rate, and
 /// it has to eat enough this way to pay for swimming after its food.
 const GRAZE: f64 = 0.12;
+/// How far a mouth's feeding current reaches. A mouth draws in free cells
+/// smaller than the body it belongs to, as hunters from ciliates to whales
+/// do, so it clears a volume of water instead of having to bump into its
+/// food.
+const FEED_REACH: f32 = 1.5;
+/// The current draws only what the body can swallow, and as strongly as it
+/// can swallow it: nothing a quarter larger than the body, at full strength
+/// what is two thirds its bulk or less. A bigger body draws in bigger prey.
+const FILTER_RATIO: f64 = 0.8;
+/// Speed of the feeding current at a fully built mouth, in units a cycle.
+const FEED_CURRENT: f32 = 1.2;
+/// Mass of a newborn cell of the usual size. Bonds and bumps between cells
+/// lighter than this are weaker in proportion.
+const SLIGHT: f64 = 0.25;
+/// Share of a free cell's upkeep that a cell fully enclosed by its body pays.
+const INTERIOR: f64 = 0.5;
 /// How far the sea's eddies carry a free cell in one tick, at natural mixing.
 pub(crate) const JOSTLE: f32 = 0.07;
 /// Pull of the planet on a unit of mass.
@@ -51,6 +67,17 @@ const DRYING: f32 = 0.012;
 const DORMANCY: f64 = 0.9;
 /// Depth of water on the ground that keeps a cell on it wet.
 const DAMP: f64 = 0.01;
+/// Matter is counted in carbon atoms. A carbon held as fat carries about a
+/// third more energy than one held as sugar or protein, because fat carries
+/// almost no oxygen of its own: that also makes it under half the weight.
+pub(crate) const FAT_ENERGY: f64 = 1.3;
+pub(crate) const FAT_WEIGHT: f64 = 0.47;
+/// Share of ordinary tissue's upkeep that stored fat costs. Fat is nearly inert.
+const FAT_UPKEEP: f64 = 0.2;
+/// The rules of chemistry a saved world was last run under. A world saved
+/// under older rules has its books reset to what it holds the first time it
+/// runs under these.
+pub(crate) const CHEMISTRY: u8 = 3;
 /// How dense fat and bound mineral are beside water.
 const FAT_DENSITY: f64 = 0.9;
 const MINERAL_DENSITY: f64 = 2.5;
@@ -81,15 +108,24 @@ const W: [f64; 9] = [
 const OPP: [usize; 9] = [0, 3, 4, 1, 2, 7, 8, 5, 6];
 /// Kinds of dissolved matter a site of water or wet ground holds: fuel,
 /// carbon dioxide, mineral, two signals, organic remains, nitrogen a plant
-/// can take up, and nitrogen still bound in remains.
-pub const SOLUTES: usize = 8;
+/// can take up, nitrogen still bound in remains, dissolved iron, and salt.
+pub const SOLUTES: usize = 10;
 /// Carbon dioxide: what burning fuel gives off and light-feeders build with.
 pub const CO2: usize = 1;
 pub const NITROGEN: usize = 6;
 pub const REMAINS_N: usize = 7;
+/// Iron dissolved in the sea. Free oxygen rusts it out onto the sea bed.
+pub const IRON: usize = 8;
+/// Salt. Water that evaporates leaves it behind.
+pub const SALT: usize = 9;
 /// Nitrogen bound in each unit of living tissue and protein. Sea life holds
 /// about 16 atoms of nitrogen to 106 of carbon. Sugar and fat hold none.
 pub const N_RATIO: f64 = 0.15;
+/// Phosphorus built into each unit of living tissue, in DNA, membranes and
+/// the carriers of a cell's energy: about one atom to a hundred of carbon.
+/// It has no gas; it comes from rock, as the dissolved mineral, and a body
+/// with bone keeps its reserve there.
+pub const P_RATIO: f64 = 0.01;
 /// Dissolved nitrogen in a unit of new sea.
 const SEA_NITROGEN: f64 = 0.4;
 /// Nitrogen gas in the air over a unit of surface. No cell can use it as it is.
@@ -105,7 +141,25 @@ const DENITRIFY: f64 = 0.0006;
 const LEACH: f64 = 0.004;
 /// Energy a cell spends to take in and build with a unit of nitrogen.
 const N_PRICE: f64 = 0.6;
-const DIFFUSIVITY: [f64; SOLUTES] = [0.12, 0.18, 0.06, 0.3, 0.3, 0.01, 0.18, 0.01];
+/// Dissolved iron and salt in a unit of new sea, and carbon dioxide in the
+/// air over a unit of surface.
+const SEA_IRON: f64 = 0.1;
+const SEA_SALT: f64 = 1.;
+const AIR_CARBON: f64 = 0.3;
+/// Share of the gap between the carbon dioxide a site's water holds and
+/// what the air would keep in it that closes each cycle.
+const GAS_EXCHANGE: f64 = 0.05;
+/// Share of the remains on the bed that silt covers each cycle, out of the
+/// reach of anything alive. Burying carbon is what leaves oxygen free.
+const BURIAL: f64 = 0.003;
+/// Share of buried carbon the planet's heat drives back out each cycle, at
+/// natural vent activity, burning it with whatever oxygen is free.
+const OUTGAS: f64 = 0.0005;
+/// Share of dissolved iron that rusts out each cycle in water full of
+/// oxygen, and the oxygen each unit of iron takes with it.
+const RUSTING: f64 = 0.05;
+const RUST_OXYGEN: f64 = 0.5;
+const DIFFUSIVITY: [f64; SOLUTES] = [0.12, 0.18, 0.06, 0.3, 0.3, 0.01, 0.18, 0.01, 0.1, 0.15];
 /// Reads a list of dissolved amounts written before newer kinds were tracked.
 pub(crate) fn padded<'de, D: serde::Deserializer<'de>>(d: D) -> Result<[f64; SOLUTES], D::Error> {
     let values = Vec::<f64>::deserialize(d)?;
@@ -120,7 +174,7 @@ fn solute_array<'de, D: serde::Deserializer<'de>>(d: D) -> Result<Vec<[f64; SOLU
     Vec::<Vec<f64>>::deserialize(d)?
         .into_iter()
         .map(|values| {
-            if ![5, 6, SOLUTES].contains(&values.len()) {
+            if !(5..=SOLUTES).contains(&values.len()) {
                 return Err(serde::de::Error::custom("Invalid solute vocabulary"));
             }
             let mut s = [0.; SOLUTES];
@@ -174,6 +228,7 @@ pub const SYNTHESIS_NAMES: [&str; ACTIONS] = [
     "Cell wall synthesis",
     "Fin synthesis",
     "Sideways division",
+    "Cell size regulation",
 ];
 /// Regulatory genes: a bonded stem cell driving one of these past half commits
 /// to that fate. They build no material.
@@ -207,6 +262,18 @@ const MUSCLE_SPRING: f32 = 0.6;
 /// of lengthening. With cell fates it lets one genome grow a body with a
 /// length, a width and branches.
 pub const BROADEN: usize = 43;
+/// A regulatory gene that builds nothing. How hard it is driven sets how
+/// large a cell grows before it divides: a quarter of the usual size when
+/// silent, the usual size at half drive, four times it at full drive. A
+/// genome without the gene makes cells of the usual size.
+///
+/// Size changes what a cell can do, by geometry. Everything that crosses
+/// its surface (light, food, nitrogen, a mouthful, the push of a motor)
+/// grows with its area, the two-thirds power of its bulk. What it burns to
+/// stay alive and how fast it builds grow with the three-quarter power.
+/// So a small cell feeds and breeds fast for its size, and a big one is
+/// cheap to run for its size, swims faster and can swallow the small.
+pub const SIZE: usize = 44;
 /// How many times harder a fully built fin is to push backward than forward.
 const FIN_GRIP: f64 = 8.;
 /// Share of a cell's own feeding (light, vents, dissolved fuel) given up by a
@@ -228,6 +295,9 @@ pub struct Inventory {
     /// Nitrogen held loose in the cell, ready to build with.
     #[serde(default)]
     pub nitrogen: f64,
+    /// Phosphorus held loose in the cell.
+    #[serde(default)]
+    pub phosphorus: f64,
     #[serde(default)]
     pub body: crate::organics::BodyStores,
     #[serde(
@@ -248,6 +318,7 @@ impl Inventory {
             mineral: 0.,
             lipid: 0.,
             nitrogen: 0.015,
+            phosphorus: 0.001,
             body: crate::organics::BodyStores::default(),
             proteins,
         }
@@ -264,7 +335,11 @@ impl Inventory {
     }
     /// Nitrogen built into tissue and protein.
     pub fn bound_nitrogen(&self) -> f64 {
-        N_RATIO * (self.biomass + self.proteins.iter().sum::<f64>())
+        N_RATIO * (self.biomass + self.proteins.iter().sum::<f64>() - self.proteins[WALL])
+    }
+    /// Chemical energy held beyond what the same carbon would hold as sugar.
+    pub fn richness(&self) -> f64 {
+        self.lipid * (FAT_ENERGY - 1.)
     }
     pub fn nitrogen_total(&self) -> f64 {
         self.nitrogen
@@ -272,23 +347,34 @@ impl Inventory {
             + self.body.solutes[NITROGEN]
             + self.body.solutes[REMAINS_N]
     }
-    pub fn mineral_total(&self) -> f64 {
+    /// Mineral laid down as bone or carried in the body's fluid.
+    pub fn stone(&self) -> f64 {
         self.mineral + self.body.solutes[2]
     }
+    /// Phosphorus built into living tissue.
+    pub fn bound_phosphorus(&self) -> f64 {
+        P_RATIO * self.biomass
+    }
+    /// Everything this cell holds that came out of rock.
+    pub fn mineral_total(&self) -> f64 {
+        self.stone() + self.phosphorus + self.bound_phosphorus()
+    }
     pub fn mass(&self) -> f64 {
-        self.organic() + self.mineral_total() + self.body.water * 3.
+        self.organic() - self.lipid * (1. - FAT_WEIGHT) + self.stone() + self.body.water * 3.
     }
     /// The water a submerged cell pushes aside, as mass. Living tissue is as
     /// dense as water; fat is lighter and mineral heavier, so fat lifts a body
     /// and bone weighs it down.
     pub fn displaced(&self) -> f64 {
-        self.mass() + self.lipid * (1. / FAT_DENSITY - 1.)
-            - self.mineral_total() * (1. - 1. / MINERAL_DENSITY)
+        self.mass() + self.lipid * FAT_WEIGHT * (1. / FAT_DENSITY - 1.)
+            - self.stone() * (1. - 1. / MINERAL_DENSITY)
     }
     pub fn radius(&self) -> f32 {
         // Organic and mineral densities differ; precipitation increases inertia.
         (0.22
-            * ((self.organic() + self.lipid * 0.6 + self.mineral * 0.3 + self.body.water * 3.)
+            * ((self.organic() - self.lipid * (1. - FAT_WEIGHT / FAT_DENSITY)
+                + self.mineral * 0.3
+                + self.body.water * 3.)
                 / 0.268)
                 .cbrt()) as f32
     }
@@ -297,7 +383,7 @@ impl Inventory {
     }
     /// How much of this cell is bone, and how much is laid-down fibre.
     pub fn bone(&self) -> f64 {
-        self.mineral_total() / (0.1 * self.biomass + self.mineral_total()).max(1e-12)
+        self.stone() / (0.1 * self.biomass + self.stone()).max(1e-12)
     }
     pub fn fibre(&self) -> f64 {
         let laid = self.body.matrix + self.body.fibers;
@@ -314,6 +400,7 @@ impl Inventory {
         self.mineral *= 0.5;
         self.lipid *= 0.5;
         self.nitrogen *= 0.5;
+        self.phosphorus *= 0.5;
         for p in &mut self.proteins {
             *p *= 0.5;
         }
@@ -531,9 +618,24 @@ pub struct Habitat {
     /// Nitrogen gas in the air. No cell can use it until lightning fixes it.
     #[serde(default)]
     pub air_nitrogen: f64,
+    /// Carbon dioxide in the air.
+    #[serde(default)]
+    pub air_carbon: f64,
+    /// Carbon and nitrogen of remains that silt has covered. Nothing alive
+    /// can reach them; the planet's heat slowly drives them back out.
+    #[serde(default)]
+    pub buried_carbon: f64,
+    #[serde(default)]
+    pub buried_nitrogen: f64,
+    /// Iron that oxygen has rusted out of the sea onto its bed.
+    #[serde(default)]
+    pub rusted_iron: f64,
     /// Who feeds on whom, measured.
     #[serde(default)]
     pub web: crate::trophic::Web,
+    /// The chemistry rules this world's books were last balanced under.
+    #[serde(default)]
+    pub chemistry: u8,
     pub photon_energy: f64,
     /// Chemical energy supplied by the planet's interior to chemosynthesis.
     #[serde(default)]
@@ -633,7 +735,12 @@ impl Habitat {
             initial_energy: 0.,
             initial_nitrogen: 0.,
             air_nitrogen: 0.,
+            air_carbon: 0.,
+            buried_carbon: 0.,
+            buried_nitrogen: 0.,
+            rusted_iron: 0.,
             web: crate::trophic::Web::default(),
+            chemistry: CHEMISTRY,
             photon_energy: 0.,
             geothermal_energy: 0.,
             heat: 0.,
@@ -641,6 +748,7 @@ impl Habitat {
             bound_events: 0,
             dissociations: 0,
         };
+        h.seed_elements(true);
         let (organic, mineral, energy) = h.totals(cells);
         h.initial_organic = organic;
         h.initial_mineral = mineral;
@@ -662,8 +770,22 @@ impl Habitat {
         }
         self.initial_nitrogen = self.nitrogen_total(cells);
     }
+    /// Gives a world its iron and salt, and a new world the carbon dioxide
+    /// of its air. Worlds saved before these were tracked receive the first
+    /// two when they next run; their air fills from their seas.
+    pub(crate) fn seed_elements(&mut self, new: bool) {
+        for i in 0..self.domain.sites() {
+            let density = self.domain.area(i) / (DX * DX);
+            self.solutes[i][IRON] += SEA_IRON * density;
+            self.solutes[i][SALT] += SEA_SALT * density;
+            if new {
+                self.air_carbon += AIR_CARBON * density;
+            }
+        }
+    }
     pub fn nitrogen_total(&self, cells: &[Cell]) -> f64 {
         self.air_nitrogen
+            + self.buried_nitrogen
             + self
                 .solutes
                 .iter()
@@ -687,9 +809,10 @@ impl Habitat {
         self.initial_nitrogen = self.nitrogen_total(cells);
     }
     pub fn totals(&self, cells: &[Cell]) -> (f64, f64, f64) {
-        let mut organic = 0.;
+        // Buried remains still hold their chemical energy; carbon dioxide holds none.
+        let mut organic = self.air_carbon + self.buried_carbon;
         let mut mineral = 0.;
-        let mut reduced = 0.;
+        let mut reduced = self.buried_carbon;
         let mut atp = 0.;
         for s in &self.solutes {
             organic += s[0] + s[1] + s[3] + s[4] + s[5];
@@ -699,7 +822,7 @@ impl Habitat {
         for c in cells {
             if let Some(m) = &c.material {
                 organic += m.organic();
-                reduced += m.reduced();
+                reduced += m.reduced() + m.richness();
                 mineral += m.mineral_total();
                 atp += c.energy as f64;
             }
@@ -744,12 +867,73 @@ impl Habitat {
         self.air_nitrogen -= taken;
         self.initial_nitrogen += change - taken;
     }
-    /// Nitrogen's slow traffic with the air, and its slow escape from remains.
-    /// Lightning fixes a little into the rain of a storm. Where oxygen is
-    /// scarce but present, rotting matter sends some back to the air.
-    fn nitrogen_cycle(&mut self, dt: f64) {
+    /// The planet's own chemistry, with no life in it. Each substance moves
+    /// between the air, the water and the ground by where it is and how warm:
+    /// carbon dioxide between air and water, more of it held by cold water;
+    /// remains silted over and later driven back out by the planet's heat;
+    /// iron rusted out of the sea by free oxygen; nitrogen fixed by
+    /// lightning, leached from remains, and lost where oxygen is scarce.
+    pub(crate) fn planet_chemistry(&mut self, dt: f64) {
         let sites = self.domain.sites();
+        let surface: f64 = (0..sites).map(|i| self.domain.area(i)).sum();
         let mut lost = 0.;
+        let air = self.air_carbon / surface;
+        let (mut breathed, mut free) = (0., 0.);
+        for i in 0..sites {
+            let area = self.domain.area(i);
+            let warmth = self.planet.as_ref().map_or(0.5, |p| p.temperature_at(i)) as f64;
+            let s = &mut self.solutes[i];
+            // Cold water holds more gas than warm.
+            let held = air * area * (1.5 - warmth).clamp(0.5, 1.5);
+            let moved = ((held - s[CO2]) * (1. - (-GAS_EXCHANGE * dt).exp())).max(-s[CO2]);
+            s[CO2] += moved;
+            breathed += moved;
+            let fraction = 1. - (-BURIAL * dt).exp();
+            self.buried_carbon += s[5] * fraction;
+            self.buried_nitrogen += s[REMAINS_N] * fraction;
+            s[5] -= s[5] * fraction;
+            s[REMAINS_N] -= s[REMAINS_N] * fraction;
+            if let Some(gas) = self.systems.gas.get_mut(i) {
+                let level = gas[0] / (area / 2.56);
+                let rusted = (s[IRON] * (1. - (-RUSTING * level / (OXYGEN_HALF + level) * dt).exp()))
+                    .min(gas[0] / RUST_OXYGEN);
+                s[IRON] -= rusted;
+                self.rusted_iron += rusted;
+                let used = (rusted * RUST_OXYGEN).min(gas[0]);
+                gas[0] -= used;
+                gas[1] += used;
+                free += gas[0];
+            }
+        }
+        // The air cannot give more than it holds, down to the last rounding.
+        if breathed > self.air_carbon {
+            let excess = breathed - self.air_carbon;
+            let dissolved: f64 = self.solutes.iter().map(|s| s[CO2]).sum();
+            for s in &mut self.solutes {
+                s[CO2] -= excess * s[CO2] / dissolved;
+            }
+            breathed = self.air_carbon;
+        }
+        self.air_carbon -= breathed;
+        // Buried carbon comes back as carbon dioxide only as fast as there
+        // is free oxygen to burn it with. Its nitrogen returns to the air.
+        let fraction = 1. - (-OUTGAS * self.steering.vents as f64 * dt).exp();
+        let burned = (self.buried_carbon * fraction).min(free / OXYGEN_PER_FUEL);
+        if burned > 0. && free > 0. {
+            let share = burned / self.buried_carbon.max(1e-12);
+            let used = burned * OXYGEN_PER_FUEL;
+            for gas in &mut self.systems.gas {
+                let taken = (used * gas[0] / free).min(gas[0]);
+                gas[0] -= taken;
+                gas[1] += taken;
+            }
+            let nitrogen = self.buried_nitrogen * share;
+            self.buried_carbon -= burned;
+            self.buried_nitrogen -= nitrogen;
+            self.air_carbon += burned;
+            self.air_nitrogen += nitrogen;
+            self.heat += burned * Q;
+        }
         for i in 0..sites {
             let s = &mut self.solutes[i];
             let leached = s[REMAINS_N] * (1. - (-LEACH * dt).exp());
@@ -779,6 +963,10 @@ impl Habitat {
         }
     }
     pub fn errors(&self, cells: &[Cell]) -> [f64; 4] {
+        // Books kept under older rules are reset when the world next runs.
+        if self.chemistry != CHEMISTRY {
+            return [0.; 4];
+        }
         let (o, m, e) = self.totals(cells);
         [
             o - self.initial_organic,
@@ -814,8 +1002,9 @@ impl Habitat {
             && self.planet.as_ref().is_none_or(|p| p.domain == self.domain)
             && self.physiology.valid()
             && self.web.valid()
-            && self.air_nitrogen.is_finite()
-            && self.air_nitrogen >= 0.
+            && [self.air_nitrogen, self.air_carbon, self.buried_carbon, self.buried_nitrogen, self.rusted_iron]
+                .iter()
+                .all(|v| v.is_finite() && *v >= 0.)
             && self.development.valid(cells, &self.joints)
             && self.systems.valid(self.domain, cells)
             && self.planet.as_ref().is_none_or(|p| {
@@ -996,7 +1185,7 @@ impl Habitat {
             contrast(level(l, 5), level(r, 5), 0.5) * receptor,
         ]
     }
-    fn physiology(&mut self, e: &mut Evolution, core: &Core) {
+    pub(crate) fn physiology(&mut self, e: &mut Evolution, core: &Core) {
         let mut degree = BTreeMap::<u32, usize>::new();
         for b in &e.bonds {
             *degree.entry(b.a).or_default() += 1;
@@ -1051,6 +1240,20 @@ impl Habitat {
                     c.expression = c.cellular_expression(inputs);
                 }
             }
+            // Size is read from the genes each tick; a genome without the
+            // gene makes cells of the usual size.
+            c.state.stature = if c
+                .genome
+                .genes
+                .iter()
+                .chain(c.lifecycle.homolog.iter().flat_map(|g| &g.genes))
+                .any(|g| g.action == SIZE)
+            {
+                4f32.powf(2. * c.expression[SIZE].clamp(0., 1.) - 1.)
+            } else {
+                1.
+            };
+            let (stature, area, pace) = (c.stature(), c.area(), c.pace());
             let fate = c.state.fate;
             c.state.turn = {
                 let turn = c.genome.steer(lateral, fate);
@@ -1080,6 +1283,7 @@ impl Habitat {
             let uptake = (dt
                 * 0.35
                 * activity[1]
+                * area
                 * watered
                 * autotrophy
                 * core.config.solvent as f64
@@ -1101,6 +1305,7 @@ impl Habitat {
             let taken = (dt
                 * 0.05
                 * activity[0].max(activity[1]).max(activity[CHEMO]).max(activity[15])
+                * area
                 * watered
                 * autotrophy
                 * c.state.exposure as f64
@@ -1112,10 +1317,25 @@ impl Habitat {
             s[NITROGEN] -= taken;
             m.nitrogen += taken;
             c.state.flux.nitrogen += taken;
+            // Phosphorus comes in the same way, from mineral dissolved out of rock.
+            let rock = s[2] * 2.56 / self.domain.area(site);
+            let mined = (dt
+                * 0.01
+                * activity[0].max(activity[1]).max(activity[CHEMO]).max(activity[15])
+                * area
+                * watered
+                * autotrophy
+                * c.state.exposure as f64
+                * rock
+                / (0.01 + rock))
+                .min(s[2])
+                .min((m.bound_phosphorus() * 0.5 - m.phosphorus).max(0.));
+            s[2] -= mined;
+            m.phosphorus += mined;
             let before = c.energy as f64;
             c.energy = (before - taken * N_PRICE) as f32;
             self.heat += before - c.energy as f64;
-            let decomposed = (dt * 0.05 * activity[15] * watered * s[5] / (0.05 + s[5]))
+            let decomposed = (dt * 0.05 * activity[15] * area * watered * s[5] / (0.05 + s[5]))
                 .min(s[5])
                 .min((m.biomass * 1.5 - m.fuel).max(0.))
                 .min(c.energy as f64 / 0.15);
@@ -1144,6 +1364,7 @@ impl Habitat {
             let photo = (dt
                 * 0.06
                 * harvest
+                * area
                 * core.config.sunlight as f64
                 * illumination
                 * c.state.exposure as f64
@@ -1170,6 +1391,7 @@ impl Habitat {
             let chemo = (dt
                 * 0.02
                 * activity[CHEMO]
+                * area
                 * (mineral / (0.1 + mineral))
                 * (1. + 4. * vent)
                 * watered
@@ -1183,9 +1405,15 @@ impl Habitat {
             self.web.feed(&mut c.state, m.organic(), chemo, crate::trophic::Source::Light);
             self.geothermal_energy += chemo * Q;
             c.state.flux.chemosynthesis += chemo;
-            let wanted = (dt * (0.035 + 0.12 * activity[1]))
+            // How fast a cell can burn fuel. Oxygen gives any cell the high
+            // rate an active life needs, which is why animals wait for it.
+            let air = self.systems.gas.get(site).map_or(1., |gas| {
+                let level = gas[0] / (self.domain.area(site) / 2.56);
+                level / (OXYGEN_HALF + level)
+            });
+            let wanted = (dt * (0.035 + 0.12 * activity[1].max(air)) * pace)
                 .min(m.fuel)
-                .min(((9. - c.energy as f64) / Q).max(0.));
+                .min(((9. * stature - c.energy as f64) / Q).max(0.));
             // With oxygen a cell captures all the energy in the fuel it burns.
             // Without it most of that energy is lost as heat, so life before
             // oxygen is slow life.
@@ -1218,18 +1446,20 @@ impl Habitat {
             // protein/mineral inventories, never promoter output directly.
             for k in 0..ACTIONS {
                 // Commitment genes regulate; they build nothing.
-                let building = if BECOME.contains(&k) || k == BROADEN {
+                let building = if BECOME.contains(&k) || k == BROADEN || k == SIZE {
                     0.
                 } else {
                     c.expression[k] as f64
                 };
                 // Protein and tissue are built with nitrogen; fuel and fat hold none.
-                let amount = (dt * 0.012 * building)
+                // A wall is cellulose: carbon, hydrogen and oxygen only.
+                let needs = if k == WALL { 0. } else { N_RATIO };
+                let amount = (dt * 0.012 * building * pace)
                     .min(m.fuel)
                     .min(c.energy as f64)
-                    .min(m.nitrogen / N_RATIO);
+                    .min(if needs > 0. { m.nitrogen / needs } else { f64::INFINITY });
                 m.fuel -= amount;
-                m.nitrogen = (m.nitrogen - amount * N_RATIO).max(0.);
+                m.nitrogen = (m.nitrogen - amount * needs).max(0.);
                 m.proteins[k] += amount;
                 c.state.flux.proteins += amount;
                 let before = c.energy as f64;
@@ -1241,20 +1471,31 @@ impl Habitat {
                 let turnover = m.proteins[k] * (1. - (-decay * dt).exp());
                 m.proteins[k] -= turnover;
                 m.fuel += turnover;
-                m.nitrogen += turnover * N_RATIO;
+                m.nitrogen += turnover * needs;
             }
             // An engulfing cell grows up to twice the size of an ordinary one,
             // and has to before it divides: bigger than its prey, slower to breed.
             let fed = (dt
                 * 0.04
                 * activity[7]
-                * (1. - m.biomass / (0.5 * (1. + activity[ENGULF]))).max(0.))
+                * pace
+                * (1. - m.biomass / (0.5 * stature * (1. + activity[ENGULF]))).max(0.))
             .min(m.fuel)
             .min(c.energy as f64 / 0.4);
-            let growth = fed.min(m.nitrogen / N_RATIO);
-            // How far short of nitrogen this cell's growth is running.
-            let short = if fed > 1e-9 { (1. - growth / fed) as f32 } else { 0. };
+            let built = fed.min(m.nitrogen / N_RATIO);
+            // Bone lends its phosphorus to growth when the cell has none loose.
+            // Rounding can leave bone a hair below nothing; it never lends that.
+            let bone = m.mineral.max(0.);
+            let growth = built.min((m.phosphorus + bone) / P_RATIO);
+            let lent = (growth * P_RATIO - m.phosphorus).clamp(0., bone);
+            m.mineral = (m.mineral - lent).max(0.);
+            m.phosphorus = (m.phosphorus + lent - growth * P_RATIO).max(0.);
+            // How far short of nitrogen, and then of phosphorus, this cell's
+            // growth is running.
+            let short = if fed > 1e-9 { (1. - built / fed) as f32 } else { 0. };
             c.state.nitrogen_short += (short - c.state.nitrogen_short) * 0.05;
+            let short = if built > 1e-9 { (1. - growth / built) as f32 } else { 0. };
+            c.state.phosphorus_short += (short - c.state.phosphorus_short) * 0.05;
             m.fuel -= growth;
             m.nitrogen = (m.nitrogen - growth * N_RATIO).max(0.);
             m.biomass += growth;
@@ -1271,8 +1512,8 @@ impl Habitat {
             let before = c.energy as f64;
             c.energy = (before - bound * 0.2) as f32;
             self.heat += before - c.energy as f64;
-            let released = m.mineral * (1. - (-0.006 * dt).exp());
-            m.mineral -= released;
+            let released = (m.mineral * (1. - (-0.006 * dt).exp())).max(0.);
+            m.mineral = (m.mineral - released).max(0.);
             s[2] += released;
             for k in 0..2 {
                 let secreted = (dt * 0.015 * activity[5 + k])
@@ -1300,15 +1541,24 @@ impl Habitat {
             m.nitrogen -= spare;
             s[NITROGEN] += spare;
             c.state.flux.nitrogen_given += spare;
+            let spare =
+                (m.phosphorus - m.bound_phosphorus() * 0.5).max(0.) * (1. - (-0.2 * dt).exp());
+            m.phosphorus -= spare;
+            s[2] += spare;
             let upkeep = dt
-                * (0.055
+                * ((0.055
                     + (c.genome.genes.len()
                         + c.lifecycle.homolog.as_ref().map_or(0, |g| g.genes.len()))
                         as f64
-                        * 0.004
-                    + m.organic() * 0.015
+                        * 0.004)
+                    * pace
+                    + (m.organic() - m.lipid * (1. - FAT_UPKEEP)) * 0.015
                     + c.state.symbiont as f64 * 0.01)
-                * (1. - DORMANCY * c.state.thirst as f64);
+                * (1. - DORMANCY * c.state.thirst as f64)
+                // A cell wrapped in its body's other cells loses less to the
+                // water than one bathed in it, so a large body costs less to
+                // run for its size than a small one.
+                * (INTERIOR + (1. - INTERIOR) * c.state.exposure as f64);
             self.spend(c, upkeep, false);
             if let Some(p) = &self.planet {
                 c.state.injury =
@@ -1350,6 +1600,23 @@ impl Habitat {
         };
         let mut body = Vec::new();
         let mut bulk = Vec::new();
+        // How strongly each cell's mouth draws water: none for a walled cell,
+        // a light-feeder, or a mouth buried inside its body.
+        let currents: Vec<f32> = if armed {
+            e.cells
+                .iter()
+                .map(|c| {
+                    let mouth = c.activity(ENGULF);
+                    if mouth > 0. {
+                        mouth * (1. - c.activity(WALL)).powi(2) * c.bite() * c.state.exposure
+                    } else {
+                        0.
+                    }
+                })
+                .collect()
+        } else {
+            Vec::new()
+        };
         if armed {
             body = vec![0usize; e.cells.len()];
             for (g, members) in e.groups().iter().enumerate() {
@@ -1432,6 +1699,46 @@ impl Habitat {
                     continue;
                 }
                 let d = e.cells[j].p.sub(e.cells[i].p).len();
+                // The feeding current: a free cell much smaller than a mouth's
+                // whole body is drawn toward the mouth. Cells held in a body
+                // are not, which is the first reason to live in one.
+                if armed && d > 1e-4 && d < FEED_REACH && (currents[i] >= 0.05 || currents[j] >= 0.05) {
+                    for (a, b) in [(i, j), (j, i)] {
+                        let mouth = currents[a];
+                        if mouth < 0.05
+                            || degree[b] > 0
+                            || body[a] == body[b]
+                            || e.cells[a].energy < 0.5
+                            || kin(a, b) && e.cells[b].activity(ENGULF) > 0.25
+                        {
+                            continue;
+                        }
+                        let outsize =
+                            bulk[body[a]] / e.cells[b].material.as_ref().unwrap().biomass;
+                        // A mouth lets go of what it cannot get down: spines and
+                        // walls weaken the current as much as they slow swallowing.
+                        let advantage = ((outsize - FILTER_RATIO) / 0.7).clamp(0., 1.) as f32
+                            / (1.
+                                + e.cells[b].activity(SPINE) * 6.
+                                + e.cells[b].activity(WALL) * 10.);
+                        if advantage <= 0.02 {
+                            continue;
+                        }
+                        let toward = e.cells[a].p.sub(e.cells[b].p).mul(1. / d);
+                        let speed = FEED_CURRENT * mouth * advantage * (1. - d / FEED_REACH);
+                        let kick = (speed - e.cells[b].v.dot(toward)) * 0.5;
+                        if kick > 0. {
+                            // The mouth pays for the motion it gives its prey.
+                            let mass = e.cells[b].material.as_ref().unwrap().mass();
+                            // Priced as a swimming motor's work is.
+                            let work = 0.5 * mass * (kick * kick) as f64 * WORK_PRICE;
+                            if self.spend(&mut e.cells[a], work, true) >= work * 0.999 {
+                                e.cells[b].v = e.cells[b].v.add(toward.mul(kick));
+                                e.cells[a].state.flux.drawn += 1.;
+                            }
+                        }
+                    }
+                }
                 if d > radii[i] + radii[j] + 0.12 {
                     continue;
                 }
@@ -1568,8 +1875,9 @@ impl Habitat {
                             - e.cells[a].material.as_ref().unwrap().fuel)
                             .max(0.);
                         let available = e.cells[a].energy as f64 / 0.2;
+                        let reach = e.cells[a].area();
                         let prey = e.cells[b].material.as_mut().unwrap();
-                        let extracted = (DT as f64 * GRAZE * enzyme * (1. - immune)
+                        let extracted = (DT as f64 * GRAZE * enzyme * reach * (1. - immune)
                             / (1. + prey.mineral / prey.biomass * 4. + barrier * 5.))
                             .min((prey.biomass - 0.005).max(0.))
                             .min(capacity / 0.85)
@@ -1604,6 +1912,7 @@ impl Habitat {
                         let am = e.cells[a].material.as_mut().unwrap();
                         am.fuel += extracted * 0.85;
                         am.nitrogen += extracted * 0.85 * N_RATIO;
+                        am.phosphorus += extracted * 0.85 * P_RATIO;
                         let held = am.organic();
                         self.web.feed(
                             &mut e.cells[a].state,
@@ -1614,6 +1923,7 @@ impl Habitat {
                         let site = self.domain.locate(e.cells[a].p);
                         self.solutes[site][5] += extracted * 0.15;
                         self.solutes[site][REMAINS_N] += extracted * 0.15 * N_RATIO;
+                        self.solutes[site][2] += extracted * 0.15 * P_RATIO;
                         self.physiology.digested += extracted;
                         self.physiology.excreted += extracted * 0.15;
                         self.spend(&mut e.cells[a], extracted * 0.2, false);
@@ -1658,8 +1968,9 @@ impl Habitat {
                             - e.cells[a].material.as_ref().unwrap().fuel)
                             .max(0.);
                         let available = e.cells[a].energy as f64 / 0.2;
+                        let reach = e.cells[a].area();
                         let prey = e.cells[b].material.as_mut().unwrap();
-                        let potential = (DT as f64 * 0.3 * mouth * advantage * (1. - spared))
+                        let potential = (DT as f64 * 0.3 * mouth * reach * advantage * (1. - spared))
                             .min((prey.biomass - 0.005).max(0.))
                             .min(capacity / 0.85)
                             .min(available);
@@ -1712,6 +2023,7 @@ impl Habitat {
                         let am = e.cells[a].material.as_mut().unwrap();
                         am.fuel += extracted * 0.85 + swallowed;
                         am.nitrogen += extracted * 0.85 * N_RATIO;
+                        am.phosphorus += extracted * 0.85 * P_RATIO;
                         let held = am.organic();
                         self.web.feed(
                             &mut e.cells[a].state,
@@ -1722,6 +2034,7 @@ impl Habitat {
                         let site = self.domain.locate(e.cells[a].p);
                         self.solutes[site][5] += extracted * 0.15;
                         self.solutes[site][REMAINS_N] += extracted * 0.15 * N_RATIO;
+                        self.solutes[site][2] += extracted * 0.15 * P_RATIO;
                         self.physiology.digested += extracted;
                         self.physiology.excreted += extracted * 0.15;
                         self.spend(&mut e.cells[a], extracted * 0.2, false);
@@ -1739,7 +2052,9 @@ impl Habitat {
                             e.cells[a].v = shared;
                             e.cells[b].v = shared;
                         }
-                        let pricked = (DT as f64 * 0.05 * spines * mouth) as f32;
+                        // A mouth lets go of what pricks it: the more fully armed the
+                        // prey, the sooner, so a fully spined cell is simply left alone.
+                        let pricked = (DT as f64 * 0.05 * spines * (1. - spines) * mouth) as f32;
                         e.cells[a].state.injury = (e.cells[a].state.injury + pricked).min(1.);
                         e.cells[b].state.flux.wounded += pricked as f64;
                         if extracted > 0. {
@@ -2108,6 +2423,36 @@ impl Habitat {
                 (mass, radius, weight, gamma * step as f64 / mass)
             })
             .collect();
+        // Water drags on a body as a whole, by how far it reaches, not on
+        // each of its cells as if the others were not there. A compact body
+        // of many cells therefore meets far less drag for its mass than one
+        // cell does, and with motors on its surface it swims faster: about
+        // the same number of body lengths a cycle at any size. A chain one
+        // cell thick gains nothing, as a rod pulled through water does not.
+        let mut properties = properties;
+        // Within a body the water still resists each cell's own movement
+        // against its neighbours, as before. Without that a large body's
+        // springs ring until it flies apart.
+        let mut bodies: Vec<(Vec<usize>, Vec<f32>, f64)> = Vec::new();
+        for members in e.groups() {
+            if members.len() < 3 {
+                continue;
+            }
+            let mass: f64 = members.iter().map(|&i| properties[i].0).sum();
+            let centre = members
+                .iter()
+                .fold(V3::default(), |sum, &i| sum.add(e.cells[i].p.mul((properties[i].0 / mass) as f32)));
+            let reach = members
+                .iter()
+                .map(|&i| e.cells[i].p.sub(centre).len() + properties[i].1)
+                .fold(0f32, f32::max);
+            let ratio = BODY_DRAG * reach as f64 * step as f64 / mass;
+            let own: Vec<f32> = members.iter().map(|&i| (1. / (1. + properties[i].3)) as f32).collect();
+            for &i in &members {
+                properties[i].3 = properties[i].3.min(ratio);
+            }
+            bodies.push((members, own, mass));
+        }
         let springs: Vec<_> = e
             .bonds
             .iter()
@@ -2169,7 +2514,7 @@ impl Habitat {
                 // The sea is never still. Its eddies jostle a free cell about,
                 // more when the oceans are stirred, so drifters spread out
                 // instead of piling up where they were born. A body holds its course.
-                if !bonded[i] && submersion[i] > 0.5 {
+                if !bonded[i] && submersion[i] > 0.1 {
                     let turn = core.random() * std::f32::consts::TAU;
                     c.p = c
                         .p
@@ -2202,10 +2547,11 @@ impl Habitat {
                     fluid_mass / (fluid_mass + mass)
                 };
                 // A motor that beats against water has less and less to push
-                // on as the cell leaves it, and nothing on dry ground. Travel
+                // on as the cell leaves it, and nothing once it is two thirds
+                // out, so a swimmer cannot drive itself up a beach. Travel
                 // over land takes muscle and feet.
                 let afloat = if self.domain.spherical() {
-                    (submersion[i] as f64 * 4.).min(1.)
+                    ((submersion[i] as f64 - 0.3) / 0.4).clamp(0., 1.)
                 } else {
                     1.
                 };
@@ -2223,7 +2569,7 @@ impl Habitat {
                 } else {
                     (drag_ratio * mass / step as f64, WORK_PRICE)
                 };
-                let wanted = THRUST * motor * medium;
+                let wanted = THRUST * motor * medium * c.area();
                 let cost = (wanted * wanted / gamma * price + 0.01 * motor) * DT as f64;
                 let paid = self.spend(c, cost, true);
                 e.motor_work += paid;
@@ -2285,7 +2631,11 @@ impl Habitat {
                 let delta = e.cells[c].p.sub(e.cells[a].p);
                 let d = delta.len().max(1e-6);
                 let parting = e.cells[c].v.sub(e.cells[a].v).dot(delta) / d;
-                let f = delta.mul(((d - target) * k + parting * BOND_DAMPING) / d);
+                // A bond between small cells is a small bond: it is only as
+                // strong as the lesser of the two it joins. (Without this a
+                // tie that suits a full-sized cell throws a small one about.)
+                let slight = (properties[a].0.min(properties[c].0) / SLIGHT).min(1.) as f32;
+                let f = delta.mul(((d - target) * k + parting * BOND_DAMPING) * slight / d);
                 force[a] = force[a].add(f);
                 force[c] = force[c].sub(f);
             }
@@ -2305,9 +2655,18 @@ impl Habitat {
                 let d = delta.len().max(1e-6);
                 let overlap = properties[i].1 + properties[j].1 - d;
                 if overlap > 0. {
-                    let f = delta.mul(overlap * 4. / d);
+                    let slight = (properties[i].0.min(properties[j].0) / SLIGHT).min(1.) as f32;
+                    let f = delta.mul(overlap * 4. * slight / d);
                     force[i] = force[i].sub(f);
                     force[j] = force[j].add(f);
+                }
+            }
+            for (members, own, mass) in &bodies {
+                let drift = members.iter().fold(V3::default(), |sum, &i| {
+                    sum.add(e.cells[i].v.mul((properties[i].0 / mass) as f32))
+                });
+                for (&i, &keep) in members.iter().zip(own) {
+                    e.cells[i].v = drift.add(e.cells[i].v.sub(drift).mul(keep));
                 }
             }
             for (i, c) in e.cells.iter_mut().enumerate() {
@@ -2319,6 +2678,10 @@ impl Habitat {
                 };
                 force[i] = force[i].sub(self.domain.up(c.p).mul(weight * gravity));
                 c.v = c.v.add(force[i].mul(step / mass as f32));
+                // Nothing alive moves faster than this.
+                if c.v.len() > 30. {
+                    c.v = c.v.mul(30. / c.v.len());
+                }
                 self.drag_cached(c, mass, drag_ratio, sites[i]);
                 if fins[i] > 0. {
                     self.fin_drag(c, mass, drag_ratio * FIN_GRIP * fins[i], sites[i]);
@@ -2506,20 +2869,32 @@ impl Habitat {
             *degree.entry(b.a).or_default() += 1;
             *degree.entry(b.b).or_default() += 1;
         }
-        for i in 0..n {
+        // A planet holds only so many cells. Once it is nearly full, each
+        // round starts at a different cell, so every ready cell has the same
+        // chance at the places that open up and the oldest do not take them all.
+        let limit = MAX_CELLS.min(core.config.capacity);
+        let first = if n * 10 >= limit * 9 {
+            (core.random() * n as f32) as usize % n.max(1)
+        } else {
+            0
+        };
+        for i in (0..n).map(|k| (k + first) % n) {
             if n + daughters.len() >= MAX_CELLS.min(core.config.capacity) {
                 break;
             }
             let c = &e.cells[i];
             if c.lifecycle.phase == crate::development::Phase::Gamete
-                || c.material.as_ref().unwrap().biomass < 0.38 * (1. + c.activity(ENGULF)) as f64
-                || c.energy < 5.5
+                || c.material.as_ref().unwrap().biomass
+                    < 0.38 * c.stature() * (1. + c.activity(ENGULF)) as f64
+                || (c.energy as f64) < 5.5 * c.stature()
                 || c.cooldown > 0.
                 || core.random() > c.activity(7) * DT * 0.5
             {
                 continue;
             }
-            self.spend(&mut e.cells[i], 1., false);
+            // Dividing costs in proportion to what is divided.
+            let cost = e.cells[i].stature();
+            self.spend(&mut e.cells[i], cost, false);
             let mut child = e.cells[i].clone();
             child.id = e.next_cell;
             e.next_cell += 1;
@@ -2678,6 +3053,8 @@ impl Habitat {
                 self.solutes[site][0] += m.fuel;
                 let detritus = m.organic() - m.fuel - m.body.dissolved_organic();
                 let bound = m.bound_nitrogen();
+                // Remains hold what sugar would: the rest of fat's energy goes as heat.
+                self.heat += m.richness() * Q;
                 let fraction = if c.state.culled || self.systems.particles.len() >= 4096 {
                     0.
                 } else {
@@ -2689,7 +3066,9 @@ impl Habitat {
                 self.solutes[site][if c.state.culled { NITROGEN } else { REMAINS_N }] +=
                     bound * (1. - fraction);
                 self.solutes[site][NITROGEN] += m.nitrogen;
-                self.solutes[site][2] += m.mineral * (1. - fraction);
+                // Phosphorus leaves dead tissue at once and dissolves.
+                self.solutes[site][2] +=
+                    m.mineral * (1. - fraction) + m.phosphorus + m.bound_phosphorus();
                 if fraction > 0. {
                     self.systems
                         .particles
@@ -2745,9 +3124,24 @@ impl Habitat {
         if self.initial_nitrogen <= 0. {
             self.seed_nitrogen(&mut e.cells);
         }
+        if self.chemistry != CHEMISTRY {
+            if self.chemistry < 2 {
+                self.seed_elements(false);
+            }
+            if self.chemistry < 3 {
+                for m in e.cells.iter_mut().filter_map(|c| c.material.as_mut()) {
+                    m.phosphorus = m.phosphorus.max(m.bound_phosphorus() * 0.5);
+                }
+            }
+            self.chemistry = CHEMISTRY;
+            self.rebase(&e.cells);
+            self.initial_mineral -= self.planet.as_ref().map_or(0., |p| p.mineral_input);
+            self.initial_energy +=
+                self.heat + self.mechanical_input - self.photon_energy - self.geothermal_energy;
+        }
         self.fluid.step();
         self.transport(DT as f64);
-        self.nitrogen_cycle(DT as f64);
+        self.planet_chemistry(DT as f64);
         if self.ablation != "transport" {
             self.tissue_transport(e);
         }
@@ -2845,6 +3239,22 @@ impl Habitat {
 }
 
 impl Cell {
+    /// How large this cell grows before it divides, beside the usual size.
+    pub fn stature(&self) -> f64 {
+        if self.state.stature > 0. {
+            self.state.stature as f64
+        } else {
+            1.
+        }
+    }
+    /// Its surface beside that of a cell of the usual size.
+    pub fn area(&self) -> f64 {
+        self.stature().powf(2. / 3.)
+    }
+    /// Its metabolism beside that of a cell of the usual size.
+    pub fn pace(&self) -> f64 {
+        self.stature().powf(0.75)
+    }
     /// The weight this cell can carry before it is crushed. Bare soft tissue
     /// carries a few times its own weight; bone, a wall, laid-down fibre and
     /// water held under pressure each carry far more.
@@ -3147,11 +3557,13 @@ mod tests {
         assert!(e.cells[0].material.as_ref().unwrap().proteins[3] > 0.);
         assert_eq!(e.cells[0].material.as_ref().unwrap().mineral, 0.);
         h.solutes[site][2] = 0.5;
-        let before = h.solutes[site][2];
+        // Everything the cell holds that came out of rock: bone, and the
+        // phosphorus loose in it and built into its tissue.
+        let before = h.solutes[site][2] + e.cells[0].material.as_ref().unwrap().mineral_total();
         h.physiology(&mut e, &core);
         let m = e.cells[0].material.as_ref().unwrap();
         assert!(m.mineral > 0.);
-        assert!((h.solutes[site][2] + m.mineral - before).abs() < 1e-12);
+        assert!((h.solutes[site][2] + m.mineral_total() - before).abs() < 1e-12);
     }
     #[test]
     fn material_contraction_is_paid_and_empty_atp_prevents_activation() {
@@ -3527,7 +3939,7 @@ mod tests {
         }
         e["physical"].as_object_mut().unwrap().remove("planet");
         e["physical"].as_object_mut().unwrap().remove("physiology");
-        for key in ["initial_nitrogen", "air_nitrogen", "web"] {
+        for key in ["initial_nitrogen", "air_nitrogen", "web", "chemistry"] {
             assert!(e["physical"].as_object_mut().unwrap().remove(key).is_some());
         }
         for s in e["physical"]["solutes"].as_array_mut().unwrap() {
