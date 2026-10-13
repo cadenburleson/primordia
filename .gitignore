@@ -7,3 +7,4 @@ playwright-report/
 engine/target/
 .tools/
 .build-backups/
+.quick/

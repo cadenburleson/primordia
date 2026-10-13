@@ -78,6 +78,8 @@ export interface CellPhysiology {excitation:number;recovery:number;nutrient_memo
   fate?:number;
   /** Light harvest kept up by a captured cell living inside this one. */
   symbiont?:number;
+  /** Breathing capacity of breathers kept alive inside the cell. */
+  mitochondria?:number;
   /** How fully the cell burned its fuel last tick: 1 with oxygen to spare, 0 when it could only ferment. */
   breath?:number}
 export interface SystemView {particles:{p:V3;radius:number;mineral:number}[];ledger:{waterFlow:number;soluteFlow:number;membraneExchange:number;absorbed:number;filtered:number;gasExchange:number;respired:number;pumpWork:number;matrixBuilt:number;fiberBuilt:number;mineralRemodeled:number;polymersBuilt:number;fidelityWork:number;matrixMeals:number};fluidCells:number;fluidConnections:number;internalWater:number;internalSolutes:number;matrix:number;fibers:number;polymerSpecies:number;polymerMass:number;gasError:number;germlineCells:number;pressureMax:number}
@@ -96,6 +98,7 @@ export type SteerAction =
   | {kind:'sustain';on:boolean}
   | {kind:'light';scale:number}
   | {kind:'vents';scale:number}
+  | {kind:'bombardment';scale:number}
   | {kind:'goal';goal:BreedingGoal|'auto'|'';strength:number;period:number}
   | {kind:'favour';body:number;pressure:number}
   | {kind:'unfavour'}
@@ -114,11 +117,13 @@ export interface SteeringView {
   /** The rewarded trait follows life's ladder by itself; `goal` is the one in force. */
   auto?:boolean;
   /** Share of the planet's oxygen that is free, and how fully living cells are burning their fuel (1 is with oxygen to spare). */
-  oxygen?:number;breath?:number;cycles?:CyclesView;mutation:number;mutationFactor:number;mixing:number;light:number;vents:number;
+  oxygen?:number;breath?:number;cycles?:CyclesView;mutation:number;mutationFactor:number;mixing:number;light:number;vents:number;ashore?:number;land?:{plants:number;animals:number;dry:number;woody:number;flowering:number;grass:number;aloft:number;warm:number;warmAloft:number;largest:number;minds:number;greenhouse:number};sky?:{bombardment:number;impacts:number;airbursts:number;airColumn:number;ozone:number;hardRays:number;burnedUp:number;dust:number;rockNitrogen:number};
   /** How readily touching cells pass a gene across; 0 is off. */
   sharing?:number;
   /** Living cells descended from each starter species released, which are being kept from dying out, and founders released to do it. */
   species?:[string,number][];sustained?:string[];restocked?:number;
+  /** The lines each starter kind has split into: `traits` is a set of adaptations as bits, `from` the line it arose from (null for the kind as it was designed), `since` the cycle it first appeared (null if before records began). */
+  trees?:{species:string;cells:number;lines:number;branches:{traits:number;from:number|null;since:number|null;cells:number}[]}[];
   /** Living cells by how their body feeds: light, dissolved fuel, remains, vents, herbivore, omnivore, carnivore. */
   diet:number[];
   /** Living cells by kind of life: simple (no wall, mouth or motor), plant-like, fungus-like, animal-like. */

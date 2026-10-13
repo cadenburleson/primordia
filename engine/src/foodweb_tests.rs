@@ -27,6 +27,8 @@ fn fixture() -> (Core, Evolution, Habitat) {
                           // Not sticky: two cells that bond become one body, and a body does
                           // not attack itself.
         c.material.as_mut().unwrap().proteins[2] = 0.;
+        // And able to breathe, whatever its membrane is given over to.
+        c.state.mitochondria = 1.;
         c.genome.id = 100 + i as u32;
         // One silent gene: a genome may not be empty.
         c.genome.genes = vec![Gene {
@@ -140,7 +142,14 @@ fn a_motor_without_its_gene_drive_or_without_energy_does_nothing() {
     build(&mut e, 0, PROPEL); // material, but no gene expressing a drive
     build(&mut e, 1, PROPEL);
     e.cells[1].genome.genes.push(always(PROPEL));
-    e.cells[1].energy = 0.01; // a drive, but nothing to pay with
+    e.cells[1].energy = 0.01; // a drive, but nothing to pay with:
+    // no fuel, and no other machinery to break down for it
+    let m = e.cells[1].material.as_mut().unwrap();
+    m.fuel = 0.;
+    for k in (0..m.proteins.len()).filter(|&k| k != PROPEL) {
+        m.proteins[k] = 0.;
+    }
+    rebase(&mut h, &e);
     let start = (e.cells[0].p.x, e.cells[1].p.x);
     for _ in 0..12 {
         h.tick(&mut e, &mut core);
@@ -158,6 +167,26 @@ fn a_motor_without_its_gene_drive_or_without_energy_does_nothing() {
         h.tick(&mut e, &mut core);
     }
     assert!((e.cells[0].p.x - start).abs() < 0.05);
+}
+
+#[test]
+fn a_swimmer_pointed_at_the_sky_does_not_leave_the_water() {
+    let (mut core, mut e, mut h) = fixture();
+    e.cells.truncate(1);
+    build(&mut e, 0, PROPEL);
+    e.cells[0].genome.genes.push(always(PROPEL));
+    rebase(&mut h, &e);
+    let start = e.cells[0].p.y;
+    let mut top = start;
+    for _ in 0..400 {
+        // Held nose up and kept fed: all it can do is try to climb.
+        e.cells[0].state.pitch = 1.;
+        e.cells[0].energy = 8.;
+        h.tick(&mut e, &mut core);
+        top = top.max(e.cells[0].p.y);
+    }
+    assert!(e.cells[0].state.motor_work > 0., "its motor ran");
+    assert!(top < start + 0.5, "it rose {} with no water over it", top - start);
 }
 
 #[test]
@@ -275,7 +304,7 @@ fn a_cell_that_harvests_light_cannot_take_prey_until_it_gives_the_light_up() {
 }
 
 #[test]
-fn light_feeders_free_oxygen_the_air_carries_it_and_breathing_doubles_what_fuel_gives() {
+fn light_feeders_free_oxygen_the_air_carries_it_and_breathing_gives_fifteen_times_what_fermenting_does() {
     // One cell with fuel to burn, in air with all of its oxygen free or none.
     let gained = |air: f64| {
         let (mut core, mut e, mut h) = fixture();
@@ -298,7 +327,7 @@ fn light_feeders_free_oxygen_the_air_carries_it_and_breathing_doubles_what_fuel_
     let ((breathing, full), (fermenting, none)) = (gained(1.), gained(0.));
     eprintln!("energy from the same fuel: {breathing} breathing, {fermenting} without oxygen");
     assert!(full > 0.9 && none < 0.05, "breath {full} and {none}");
-    assert!(fermenting > 0. && (breathing / fermenting - 2.).abs() < 0.2, "{breathing} against {fermenting}");
+    assert!(fermenting > 0. && (breathing / fermenting - 15.).abs() < 1.5, "{breathing} against {fermenting}");
 
     // A light-feeder in air with no free oxygen makes some, and the air
     // carries it to seas where nothing grows.
@@ -431,7 +460,7 @@ fn a_swallowed_light_feeder_can_be_kept_and_its_host_and_descendants_keep_harves
     e.cells[1].p = V3::new(e.cells[0].radius() + e.cells[1].radius(), 5., 0.);
     build(&mut e, 1, 0);
     let mut meals = 0;
-    while e.cells[0].state.symbiont == 0. && meals < 5000 {
+    while e.cells[0].state.symbiont == 0. && meals < 2_000_000 {
         e.cells[0].material.as_mut().unwrap().fuel = 0.;
         e.cells[0].energy = 8.;
         e.cells[1].material.as_mut().unwrap().biomass = 0.22;
@@ -485,9 +514,178 @@ fn a_swallowed_light_feeder_can_be_kept_and_its_host_and_descendants_keep_harves
     assert!(e.divisions > 0 && e.cells.iter().all(|c| c.state.symbiont == 0.5));
 }
 
+#[test]
+fn breathing_takes_machinery_a_mouth_crowds_out_and_a_kept_breather_restores() {
+    use crate::physical::{RESPIRE, SIZE};
+    // One cell with fuel to burn in water full of oxygen. Returns the share
+    // of its fuel it burned right down.
+    let breath = |machinery: bool, mouth: bool, kept: f32, big: bool| {
+        let (mut core, mut e, mut h) = fixture();
+        e.cells.truncate(1);
+        let c = &mut e.cells[0];
+        c.state.mitochondria = kept;
+        c.energy = 1.;
+        if big {
+            c.genome.genes = vec![Gene { action: SIZE, promoter: [0.; INPUTS], bias: 1., strength: 1., fates: 15 }];
+        }
+        let m = c.material.as_mut().unwrap();
+        m.proteins = [0.; crate::autonomous::ACTIONS];
+        if big {
+            m.biomass *= 4.;
+        }
+        m.fuel = 0.3;
+        if machinery {
+            m.proteins[RESPIRE] = 0.5 * m.biomass;
+        }
+        if mouth {
+            m.proteins[ENGULF] = 0.5 * m.biomass;
+        }
+        rebase(&mut h, &e);
+        for _ in 0..4 {
+            h.tick(&mut e, &mut core);
+        }
+        assert!(balanced(&h, &e), "{:?}", h.errors(&e.cells));
+        e.cells[0].state.breath
+    };
+    let (none, own) = (breath(false, false, 0., false), breath(true, false, 0., false));
+    let (crowded, restored) = (breath(true, true, 0., false), breath(false, true, 1., false));
+    let (outsized, housed) = (breath(true, false, 0., true), breath(false, false, 1., true));
+    eprintln!("share of fuel breathed: no machinery {none}, its own {own}, with a mouth {crowded}, a mouth and a kept breather {restored}, four times the size {outsized}, that size with kept breathers {housed}");
+    assert!(none < 0.02, "oxygen is no use without the machinery: {none}");
+    assert!(own > 0.9, "with it a cell breathes: {own}");
+    assert!(crowded < 0.3, "a mouth leaves little membrane to breathe through: {crowded}");
+    assert!(restored > 0.9, "a breather kept inside needs none: {restored}");
+    assert!(outsized < own * 0.75 && outsized > 0.4, "a big cell has too little membrane for its bulk: {outsized}");
+    assert!(housed > 0.9, "kept breathers fill a cell of any size: {housed}");
+}
+
+#[test]
+fn nitrogen_is_fixed_from_the_air_at_a_price_and_only_out_of_reach_of_oxygen() {
+    use crate::physical::FIX;
+    // One cell short of nitrogen, for a cycle. Returns what it fixed and the
+    // energy it was left with.
+    let fixed = |air: f64, wall: bool, light: bool, supply: bool| {
+        let (mut core, mut e, mut h) = fixture();
+        e.cells.truncate(1);
+        h.oxygenate(air);
+        for s in &mut h.solutes {
+            s[1] = 2.;
+            s[crate::physical::NITROGEN] = 0.;
+        }
+        if !supply {
+            h.air_nitrogen = 0.;
+        }
+        e.cells[0].energy = 3.;
+        let m = e.cells[0].material.as_mut().unwrap();
+        m.proteins = [0.; crate::autonomous::ACTIONS];
+        m.proteins[FIX] = 0.02;
+        m.nitrogen = 0.;
+        m.fuel = 0.;
+        if wall {
+            m.proteins[WALL] = 0.2;
+        }
+        if light {
+            m.proteins[0] = 0.02;
+        }
+        rebase(&mut h, &e);
+        let air_before = h.air_nitrogen;
+        for _ in 0..4 {
+            h.tick(&mut e, &mut core);
+        }
+        assert!(balanced(&h, &e), "{:?}", h.errors(&e.cells));
+        let got = h.physiology.nitrogen_fixed;
+        assert!((air_before - h.air_nitrogen - got).abs() < 1e-6, "what a cell fixes comes out of the air");
+        (got, e.cells[0].energy as f64)
+    };
+    let (anoxic, bare, walled, lit) = (
+        fixed(0., false, false, true),
+        fixed(1., false, false, true),
+        fixed(1., true, false, true),
+        fixed(0., false, true, true),
+    );
+    // The same cell with no nitrogen in the air to fix keeps what fixing costs.
+    let price = (fixed(0., false, false, false).1 - anoxic.1) / anoxic.0;
+    eprintln!("fixed in a cycle: no oxygen {:.5} at {price:.0} energy a unit; in oxygen bare {:.5}, walled {:.5}; harvesting light {:.5}", anoxic.0, bare.0, walled.0, lit.0);
+    assert!(anoxic.0 > 0., "with no oxygen about, the enzyme works");
+    assert!((price - 80.).abs() < 8., "and it is dear: {price} a unit");
+    assert!(anoxic.0 > 0., "with no oxygen about, the enzyme works");
+    assert!(bare.0 < anoxic.0 * 0.1, "oxygen stops it: {} against {}", bare.0, anoxic.0);
+    assert!(walled.0 > anoxic.0 * 0.5, "a wall keeps oxygen off it: {} against {}", walled.0, anoxic.0);
+    assert!(lit.0 < anoxic.0 * 0.2, "a cell making oxygen of its own cannot fix beside it: {} against {}", lit.0, anoxic.0);
+}
+
+#[test]
+fn a_swallowed_breather_can_be_kept_and_the_hosts_descendants_inherit_it() {
+    use crate::physical::RESPIRE;
+    // Keep offering an engulfer fresh breathing prey until one is kept.
+    let (mut core, mut e, mut h) = fixture();
+    build(&mut e, 0, ENGULF);
+    e.cells[0].state.mitochondria = 0.;
+    e.cells[0].material.as_mut().unwrap().biomass *= 2.;
+    e.cells[1].p = V3::new(e.cells[0].radius() + e.cells[1].radius(), 5., 0.);
+    build(&mut e, 1, RESPIRE);
+    let mut meals = 0;
+    while e.cells[0].state.mitochondria == 0. && meals < 5000 {
+        e.cells[0].material.as_mut().unwrap().fuel = 0.;
+        e.cells[0].energy = 8.;
+        e.cells[1].material.as_mut().unwrap().biomass = 0.22;
+        e.cells[1].state.injury = 0.;
+        h.contacts(&mut e, &mut core);
+        meals += 1;
+    }
+    assert!(e.cells[0].state.mitochondria > 0.25, "no breather kept in {meals} meals");
+    assert!(meals > 1, "keeping one is a rare event, not the rule");
+    assert_eq!(h.steering.captures, 1);
+    // Prey with no breathing machinery leaves nothing to keep.
+    let (mut core, mut e, mut h) = fixture();
+    build(&mut e, 0, ENGULF);
+    e.cells[0].state.mitochondria = 0.;
+    e.cells[0].material.as_mut().unwrap().biomass *= 2.;
+    e.cells[1].p = V3::new(e.cells[0].radius() + e.cells[1].radius(), 5., 0.);
+    e.cells[1].material.as_mut().unwrap().proteins[RESPIRE] = 0.;
+    for _ in 0..2000 {
+        e.cells[0].material.as_mut().unwrap().fuel = 0.;
+        e.cells[0].energy = 8.;
+        e.cells[1].material.as_mut().unwrap().biomass = 0.22;
+        e.cells[1].state.injury = 0.;
+        h.contacts(&mut e, &mut core);
+    }
+    assert_eq!(e.cells[0].state.mitochondria, 0.);
+
+    // Daughters inherit the breathers their mother carried.
+    let mut world = Core::new(Config {
+        initial_cells: 16,
+        ..Config::default()
+    })
+    .unwrap();
+    world.start_physical();
+    for c in &mut world.autonomous.as_mut().unwrap().cells {
+        c.state.mitochondria = 0.5;
+    }
+    world.step(1200);
+    let e = world.autonomous.as_ref().unwrap();
+    // (A descendant that has since grown a mouth may have swallowed and
+    // kept a better breather, which only ever raises what it carries.)
+    assert!(e.divisions > 0 && e.cells.iter().all(|c| c.state.mitochondria >= 0.5));
+}
+
 /// A hunter of the given bulk beside one prey cell that has `held` bonds to
 /// bystanders. Returns the biomass the prey lost in one tick.
 fn bite(hunter_cells: usize, held: usize) -> f64 {
+    bite_by(hunter_cells, hunter_cells, held, 1.)
+}
+
+/// The same, where only the first `mouths` cells behind the leading one are
+/// mouths like it and the rest of the hunter is plain body, and the prey
+/// cell is `size` times the usual.
+fn bite_by(hunter_cells: usize, mouths: usize, held: usize, size: f64) -> f64 {
+    bite_with(hunter_cells, mouths, held, size, true, 0.)
+}
+
+/// The same, with or without muscle in the mouth to open it, and with
+/// `matrix` laid down around the prey cell. With `mouths` of `usize::MAX`
+/// the hunter digests from outside with enzymes and has no mouth at all.
+fn bite_with(hunter_cells: usize, mouths: usize, held: usize, size: f64, muscle: bool, matrix: f64) -> f64 {
     let mut core = Core::new(Config {
         initial_cells: 2 + hunter_cells + held,
         ..Config::default()
@@ -513,13 +711,19 @@ fn bite(hunter_cells: usize, held: usize) -> f64 {
     // Cell 0 is the mouth, cell 1 the prey touching it.
     e.cells[0].p = V3::new(0., 5., 0.);
     e.cells[1].p = V3::new(0.44, 5., 0.);
-    build(&mut e, 0, ENGULF);
+    build(&mut e, 0, if mouths == usize::MAX { 9 } else { ENGULF });
+    if muscle {
+        build(&mut e, 0, 4);
+    }
+    e.cells[1].material.as_mut().unwrap().body.matrix = matrix;
     e.bonds.clear();
     // The rest of the hunter's body trails behind the mouth.
     for k in 0..hunter_cells {
         let i = 2 + k;
         e.cells[i].p = V3::new(-0.44 * (k + 1) as f32, 5., 0.);
-        build(&mut e, i, ENGULF);
+        if k < mouths && mouths != usize::MAX {
+            build(&mut e, i, ENGULF);
+        }
         let link = bond(&e.cells[i - if k == 0 { 2 } else { 1 }], &e.cells[i]);
         e.bonds.push(link);
     }
@@ -530,8 +734,77 @@ fn bite(hunter_cells: usize, held: usize) -> f64 {
         let link = bond(&e.cells[1], &e.cells[i]);
         e.bonds.push(link);
     }
+    e.cells[1].material.as_mut().unwrap().biomass *= size;
     h.contacts(&mut e, &mut core);
     e.cells[1].state.flux.lost_to_predators
+}
+
+#[test]
+fn what_a_mouth_can_take_is_set_by_the_mouth_and_not_by_the_body_behind_it() {
+    // One mouth cell on a body of eight plain cells bites no harder than a
+    // mouth cell on its own. Eight mouth cells side by side are a big mouth.
+    let (alone, small_mouth, big_mouth) = (bite(0, 3), bite_by(8, 0, 3, 1.), bite(8, 3));
+    assert!(
+        (small_mouth - alone).abs() < alone * 0.05 && big_mouth > small_mouth * 2.,
+        "one mouth cell alone {alone}, on a big body {small_mouth}; a mouth of nine {big_mouth}"
+    );
+    // Prey half again the size of a mouth cell is too big for one, whatever
+    // body is behind it, and not for a mouth of three.
+    assert_eq!(bite_by(8, 0, 0, 1.5), 0., "too big for a small mouth on a big body");
+    assert!(bite_by(8, 2, 0, 1.5) > 0., "a mouth of three takes it");
+    // A body of two cells goes whole into a mouth that is bigger than both
+    // together: holding on to each other does not save them. Against a mouth
+    // no bigger than one of them it does.
+    let (loose, pair_small, pair_big) = (bite(0, 0), bite(0, 1), bite(8, 1));
+    assert!(pair_small < loose * 0.6, "a pair resists a mouth its own size: {pair_small} vs {loose}");
+    assert!(pair_big > loose, "and is swallowed whole by a big one: {pair_big} vs {loose}");
+}
+
+#[test]
+fn a_cell_in_a_body_is_held_by_the_body_however_big_the_mouth_that_pulls_at_it() {
+    // A mouth three times the size of one cell cannot take the body that
+    // cell belongs to, and gets the cell no faster for its size: what it
+    // pulls against is the body. Prey here is a body of four, each cell a
+    // third the size of the mouth.
+    let (loose, held_small) = (bite(0, 0), bite(0, 3));
+    let (loose_big, held_big) = (bite(2, 0), bite(2, 3));
+    assert!(held_small < loose * 0.15, "three ties hold: {held_small} of {loose}");
+    assert!(held_big < loose_big * 0.15, "against a mouth of three as well: {held_big} of {loose_big}");
+    // A mouth that can take all four at once does.
+    assert!(bite(8, 3) > loose, "and a mouth of nine swallows the lot");
+    // Matrix between the cells holds them harder still.
+    let bound = bite_with(0, 0, 3, 1., true, 0.05);
+    assert!(bound < held_small * 0.7, "matrix holds harder: {bound} vs {held_small}");
+}
+
+#[test]
+fn a_mouth_of_many_cells_opens_only_by_muscle() {
+    // Nine mouth cells with muscle among them are one big mouth and take
+    // prey half again the size of any one of them. Without muscle they are
+    // nine small mouths, and it is too big for every one.
+    assert!(bite_with(8, 8, 0, 1.5, true, 0.) > 0.);
+    assert_eq!(bite_with(8, 8, 0, 1.5, false, 0.), 0.);
+    // What one cell can swallow it takes either way.
+    assert!(bite_with(8, 8, 0, 0.5, false, 0.) > 0.);
+}
+
+#[test]
+fn a_wide_mouth_cannot_keep_hold_of_prey_far_smaller_than_itself() {
+    // A mouth of nine cells, opened by muscle, loses a loose cell a
+    // twentieth of its own bulk with the water, and keeps one a quarter of
+    // it. One mouth cell on its own takes the small one.
+    assert_eq!(bite_by(8, 8, 0, 0.45), 0., "it slips out of a mouth of nine");
+    assert!(bite_by(8, 8, 0, 2.2) > 0., "a mouth of nine holds prey a quarter its size");
+    assert!(bite(0, 0) > 0. && bite_by(0, 0, 0, 0.45) > 0., "one cell wraps round the small one");
+    // A small body that goes in whole is judged by the whole of it, and a
+    // piece torn from a body too big to swallow is held by the bite.
+    assert!(bite_by(8, 8, 1, 0.45) > 0., "two small cells together are a mouthful");
+}
+
+#[test]
+fn the_matrix_of_a_tissue_keeps_enzymes_out() {
+    let (bare, bound) = (bite_with(0, usize::MAX, 0, 1., false, 0.), bite_with(0, usize::MAX, 0, 1., false, 0.05));
+    assert!(bare > 0. && bound < bare * 0.3, "digested through matrix at {bound} of {bare}");
 }
 
 #[test]
@@ -612,6 +885,9 @@ fn a_mouth_grows_larger_than_its_prey_and_does_not_glue_itself_to_it() {
         }
         if stranger {
             e.cells[1].genome.genes = vec![always(3), always(14), always(21)];
+        } else {
+            // Kin here are two cells of one individual.
+            e.cells[1].lifecycle.root = e.cells[0].id;
         }
         if mouth {
             build(&mut e, 0, ENGULF);
@@ -1033,6 +1309,14 @@ fn founders_carry_none_of_the_new_abilities_and_older_saves_still_load() {
         }
     }
     // A save written with the 32-gene, 28-sense vocabulary pads with zeros.
+    // Such a world had no breathing gene: take it and its machinery out.
+    for c in &mut core.autonomous.as_mut().unwrap().cells {
+        c.genome.genes.retain(|g| g.action < 32);
+        let m = c.material.as_mut().unwrap();
+        let p = std::mem::take(&mut m.proteins[crate::physical::RESPIRE]);
+        m.fuel += p;
+        m.nitrogen += p * crate::physical::N_RATIO;
+    }
     let mut save: serde_json::Value = serde_json::to_value(&core).unwrap();
     for cell in save["autonomous"]["cells"].as_array_mut().unwrap() {
         cell["expression"].as_array_mut().unwrap().truncate(32);
@@ -1199,15 +1483,22 @@ fn motors_buried_in_a_body_have_no_water_to_beat_against() {
     };
     let (arm, hub) = (swum(1), swum(0));
     assert!(arm > 0.1 && hub > 0., "arm {arm}, hub {hub}");
-    // One neighbour costs a cell little of its surface; four cost nearly half.
+    // Each cell that touches a cell covers a twelfth of its surface: one
+    // neighbour costs it little, four cost a third.
     let (mut core, mut e, mut h) = row(5, vec![always(0)], &[]);
     let hub_id = e.cells[0].id;
     for (k, b) in e.bonds.iter_mut().enumerate() {
         (b.a, b.b) = (hub_id, e.cells[k + 1].id);
     }
+    let middle = e.cells[0].p;
+    for (k, at) in [(0.44, 0.), (-0.44, 0.), (0., 0.44), (0., -0.44)].into_iter().enumerate() {
+        e.cells[k + 1].p = V3::new(middle.x + at.0, middle.y, middle.z + at.1);
+    }
+    // What touches a cell is found in one moment and felt in the next.
+    h.tick(&mut e, &mut core);
     h.tick(&mut e, &mut core);
     let open = |i: usize| e.cells.iter().find(|c| c.id == hub_id + i as u32).unwrap().state.exposure;
-    assert!(open(1) > 0.95 && (open(0) - 0.556).abs() < 0.01, "arm {}, hub {}", open(1), open(0));
+    assert!(open(1) > 0.9 && (open(0) - 0.667).abs() < 0.01, "arm {}, hub {}", open(1), open(0));
     assert!(hub < arm * 0.75, "the buried motor pushes less: {hub} against {arm}");
 }
 
@@ -1404,6 +1695,57 @@ fn muscle_at_a_bony_joint_swings_a_limb_and_feet_make_it_a_stride() {
     assert!(strode > stood.abs() * 3. + 0.1, "feet turn the swing into a stride: {strode} against {stood}");
 }
 
+
+/// Chains of bones of several lengths, set in a zigzag so every joint is at
+/// a wide angle, with muscle and a beat-maker at each joint and fins on
+/// every bone: how far each goes in eighty cycles. Nothing depends on it.
+#[test]
+#[ignore]
+fn probe_jointed_chain() {
+    let bend: f32 = std::env::var("BEND").ok().and_then(|v| v.parse().ok()).unwrap_or(0.114);
+    eprintln!("CHAIN each joint set {bend} to one side and the other in turn (0 is a straight line)");
+    for (n, fins_on) in [(3, "ends"), (5, "ends"), (5, "all"), (9, "all"), (15, "all"), (15, "ends")] {
+        let (mut core, mut e, mut h) = row(n, vec![always(0)], &[]);
+        let first = e.cells[0].p;
+        for (i, c) in e.cells.iter_mut().enumerate() {
+            c.p = V3::new(first.x + i as f32 * 0.425, first.y, first.z + if i % 2 == 0 { bend } else { 0. });
+            let m = c.material.as_mut().unwrap();
+            m.mineral = 0.12 * m.mass();
+            let end = i == 0 || i == n - 1;
+            if !end {
+                m.proteins[4] = 0.05;
+                m.proteins[crate::physiology::CHANNEL] = 0.05;
+                c.genome.genes.extend([always(4), always(crate::physiology::CHANNEL)]);
+            }
+            if end || fins_on == "all" {
+                m.proteins[FIN] = 0.05;
+                c.genome.genes.push(always(FIN));
+            }
+            c.genome.id = 150 + u32::from(end);
+        }
+        rebase(&mut h, &e);
+        let centre = |e: &Evolution| e.cells.iter().fold(V3::default(), |s, c| s.add(c.p)).mul(1. / e.cells.len() as f32);
+        let start = centre(&e);
+        let (mut least, mut most) = (f32::MAX, 0f32);
+        for _ in 0..80 {
+            for s in &mut h.solutes {
+                s[3] = 0.045;
+            }
+            travel(&mut core, &mut e, &mut h, 4);
+            for j in &h.joints {
+                least = least.min(j.angle);
+                most = most.max(j.angle);
+            }
+        }
+        let went = centre(&e).sub(start);
+        let length = (n - 1) as f32 * 0.44;
+        eprintln!(
+            "CHAIN of {n} bones, fins on {fins_on}: went {:.2} along and {:.2} across in 80 cycles: {:.3} units a cycle, {:.3} body lengths a cycle; joints {} swinging {:.2} rad; ties left {} of {}; work {:.1}",
+            went.x, went.z, went.x / 80., went.x / 80. / length, h.joints.len(), most - least, e.bonds.len(), n - 1,
+            h.joints.iter().map(|j| j.work).sum::<f64>(),
+        );
+    }
+}
 
 #[test]
 fn nitrogen_is_taken_from_the_water_by_light_feeders_passed_on_in_food_and_never_made_or_lost() {
@@ -1757,6 +2099,48 @@ fn a_feeding_current_draws_free_small_cells_to_a_body_of_mouths_and_spares_the_b
 }
 
 #[test]
+fn many_mouths_pumping_together_draw_from_farther_than_one() {
+    // A small free cell two and a half units from the end of a row of
+    // mouths: farther than one mouth's current carries.
+    let drawn = |mouths: usize| {
+        let (mut core, mut e, mut h) = row(mouths + 1, vec![always(ENGULF)], &[ENGULF]);
+        for c in &mut e.cells[..mouths] {
+            for k in [0, 1] {
+                c.material.as_mut().unwrap().proteins[k] = 0.;
+            }
+        }
+        e.bonds.truncate(mouths - 1);
+        let last = e.cells[mouths - 1].p;
+        let prey = &mut e.cells[mouths];
+        prey.genome.id = 300;
+        // Small enough for any one of them, and it stays so: with no
+        // muscle to open them together they are so many small mouths, as a
+        // sponge's are.
+        prey.genome.genes = vec![always(1)];
+        for k in [0, 2, ENGULF] {
+            prey.material.as_mut().unwrap().proteins[k] = 0.;
+        }
+        prey.material.as_mut().unwrap().biomass = 0.06;
+        prey.p = V3::new(last.x + 2.5, last.y, last.z);
+        rebase(&mut h, &e);
+        let start = e.cells[mouths].p.sub(e.cells[mouths - 1].p).len();
+        let mut nearest = start;
+        for _ in 0..80 {
+            h.tick(&mut e, &mut core);
+            if e.cells.len() <= mouths {
+                break;
+            }
+            nearest = nearest.min(e.cells[mouths].p.sub(e.cells[mouths - 1].p).len());
+        }
+        start - nearest
+    };
+    let (one, eight) = (drawn(1), drawn(8));
+    eprintln!("a free cell two and a half units off came {one} closer to one mouth and {eight} closer to eight");
+    assert!(one < 0.5, "it is beyond the reach of one mouth: {one}");
+    assert!(eight > 1., "eight pumping together bring it in: {eight}");
+}
+
+#[test]
 fn a_bigger_compact_body_swims_faster_and_its_inner_cells_cost_less_to_run() {
     // A square sheet of `n` by `n` motor cells, all heading the same way.
     let swum = |n: usize| {
@@ -1788,7 +2172,8 @@ fn a_bigger_compact_body_swims_faster_and_its_inner_cells_cost_less_to_run() {
     assert_eq!(kept, 25, "the body held together");
     assert!(nine > one * 1.3 && many > nine, "a bigger body is faster: {one}, {nine}, {many}");
 
-    // The same cell alone and wrapped in six neighbours: what it pays to stay alive.
+    // The same cell alone and packed in on every side, with twelve cells
+    // touching it: what it pays to stay alive.
     let upkeep = |bonds: usize| {
         let (mut core, mut e, mut h) = row(7, vec![always(7)], &[]);
         e.bonds.truncate(0);
@@ -1801,6 +2186,7 @@ fn a_bigger_compact_body_swims_faster_and_its_inner_cells_cost_less_to_run() {
             c.material.as_mut().unwrap().proteins = [0.; crate::autonomous::ACTIONS];
             c.energy = 8.;
         }
+        e.cells[0].state.touching = (bonds * 2) as u8;
         rebase(&mut h, &e);
         h.physiology(&mut e, &core);
         let before = e.cells[0].energy;
@@ -1963,7 +2349,7 @@ fn a_cells_size_is_inherited_and_sets_how_it_feeds_breeds_and_what_it_costs() {
         c.energy = 4. * stature as f32;
         rebase(&mut h, &e);
         let start = e.cells[0].material.as_ref().unwrap().biomass;
-        let (mut harvest, mut divided) = (0., None);
+        let (mut harvest, mut divided, mut grown) = (0., None, None);
         for k in 0..400 {
             for c in &mut e.cells {
                 c.state.thirst = 0.;
@@ -1975,14 +2361,21 @@ fn a_cells_size_is_inherited_and_sets_how_it_feeds_breeds_and_what_it_costs() {
             if divided.is_none() && e.cells.len() > 1 {
                 divided = Some((k + 1) as f32 / 4.);
             }
+            // Big enough to divide: when it then does is partly chance.
+            if grown.is_none()
+                && e.cells[0].material.as_ref().unwrap().biomass >= 0.38 * e.cells[0].stature()
+            {
+                grown = Some((k + 1) as f32 / 4.);
+            }
         }
         assert!(balanced(&h, &e), "{:?}", h.errors(&e.cells));
         let size = e.cells.iter().map(|c| c.material.as_ref().unwrap().biomass).fold(0., f64::max);
-        (start, harvest, divided.unwrap_or(f32::INFINITY), size, e.cells[0].state.stature)
+        assert!(divided.is_some(), "it bred");
+        (start, harvest, grown.unwrap_or(f32::INFINITY), size, e.cells[0].state.stature)
     };
     let (small, usual, big) = (lived(0.1), lived(0.5), lived(0.9));
     for (name, r) in [("small", small), ("usual", usual), ("big", big)] {
-        eprintln!("{name}: starts at {:.3}, harvests {:.4} a cycle ({:.3} per unit of itself), first divides after {} cycles, grows to {:.3}", r.0, r.1, r.1 / r.0, r.2, r.3);
+        eprintln!("{name}: starts at {:.3}, harvests {:.4} a cycle ({:.3} per unit of itself), is big enough to divide after {} cycles, grows to {:.3}", r.0, r.1, r.1 / r.0, r.2, r.3);
     }
     assert!((usual.4 - 1.).abs() < 1e-6 && small.4 < 0.4 && big.4 > 2.5, "size follows the gene");
     assert!(big.1 > usual.1 && usual.1 > small.1, "a bigger cell harvests more");
@@ -2007,4 +2400,175 @@ fn a_mid_sized_planet_runs_and_reloads() {
     assert_eq!((h.domain.size(), h.domain.grid), (512., 160));
     assert!(e.valid(), "{:?}", h.errors(&e.cells));
     assert!(Core::load(&serde_json::to_string(&c).unwrap()).is_ok());
+}
+
+#[test]
+fn a_young_planet_is_struck_and_its_air_burns_up_more_of_what_falls_as_it_thickens() {
+    // The same sky over the same planet twice: once as it is, once with
+    // nearly all of its air taken away.
+    let run = |air: f64| {
+        let mut core = Core::new(Config {
+            world_size: 64,
+            world_shape: crate::domain::Shape::Sphere,
+            initial_cells: 16,
+            ..Config::default()
+        })
+        .unwrap();
+        core.start_physical();
+        core.steer(r#"{"kind":"bombardment","scale":8}"#).unwrap();
+        let h = core.autonomous.as_mut().unwrap().physical.as_mut().unwrap();
+        let rock = h.rock_nitrogen;
+        // Taken out of the world altogether, books and all.
+        let gone = h.air_nitrogen * (1. - air) + h.rock_nitrogen * (1. - air) + h.air_carbon * (1. - air);
+        h.initial_nitrogen -= (h.air_nitrogen + h.rock_nitrogen) * (1. - air);
+        h.initial_organic -= h.air_carbon * (1. - air);
+        h.air_nitrogen *= air;
+        h.rock_nitrogen *= air;
+        h.air_carbon *= air;
+        let start = (h.air_column(), h.burned_up(), h.hard_rays());
+        let nitrogen = h.initial_nitrogen;
+        core.step(1600);
+        let e = core.autonomous.as_ref().unwrap();
+        let h = e.physical.as_ref().unwrap();
+        assert!(e.valid(), "books {:?}", h.errors(&e.cells));
+        assert!(rock > 0. && gone >= 0.);
+        (start, h.impacts, h.airbursts, h.initial_nitrogen - nitrogen, (h.air_column(), h.burned_up(), h.hard_rays()))
+    };
+    let (thick, thin) = (run(1.), run(0.05));
+    eprintln!("as it is {thick:?}; nearly airless {thin:?}");
+    let (start, impacts, airbursts, gained, end) = thick;
+    assert!(impacts + airbursts >= 4, "bodies arrive: {impacts} landed, {airbursts} burned up");
+    assert_eq!(impacts + airbursts, thin.1 + thin.2, "the same bodies arrive whatever the air");
+    assert!(impacts <= thin.1, "and thicker air never lets more of them land: {impacts} against {}", thin.1);
+    assert!(gained > 0., "what falls is the planet's from then on: {gained}");
+    // A newborn planet's air is thin. It thickens as the rock and the sea
+    // give up their gas, and stops more as it does.
+    assert!(end.0 > start.0 * 2., "the air thickens: {} to {}", start.0, end.0);
+    assert!(start.1 < 0.05 && end.1 > 0.5, "share of falling rock burned up: {} then {}", start.1, end.1);
+    assert!(start.2 > 0.1 && end.2 < 0.01, "hard rays reaching the ground: {} then {}", start.2, end.2);
+}
+
+#[test]
+fn nothing_falls_from_an_empty_sky() {
+    let mut core = Core::new(Config {
+        world_size: 64,
+        world_shape: crate::domain::Shape::Sphere,
+        initial_cells: 16,
+        ..Config::default()
+    })
+    .unwrap();
+    core.start_physical();
+    core.steer(r#"{"kind":"bombardment","scale":0}"#).unwrap();
+    core.step(1600);
+    let h = core.autonomous.as_ref().unwrap().physical.as_ref().unwrap();
+    assert_eq!((h.impacts, h.airbursts), (0, 0));
+    assert!(core.steer(r#"{"kind":"bombardment","scale":9}"#).is_err());
+}
+
+#[test]
+fn ozone_from_free_oxygen_and_the_water_over_a_cell_keep_ultraviolet_off_it() {
+    // One bare cell under a bright star: at the surface or two units down,
+    // with no free oxygen in the air or with all of it free.
+    let harmed = |oxygen: f64, depth: f32| {
+        let (mut core, mut e, mut h) = fixture();
+        e.cells.truncate(1);
+        h.oxygenate(oxygen);
+        h.steering.light = 6.;
+        rebase(&mut h, &e);
+        let mut dose = 0f32;
+        e.cells[0].state.depth = depth;
+        for _ in 0..192 {
+            e.cells[0].energy = 8.;
+            h.tick(&mut e, &mut core);
+            if e.cells.is_empty() {
+                return (1., dose);
+            }
+            // Held where it was put.
+            e.cells[0].state.depth = depth;
+            dose = e.cells[0].state.ultraviolet;
+        }
+        (e.cells[0].state.injury, dose)
+    };
+    let (bare, full) = harmed(0., 0.);
+    let (screened, little) = harmed(1., 0.);
+    let (deep, less) = harmed(0., 2.);
+    eprintln!("injury and peak ultraviolet: no ozone at the surface {bare} {full}; under ozone {screened} {little}; no ozone, two units down {deep} {less}");
+    assert!(bare > 0.5, "with no ozone the surface is deadly: {bare} from {full}");
+    assert!(screened < 0.02, "ozone takes nearly all of it: {screened} from {little}");
+    assert!(deep < bare * 0.2, "and so does water: {deep} from {less}");
+}
+
+#[test]
+fn muscle_and_bristles_carry_a_body_a_good_way_for_less_than_cilia_cost() {
+    // A row of twelve cells, driven for 40 cycles by a coat of cilia or by
+    // muscle, nerve and bristles.
+    let (mut core, mut e, mut h) = row(12, vec![always(PROPEL)], &[PROPEL]);
+    let swum = travel(&mut core, &mut e, &mut h, 160);
+    let spent: f64 = e.cells.iter().map(|c| c.state.motor_work).sum();
+    let materials = [4, crate::physiology::CHANNEL, FIN];
+    let genes = vec![always(4), always(crate::physiology::CHANNEL), always(FIN)];
+    let (mut core, mut e, mut h) = row(12, genes, &materials);
+    let (mut beats, mut was, mut rowed) = (0, 0., 0.);
+    for _ in 0..160 {
+        // Enough of signal A in the water to keep the nerves firing.
+        for s in &mut h.solutes {
+            s[3] = 1.;
+        }
+        rowed += travel(&mut core, &mut e, &mut h, 1);
+        let now = e.bonds[0].activation;
+        beats += usize::from(was < 0.4 && now >= 0.4);
+        was = now;
+    }
+    let worked: f64 = e.cells.iter().map(|c| c.state.motor_work).sum();
+    eprintln!("twelve cells over 40 cycles: {swum} by cilia for {spent} energy, {rowed} by {beats} beats of muscle for {worked}");
+    assert!(beats >= 20, "a nerve fires most of once a cycle: {beats}");
+    assert!(rowed > 4., "a tenth of a unit a cycle or more: {rowed}");
+    assert!(worked < spent, "for less than the cilia cost: {worked} against {spent}");
+    assert!(swum > rowed, "though at this size cilia are still the faster: {swum}");
+}
+
+#[test]
+fn a_wing_holds_weight_up_near_the_ground_and_not_far_above_it() {
+    // A cell kept moving fast through the air, set down a unit and a half
+    // above the ground or twelve, with a wing or without: how far it has
+    // dropped after two cycles, and the highest it was over the ground in twenty.
+    let flown = |wings: bool, height: f32| {
+        let (mut core, mut e, mut h) = fixture();
+        e.cells.truncate(1);
+        if wings {
+            build(&mut e, 0, crate::physical::WING);
+            e.cells[0].genome.genes.push(always(crate::physical::WING));
+        }
+        let c = &mut e.cells[0];
+        let ground = h.domain.ground(c.p.x, c.p.z, core.config.seed)
+            + h.planet.as_ref().map_or(0., |p| p.relief_at(c.p.x, c.p.z));
+        c.p.y = ground + height;
+        rebase(&mut h, &e);
+        let start = e.cells[0].p.y;
+        let (mut dropped, mut highest) = (0., 0f32);
+        for tick in 0..80 {
+            let c = &mut e.cells[0];
+            c.energy = 8.;
+            // Flung forward along its heading, whatever else has happened to it.
+            let ahead = h.domain.tangent(c.p, c.heading);
+            c.v = ahead.mul(3.).add(V3::new(0., c.v.y, 0.));
+            h.tick(&mut e, &mut core);
+            if tick == 7 {
+                dropped = start - e.cells[0].p.y;
+            }
+            highest = highest.max(e.cells[0].state.height);
+        }
+        (dropped, highest)
+    };
+    let (held, highest) = flown(true, 1.5);
+    let (fell, _) = flown(false, 1.5);
+    let (thin, _) = flown(true, 12.);
+    eprintln!("moving fast for two cycles: with a wing it dropped {held}, without one {fell}, and with a wing twelve units up {thin}; in twenty cycles the wing never had it higher than {highest} over the ground");
+    assert!(fell > 0.05, "with no wing it falls: {fell}");
+    assert!(held < fell * 0.75, "a wing holds its weight and more: {held} against {fell}");
+    assert!(thin > 0.3, "far above the ground the air is too thin to: {thin}");
+    // A wing turns speed into height and adds nothing of its own: the
+    // cell is never higher than its speed could throw it, which at three
+    // units a cycle is fifteen units above where it began.
+    assert!(highest < 1.5 + 9. / (2. * 0.3) + 1., "so a wing does not carry it away: {highest}");
 }

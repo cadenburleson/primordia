@@ -31,6 +31,31 @@ export const SPECIES:[string,string,string,string][]=[
   ['radiolarian','Radiolarian','#e6d28a','A drifting hunter with spines and a skeleton of glass'],
   ['vorticella','Vorticella','#e58fd0','A mouth on a stalk. Grips the bottom and draws food to it'],
   ['hydra','Hydra','#f0a04b','A small animal fixed to the bottom. Stings and swallows'],
+  ['jelly','Jelly','#ff6f61','A small animal that swims. Its cells stay together, follow the scent of life, sting and swallow'],
+  ['mat','Mat','#6f8f5a','Archean. Light-feeding bacteria that stick to the rock and to each other in the shallows, under a sheath that keeps ultraviolet out'],
+  ['sponge','Sponge','#e3b23c','Proterozoic. The first animal: fixed to the bottom, every cell a mouth pumping water through, held together by matrix it needs oxygen to make'],
+  ['coral','Coral','#ff8fa3','A stalk of stinging mouths on a stony base, with light-feeders kept alive inside its cells'],
+  ['dickinsonia','Dickinsonia','#b8a07a','Ediacaran. A flat quilted body with no mouth, lying on the bed and digesting what is under it'],
+  ['worm','Worm','#e8554e','Cambrian. The first animal that moves by muscle. Its larva swims with cilia; grown, it twitches along on bristles, stings and swallows'],
+  ['trilobite','Trilobite','#8c6f4f','Cambrian. An armoured animal of the sea bed that walks by muscle, has eyes, and eats remains'],
+  ['shrimp','Shrimp','#e8836b','Cambrian. A small crustacean: a jointed body in a thin shell, with limbs that row it and sweep drifting cells into the mouths along them. Bigger hunters live on it'],
+  ['copepod','Copepod','#f2b38a','Cambrian. The smallest crustacean: a soft body of a few cells with filtering limbs. It breeds fast, and the young of bigger animals live on it'],
+  ['scorpion','Sea scorpion','#7a4fb5','Ordovician. A large armoured hunter that swims by muscle, with spines for claws and strong venom'],
+  ['fish','Fish','#4f8fd6','Silurian and Devonian. A long stiffened body that swims by muscle with fins, with eyes, nerves that learn and a store of fat'],
+  ['moss','Moss','#5fa64a','Silurian. The first plant to stand on land: walled cells in a line, a waxy skin and a grip on the ground'],
+  ['fungus','Fungus','#b08fc7','Silurian. Walled threads that branch over the ground, rot what lies on it and take mineral from rock. Pressed against a plant, the two trade across the wall they share'],
+  ['fern','Fern','#3f8f4f','Devonian. A land plant that branches by rule, each frond a smaller copy of the one it grew from'],
+  ['amphibian','Amphibian','#5aa39a','Devonian. A fish that can leave the water: skin that holds some of its water, and fins strong enough to be feet'],
+  ['tree','Tree','#2f6f3a','Carboniferous. Large woody cells that branch often: a forest in the making'],
+  ['dragonfly','Dragonfly','#3fc7d9','Carboniferous. Its young swim; grown, it has a dry skin, wings and muscle to beat them'],
+  ['reptile','Reptile','#a3b35a','Permian. An animal that never needs the water: waterproof skin, bone and young that start with a yolk'],
+  ['dinosaur','Dinosaur','#7f9f3f','Triassic and Jurassic. A reptile grown large, with heavier bone and some heat of its own'],
+  ['bird','Bird','#f2c94c','Jurassic. Small, warm-blooded and winged'],
+  ['flower','Flower','#f58fc0','Cretaceous. A branching land plant that breeds by fusing cells from two parents'],
+  ['mammal','Mammal','#c98a5a','Paleogene. Warm-blooded, fat under the skin, more nerve than a reptile, and young that stay longest'],
+  ['grass','Grass','#a8d65a','Neogene. A land plant with glass in its cells that does not branch: fast-growing and hard to chew'],
+  ['ape','Ape','#b07a4a','Quaternary. A mammal with all the nerve its cells can carry'],
+  ['anabaena','Anabaena','#57c7b0','A thread of bacteria that makes its own nitrogen from the air, in the dark behind its walls. It feeds the whole sea'],
   ['drifter','Drifter','#7fb8a4','The plain first cell']];
 
 /** Starters left out of "fill the seas": the plain first cell, which every other starter is built from. It can still be painted. */
@@ -47,7 +72,7 @@ export const creaturesHTML=`<aside id="creatures-panel" class="guide-panel creat
 <section class="creature-group"><div id="specimen-list"></div></section>
 <section class="creature-group creature-tools"><button id="copy-organism" class="observe-button" disabled>Paint copies of the selected body</button><p id="world-tool-selection" class="power-note">Click a body on the planet to copy it.</p>
 <button id="import-organism" class="text-button">Import a creature file…</button><input id="organism-file" type="file" accept="application/json,.json" hidden><p id="collection-status" class="power-note"></p></section>
-<p class="power-note">Starter species are single cells built from ordinary genes. Everything you release has to feed, grow and breed like the rest, and evolves from its first division.</p>
+<p class="power-note">Starter species are built from ordinary genes. A single-celled one is released as one cell. One that grows into a body is raised from one cell in a nursery and set down grown. Everything you release has to feed, grow and breed like the rest, and evolves from its first division.</p>
 </aside>`;
 
 export class Creatures {

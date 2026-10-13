@@ -10,7 +10,7 @@ const plain=new World(JSON.stringify(config)),steered=new World(JSON.stringify(c
 // Untouched dials leave the world exactly as it was.
 const start=steering(plain);
 assert.deepEqual([start.mutation,start.light,start.vents,start.mixing,start.goal,start.favoured],[1,1,1,1,'',0]);assert.equal(start.diet.length,7);assert.equal(start.captures,0);
-assert.equal(start.ladder.length,24);assert.equal(start.kinds.length,4);assert.deepEqual(start.ladder.map(r=>r.key).slice(0,3),['cells','colonies','bodies']);
+assert.equal(start.ladder.length,27);assert.equal(start.kinds.length,4);assert.deepEqual(start.ladder.map(r=>r.key).slice(0,3),['cells','colonies','bodies']);
 // Every command the Powers panel can send is accepted; bad ones are refused and change nothing.
 for(const action of [{kind:'light',scale:6},{kind:'vents',scale:4},{kind:'mixing',scale:3},{kind:'sharing',scale:4},{kind:'seed',species:'hunter',count:6,sustain:true},{kind:'sustain',on:false},{kind:'goal',goal:'swimming',strength:.25,period:30},{kind:'goal',goal:'defence',strength:.4,period:20},{kind:'mutation',scale:3},{kind:'goal',goal:'movement',strength:.25,period:30},{kind:'storm',scale:8,duration:60},{kind:'nourish',amount:.6}])assert.equal(typeof send(steered,action),'string');
 for(const bad of [{kind:'light',scale:99},{kind:'goal',goal:'wings',strength:.25,period:30},{kind:'mutation'},{kind:'unknown'}]){const before=steered.save();assert.throws(()=>send(steered,bad));assert.equal(steered.save(),before);}
@@ -20,9 +20,9 @@ const a=steering(plain),b=steering(steered);
 assert.equal(b.goal,'movement');assert.ok(b.rounds>=5,'breeding rounds ran');assert.equal(a.rounds,0);
 assert.equal(b.light,6);assert.equal(b.mutationFactor,3);assert.equal(b.storm,0,'the storm has passed');
 for(const view of [a,b]){assert.ok(view.ladder.every(r=>r.stage>=0&&r.stage<=3&&r.progress>=0&&r.progress<=1));assert.equal(view.ladder[0].stage,3);assert.equal(view.losses.length,3);}
-// The gene vocabulary the UI lists: 48 abilities, 32 promoter inputs.
+// The gene vocabulary the UI lists: 53 abilities, 35 promoter inputs.
 const meta=JSON.parse(steered.metadata(JSON.parse(steered.metadata(0)).lineages[0].representative));
-assert.equal(meta.autonomous.actions.length,48);assert.ok(meta.selected.programCells.every(c=>c.expression.length===48&&c.genes.every(g=>g.promoter.length===32)));
+assert.equal(meta.autonomous.actions.length,53);assert.ok(meta.selected.programCells.every(c=>c.expression.length===53&&c.genes.every(g=>g.promoter.length===35)));
 // Favour, disasters, and exact continuation from a save.
 const body=JSON.parse(steered.metadata(0)).lineages[0].representative;
 send(steered,{kind:'favour',body,pressure:.03});assert.ok(steering(steered).favoured>0);

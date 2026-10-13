@@ -1,3 +1,4 @@
+#![recursion_limit = "256"]
 use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, BTreeSet};
 use wasm_bindgen::prelude::*;
@@ -1684,11 +1685,11 @@ impl World {
     pub fn champions(&self) -> String {
         self.core.champions()
     }
-    /// One founder of a starter species, as an organism snapshot.
+    /// A starter species as an organism snapshot: the grown body of one
+    /// that grows into a body, one founder cell of anything else.
     pub fn species_specimen(&self, species: &str) -> Result<String, JsValue> {
         self.core
-            .species_specimen(species)
-            .map(|s| s.1)
+            .release_specimen(species)
             .map_err(|e| JsValue::from_str(&e))
     }
     /// Scatter copies of an organism around painted points; returns how many fitted.

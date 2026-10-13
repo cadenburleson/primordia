@@ -53,7 +53,11 @@ ${dial('mixing-choices','mixing','Ocean mixing',[[.5,'Still'],[1,'Natural'],[3,'
 <p class="power-note">Currents carry food to cells that cannot go and find it.</p></section>
 <section class="power"><div class="power-head"><span class="eyebrow">DEEP VENTS</span><strong id="vents-readout">Natural</strong></div>
 ${dial('vents-choices','vents','Vent activity',[[.5,'Quiet'],[1,'Natural'],[4,'Active'],[8,'Violent']])}
-<p class="power-note">Chemistry from the planet’s interior that needs no light.</p></section>`;
+<p class="power-note">Chemistry from the planet’s interior that needs no light.</p></section>
+<section class="power"><div class="power-head"><span class="eyebrow">THE SKY</span><strong id="sky-readout">Natural</strong></div>
+${dial('sky-choices','bombardment','Bodies from space',[[0,'Empty'],[1,'Natural'],[3,'Crowded'],[8,'Raining rock']])}
+<p class="power-note" id="sky-layers"></p>
+<p class="power-note">A young planet is struck often, and less as it sweeps its neighbourhood clean. What lands kills what it hits and leaves carbon, nitrogen, phosphorus and iron behind. The air works in layers: the thin air high up takes the star’s hardest rays, falling rock burns up below that unless it is big, and ozone takes the ultraviolet once life has made oxygen.</p></section>`;
 export const eventsHTML=`<section class="power"><div class="power-head"><span class="eyebrow">BLESSINGS &amp; DISASTERS</span><strong id="act-readout"></strong></div>
 <div class="choice-grid" id="act-choices">${ACTS.map(([act,name,note])=>`<button data-act="${act}"><b>${name}</b><small>${note}</small></button>`).join('')}</div>
 <p class="power-note">A disaster clears room for whatever survives it. Floods, droughts, meteors and the great dying can be undone below.</p></section>`;
@@ -69,6 +73,7 @@ export class Powers {
       else if(d.mixing!==undefined)this.steer({kind:'mixing',scale:Number(d.mixing)});
       else if(d.sharing!==undefined)this.steer({kind:'sharing',scale:Number(d.sharing)});
       else if(d.vents!==undefined)this.steer({kind:'vents',scale:Number(d.vents)});
+      else if(d.bombardment!==undefined)this.steer({kind:'bombardment',scale:Number(d.bombardment)});
       else if(d.oxygen!==undefined)this.steer({kind:'oxygen',level:Number(d.oxygen)});
       else if(d.nitrogen!==undefined)this.steer({kind:'nitrogen',change:Number(d.nitrogen)});
       else if(d.push!==undefined)this.push(d.push as Push);
@@ -98,7 +103,7 @@ export class Powers {
     const s=this.snapshot,st=s?.autonomous?.steering;
     const available=!!st&&!s!.assessment?.control&&!s!.assessment?.running&&(s!.config.physicalAssay??'full')==='full';
     $('powers-unavailable').hidden=available||!s;
-    const signature=JSON.stringify([available,this.intensity,this.selected(),st&&[st.mutation,st.light,st.vents,st.mixing,st.sharing,st.goal,st.auto,Math.round((st.oxygen??0)*100),Math.round((st.cycles?.nitrogen.dissolved??0)),st.strength,st.rounds,st.note,st.scored,st.bodies,st.culled,Math.ceil(st.nextRound),st.favoured,st.favourPressure,Math.ceil(st.storm),Math.ceil(st.winter),s!.stats.cells]]);
+    const signature=JSON.stringify([available,this.intensity,this.selected(),st&&[st.mutation,st.light,st.vents,st.sky&&[st.sky.bombardment,st.sky.impacts,st.sky.airbursts,Math.round(st.sky.ozone*100),Math.round(st.sky.burnedUp*100),Math.round(st.sky.hardRays*100),Math.round(st.sky.dust*100)],st.mixing,st.sharing,st.goal,st.auto,Math.round((st.oxygen??0)*100),Math.round((st.cycles?.nitrogen.dissolved??0)),st.strength,st.rounds,st.note,st.scored,st.bodies,st.culled,Math.ceil(st.nextRound),st.favoured,st.favourPressure,Math.ceil(st.storm),Math.ceil(st.winter),s!.stats.cells]]);
     if(signature===this.signature)return;this.signature=signature;
     document.querySelectorAll<HTMLButtonElement>('.power button').forEach(b=>b.disabled=!available);
     if(!st)return;
@@ -108,6 +113,9 @@ export class Powers {
     $('mixing-readout').textContent=`${press('mixing-choices','mixing',String(st.mixing))} · ${st.mixing}×`;
     $('sharing-readout').textContent=press('sharing-choices','sharing',String(st.sharing??0));
     $('vents-readout').textContent=`${press('vents-choices','vents',String(st.vents))} · ${st.vents}×`;
+    const sky=st.sky,ofAll=(v:number)=>`${Math.round(v*100)}%`;
+    $('sky-readout').textContent=sky?`${press('sky-choices','bombardment',String(sky.bombardment))} · ${sky.impacts} struck, ${sky.airbursts} burned up`:'';
+    $('sky-layers').textContent=sky?`Now: the high thin air stops ${ofAll(1-sky.hardRays)} of the hardest rays · ${ofAll(sky.burnedUp)} of falling rock burns up on the way down · ozone stops ${ofAll(sky.ozone)} of the ultraviolet${sky.dust>.01?` · dust from a strike is blocking ${ofAll(sky.dust)} of the light`:''}`:'';
     $('oxygen-readout').textContent=st.oxygen===undefined?'':`${Math.round(st.oxygen*100)}% free now`;
     const n=st.cycles?.nitrogen;$('nitrogen-readout').textContent=n?`${Math.round(n.dissolved/(n.dissolved+n.living+n.remains||1)*100)}% of the usable is free`:'';
     const selecting=!!st.goal||!!st.auto;

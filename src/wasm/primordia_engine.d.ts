@@ -46,7 +46,8 @@ export class World {
     set_motors_enabled(enabled: boolean): void;
     simulation_time(): number;
     /**
-     * One founder of a starter species, as an organism snapshot.
+     * A starter species as an organism snapshot: the grown body of one
+     * that grows into a body, one founder cell of anything else.
      */
     species_specimen(species: string): string;
     start_autonomous(): void;

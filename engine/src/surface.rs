@@ -153,8 +153,10 @@ impl SurfaceFlow {
             for (&(i, j, a, b, _), &(_, width)) in geometry.iter().zip(&mesh.spans) {
                 let speed = (self.velocities[i].dot(a) + self.velocities[j].dot(b)) as f64 * 0.5;
                 let (donor, receiver) = if speed >= 0. { (i, j) } else { (j, i) };
+                // What soil holds does not run off.
                 let amount = (speed.abs() * dt * width * p.water[donor] / areas[donor])
-                    .min(p.water[donor] * 0.25);
+                    .min(p.water[donor] * 0.25)
+                    .min((p.water[donor] - crate::planet::soil(solutes[donor][5], areas[donor], p.water[donor])).max(0.));
                 if amount <= 0. {
                     continue;
                 }
@@ -214,11 +216,44 @@ mod tests {
         (d, p, vec![[0.; crate::physical::SOLUTES]; d.sites()], SurfaceFlow::new(d))
     }
     #[test]
+    fn remains_on_the_ground_hold_water_that_bare_ground_sheds() {
+        // The same slope three times, a little water on one high site: on
+        // bare ground, with remains lying there, and with a great deal.
+        // Returns the depth of water left on it.
+        let left = |remains: f64| {
+            let (d, mut p, mut s, mut f) = fixture();
+            let high = (0..d.sites())
+                .max_by(|&i, &j| {
+                    let h = |k: usize| d.ground(d.point(k).0, d.point(k).1, 8042) + p.relief[k];
+                    h(i).total_cmp(&h(j))
+                })
+                .unwrap();
+            p.water.fill(0.);
+            let area = d.area(high);
+            p.water[high] = 0.03 * area;
+            p.initial_water = p.water[high] + p.atmosphere;
+            s[high][5] = remains;
+            for _ in 0..400 {
+                f.step(d, &mut p, &mut s, 8042);
+            }
+            assert!(p.water_error().abs() < 1e-7);
+            p.water[high] / area
+        };
+        // Soil keeps what it can hold, two parts in three of this, and no
+        // more however much dead matter there is.
+        let (bare, soil, deep) = (left(0.), left(0.02), left(2.));
+        assert!(bare < 0.006 && soil > 0.015, "left on the high ground: bare {bare}, with remains {soil}");
+        assert!(deep < soil * 1.6, "a deep bed of remains holds no more than the ground can: {deep} vs {soil}");
+    }
+
+    #[test]
     fn water_advection_carries_all_species_across_longitude() {
         let (d, mut p, mut s, mut f) = fixture();
         let a = d.rows() / 2 * d.grid + d.grid - 1;
         let b = d.rows() / 2 * d.grid;
-        s[a] = [1., 2., 3., 4., 5., 6., 7., 8., 9., 10., 11., 12.];
+        // (Only a little of the sixth, which is remains: much of it would
+        // hold the site's water where it is, as soil does.)
+        s[a] = [1., 2., 3., 4., 5., 0.06, 7., 8., 9., 10., 11., 12.];
         let initial = s[a];
         for i in 0..d.sites() {
             let (x, z) = d.point(i);

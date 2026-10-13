@@ -35,6 +35,14 @@ pub struct Planet {
     pub eruptions: u32,
     pub mineral_input: f64,
     pub terrain_version: u32,
+    /// Share of the star's light that dust thrown up by an impact keeps
+    /// from the ground. It settles out over a few dozen cycles.
+    #[serde(default)]
+    pub dust: f32,
+    /// How much warmer or colder the planet is for the carbon dioxide in
+    /// its air than it would be with the usual amount.
+    #[serde(default)]
+    pub greenhouse: f32,
     /// Standing vent fields on the sea bed: how strongly each site pours out
     /// hydrogen from the hot rock under it, from none to one. Empty in
     /// worlds saved before vents were permanent.
@@ -146,6 +154,23 @@ const SEA_LEVEL: f64 = 0.95;
 /// How many times deeper a new planet's sea bed lies than its bare ground would put it.
 const BASIN: f64 = 3.;
 const AIR_CAPACITY: f64 = 0.2;
+/// Water that the remains lying at a site hold, for each unit of remains:
+/// soil. Bare rock sheds rain and dries as fast as open water does. Ground
+/// with dead matter in it soaks rain up, keeps it from running off, and
+/// gives it back to the air slowly. The first plants and fungi to die on a
+/// shore make the ground behind them fit to live on.
+pub(crate) const SPONGE: f64 = 5.;
+/// The most water a unit of ground holds however much dead matter is in it:
+/// twice what keeps a cell lying on it wet. A sea bed deep in remains holds
+/// no more than this of the sea above it.
+pub(crate) const SOAK: f64 = 0.02;
+/// How fast water held in soil dries beside open water.
+const SHELTER: f64 = 0.25;
+/// The water held in the ground at a site of this area with this much dead
+/// matter lying on it, out of the water that is there.
+pub(crate) fn soil(remains: f64, area: f64, water: f64) -> f64 {
+    (SPONGE * remains).clamp(0., SOAK * area).min(water.max(0.))
+}
 /// Share of the air's excess water that falls each cycle.
 const RAIN_OUT: f64 = 0.07;
 fn default_storm_radius() -> f32 {
@@ -184,6 +209,8 @@ impl Planet {
             eruptions: 0,
             mineral_input: 0.,
             terrain_version: 0,
+            dust: 0.,
+            greenhouse: 0.,
             vents: vec![0.; domain.sites()],
         }
     }
@@ -381,7 +408,7 @@ impl Planet {
     }
     pub fn illumination(&self, site: usize) -> f64 {
         if !self.domain.spherical() {
-            return (self.sunlight * (1. - 0.8 * self.cloud_cover)) as f64;
+            return (self.sunlight * (1. - 0.8 * self.cloud_cover) * (1. - self.dust)) as f64;
         }
         let n = self.domain.site_normal(site);
         let sun = body::V3::new(
@@ -389,7 +416,7 @@ impl Planet {
             self.sun_direction[1],
             self.sun_direction[2],
         );
-        (self.sunlight * (1. - 0.8 * self.cloud_cover) * n.dot(sun).max(0.)) as f64
+        (self.sunlight * (1. - 0.8 * self.cloud_cover) * (1. - self.dust) * n.dot(sun).max(0.)) as f64
     }
     pub(crate) fn temperature_at(&self, site: usize) -> f32 {
         if !self.domain.spherical() {
@@ -400,8 +427,7 @@ impl Planet {
     }
     pub fn kinetics(&self, site: usize) -> f64 {
         // Effective temperature / moisture response, deliberately uncalibrated.
-        let temperature = (self.temperature_at(site) + self.heat[site] * 0.5).min(1.);
-        ((0.35 + temperature as f64 * 1.1)
+        (self.warmth(site)
             * (0.45
                 + (self.water[site]
                     / if self.domain.spherical() {
@@ -412,6 +438,11 @@ impl Planet {
                 .min(1.)
                     * 0.55))
             .clamp(0.1, 1.5)
+    }
+    /// The share of `kinetics` that is warmth, before how wet the site is.
+    pub fn warmth(&self, site: usize) -> f64 {
+        let temperature = (self.temperature_at(site) + self.heat[site] * 0.5).min(1.);
+        0.35 + temperature as f64 * 1.1
     }
     pub(crate) fn erupt(&mut self, core: &mut Core, solutes: &mut [[f64; crate::physical::SOLUTES]]) {
         let center = [
@@ -468,7 +499,7 @@ impl Planet {
         let raining = self.storm > 0.;
         self.storm = (self.storm - DT).max(0.);
         self.sunlight = (0.08 + day * 1.5) * (1. + season * 0.15) * if raining { 0.65 } else { 1. };
-        self.temperature = (core.config.temperature + season * 0.18 + day * 0.05
+        self.temperature = (core.config.temperature + self.greenhouse + season * 0.18 + day * 0.05
             - if raining { 0.06 } else { 0. }
             - self.cloud_cover * 0.06)
             .clamp(0., 1.);
@@ -502,15 +533,19 @@ impl Planet {
             self.snow[i] -= melt;
             self.water[i] += melt;
             self.snowmelt += melt;
-            let evaporated = (dt
+            let drying = dt
                 * 0.0015
                 * self.sunlight as f64
                 * if self.domain.spherical() {
                     self.domain.area(i)
                 } else {
                     1.
-                })
-            .min(self.water[i]);
+                };
+            // Open water goes first and at the full rate; what soil holds
+            // goes after it, and slowly.
+            let held = soil(solutes[i][5], area(i), self.water[i]);
+            let open = drying.min(self.water[i] - held);
+            let evaporated = (open + ((drying - open) * SHELTER).min(held)).min(self.water[i]);
             self.water[i] -= evaporated;
             self.atmosphere += evaporated;
             self.evaporation += evaporated;
@@ -548,7 +583,9 @@ impl Planet {
                         };
                         let difference = height(i) - height(j);
                         let (a, b) = if difference >= 0. { (i, j) } else { (j, i) };
-                        let moved = (difference.abs() * dt * 0.003).min(self.water[a] * 0.04);
+                        let moved = (difference.abs() * dt * 0.003)
+                            .min(self.water[a] * 0.04)
+                            .min((self.water[a] - soil(solutes[a][5], 1., self.water[a])).max(0.));
                         let fraction = if self.water[a] > 0. {
                             moved / self.water[a] * 0.2
                         } else {

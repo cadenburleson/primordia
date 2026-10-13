@@ -19,7 +19,7 @@ for(const worldShape of ['planar','sphere'])for(const worldSize of [64,128,256])
  assert.equal(g.grid,worldSize/1.6);assert.equal(g.shape,worldShape);
  const sites=g.grid*g.grid/(worldShape==='sphere'?2:1);
  assert.equal(w.field().length,sites);
- assert.ok(initial.autonomous.cells.every(c=>c.genome.genes.length===4));
+ assert.ok(initial.autonomous.cells.every(c=>c.genome.genes.length===5));
  if(worldShape==='sphere'){
   const r=worldSize/(2*Math.PI);
   assert.ok(initial.autonomous.cells.every(c=>Math.hypot(c.p.x,c.p.y,c.p.z)>r-5));

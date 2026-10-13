@@ -72,7 +72,7 @@ A second round added six genes (38 in all) and four directional senses (32 promo
 | --- | --- |
 | Propulsion | Push itself along its heading. It swims in water and crawls at half strength on ground it touches. The water gets the opposite push, and the work against drag is paid in energy. |
 | Steering | Turn its heading by left-minus-right differences it senses: dissolved fuel, light, the waste living cells give off, and remains. Each steering gene's own weights decide what attracts and what repels. It carries a crude chemical sense; receptors sharpen it. |
-| Engulfing | Swallow a touching cell from another body, one cell at a time, taking its fuel store too. Size is living structure, not carried fuel: nothing against prey a quarter larger than the whole hunter, full speed at half again its size. A cell built for this grows to twice normal size before dividing, gives up 85% of its own feeding, and does not bond to cells that lack a mouth. |
+| Engulfing | Swallow a touching cell from another body, one cell at a time, taking its fuel store too. Size is living structure, not carried fuel, and it is the size of the mouth: the mouth cells that hold on to one another, taken together. Nothing against prey a quarter larger than the mouth, full speed at half again its size. A patch of mouth cells is one mouth only if there is muscle in it to open it; without muscle, as in a sponge, each mouth cell takes what it can alone. A body small enough to go into the mouth whole gets no protection from being a body. A cell in any larger body is held by every tie it has to that body (three ties: a tenth the rate) and by the matrix around it, however big the mouth; only teeth cut through that. Matrix also slows enzymes working in from outside. A mouth of many cells keeps nothing smaller than a sixteenth of its own bulk: small things go out with the water, and are for small mouths. A cell built for this grows to twice normal size before dividing, gives up 85% of its own feeding, and does not bond to cells that lack a mouth. |
 | Venom | Wound any other body it touches. Skin blunts it. |
 | Spines | Cut what an engulfer can take, and wound it for trying. |
 | Chemosynthesis | Make fuel from waste using mineral chemistry, with no light. The energy comes from the planet's interior and is tracked like sunlight. |
@@ -366,7 +366,7 @@ Laying fat down gives off the carbon it does not keep as carbon dioxide; burning
 
 A world saved under older rules has its books reset the first time it runs (`Habitat.chemistry`).
 
-**Feeding currents.** A mouth draws in free cells within 1.5 units that its body could swallow, as strongly as it could swallow them, and lets go of spiny or walled ones. A cell held in a body is not drawn. Related changes:
+**Feeding currents.** A mouth draws in free cells within 1.5 units that the body's largest mouth could swallow, as strongly as it could swallow them, and lets go of spiny or walled ones. A cell held in a body is not drawn. Related changes:
 
 - The rate a cell can burn fuel now comes from oxygen (`0.035 + 0.12 × max(uptake, air)`), so an active life waits for oxygen.
 - Hunters are released full grown (a mouth has to be bigger than its prey).
@@ -543,22 +543,37 @@ After 600 cycles with every starter, species sort themselves by depth (median, o
 
 **What it cost.** The living world is smaller and far less steady. With depth off, the same planets held about 3,700 cells at 600 cycles with a fifth of their oxygen free. With it on, three runs held 2,632, 861 and 688 cells, and free oxygen stood at 0.19, 0.06 and 0.03. Light-feeders that are not at the very top now earn less, the first bloom is weaker, and where it is too weak oxygen never builds and everything stays slow. Vent microbes, which held 103–263 cells when vents fed the whole water column, now sit at the restocking floor even when set down at vents; why they do not spread along the bed is not yet found. Seaweed does well only where the bed is shallow.
 
+## Breathing, complex cells, nitrogen and the first animals
+
+The reasoning and the measurements are in `docs/EARLY_EARTH.md`.
+
+- **Breathing** (gene 48) is what lets a cell capture all the energy in its food: 22.5 units a unit, against 1.5 for a cell that can only ferment. The machinery is in the outer membrane, which a mouth crowds out and a big cell outgrows.
+- **Kept breathers** (`state.mitochondria`) do the same work inside the cell, with neither limit, and are inherited. A mouth acquires them by swallowing a breather and, now and then, keeping it. The Studio lists them as a part.
+- **Nitrogen fixing** (gene 49) takes nitrogen from the air at a high price in energy. Oxygen stops it unless the cell is walled or inside a body, and light-harvesting stops it while it lasts.
+- **The sea's nitrogen** (0.12 a unit of sea) is what a planet runs out of first, and so sets how much life it holds.
+- **Three new starters:** Jelly (a swimming animal that buds), Anabaena (a thread that fixes nitrogen), and Hydra now buds as Jelly does. 28 in all.
+- **Three new steps on the ladder:** Nitrogen fixing, Oxygen breathing, Animals (bodies of four cells or more, most of them with a mouth or enzymes, taking a quarter or more of their food from other life).
+- Old saves are given the breathing gene in every cell, and breathers in every mouth and every outsized cell, so they run on as they did.
+
 ## Not solved
 
 - **Eaters still take about a hundredth of what plants make.** Feeding currents, a faster metabolism with oxygen, sized cells, light-seeking and deeper seas together moved it from 0.2–0.6% to 0.9–1.6%. Catching food now works; what is left is that most producers are walled algae in clumps that only enzyme grazers can eat, and that a planet's cell limit fills with small cells before eaters can multiply.
 - **Something throws a loose grain of remains upward now and then**, far faster than anything in the sea moves. The cause is not found. A grain more than two units clear of the surface is set back down on it, and grains now have weight out of water; before that they drifted off the planet and made a save unreadable.
 - **Volvox does little on a planet.** With every starter seeded it holds 11–190 cells and its bodies stay small (largest body on those planets 14–71 cells). Kin bodies that touch still join into one.
-- **No animal grows from an egg.** A Jelly starter (a big hunting egg cleaving into a ball of small mouths) was tried and removed: running a dozen genes at three times the usual size cost more than it caught, and all twelve starved within 120 cycles.
+- **Animals live, but not reliably (2026-10-12).** Released once, never restocked, after 1,400 cycles Jelly was alive on five of six planets: growing on one (82 cells, a body of 59), holding at 7–29 cells on four, gone on one. Hydra was alive on two of six, at 3 and 6 cells. The same planets run again with slightly different rules gave different winners, so which planet an animal takes hold on is largely luck. A cell in a Jelly body still catches about half what a loose hunter does. *Earlier note:* Animals lived thinly: Jelly multiplies tenfold in a pond full of prey. On a whole planet a few bodies persist for 1,200 cycles without restocking and do not grow in number; Hydra dies out; with every starter in the sea both sit near the restocking floor.
 - **Nothing anchors to land.** A plant on a slope slides or is washed down to the water. Land plants need a holdfast as well as a water store.
 - **No fish.** A long body swimming by a wave of muscle has not been built; it would have to pay its way as an eater first.
 - **A thick body's inner cells breathe as freely as its surface.** Gills and circulation have no job yet.
 - Sulfur is not simulated. Iron and salt do not yet affect life.
 
 - **Decomposers barely live.** A cell living on remains alone stays at the restocking floor. A decomposer that also soaked up dissolved food cut the planet's population by a third.
-- **No cell fixes nitrogen from the air.** Only lightning does.
-- **Fermentation still gives half the energy of breathing**, not a fifteenth.
+- **The geometry check does not finish.** Its founder-gene count was stale and is fixed; it now runs its sphere stage and is then killed (exit 137) before reporting. Not diagnosed. `check:locomotion` and `check:tissue` read their old save from `archive/prototype-v0.6/examples/tidal-world-100.json` and pass.
+- **Strikes are not confirmed in the journal.** The engine records each one as a planet event; I did not see the journal panel show it.
+- **Anabaena often dies out** within 1,000 cycles on a planet with eaters (it lasted on one of three), after which nitrogen drains away again.
+- **Hunters turn into algae.** Keeping a swallowed light-feeder is rare now, but a lineage that does so spreads: after 1,400 cycles most Hunters and Paramecium on a planet carried one and lived mainly on light.
+- **A world of only bacteria-sized cells can still fill its cell limit**, since each holds so little nitrogen.
 
-- **Animals reach food but still do not pay their way.** An obligate grazer now takes 0.012–0.022 fuel a cycle from prey (0.001–0.004 before thin water) and a hunter up to 0.02, against roughly 0.035–0.05 to live and swim. Both stay near the restocking floor of eight. They need about twice the intake: they sense prey only within 1.6 units and search blind beyond it.
+- **Eaters pay their way, barely.** An eater takes 0.011–0.022 fuel a cycle from prey and now burns 0.007–0.017 (it needed 0.035–0.05 before breathing paid fifteen-fold). The surplus is small, so breeding takes hundreds of cycles. A mouth feeds about one moment in twenty; they sense prey only within 1.6 units and search blind beyond it.
 - **Worlds are somewhat smaller than before oxygen** (about 1,700–2,150 cells against 1,900–3,300), and the first few hundred cycles are slow.
 - An eater no longer follows the scent of its own kind, but grazers still mostly touch grazers, and once their genes drift apart they digest each other.
 
@@ -578,10 +593,102 @@ After 600 cycles with every starter, species sort themselves by depth (median, o
 - How much life a planet holds depends sharply on the star. On the default patchy-resource planet (128 units, 3,000 cycles, native runs) the population ended at 84 cells at 1×, about 220 at 3× and 4×, and passed 2,000 and was still growing at 6×. New planets therefore default to Bright (6×); with evenly spread resources the same star fills the cell limit.
 - The legacy labs are untouched.
 
+## The sky: bodies from space and the air's layers
+
+Measurements are in `docs/EARLY_EARTH.md`.
+
+- **Bodies from space** arrive on a planet (not in a flat dish) about once every 17 cycles when it is new, a third as often after each 500 cycles, and about once in 1,250 cycles for ever after. Small ones are four times as common as ones twice the size. The player's dial (`{"kind":"bombardment","scale":0..8}`, under **The sky**) multiplies the rate; zero empties the sky.
+- **What one does.** If it reaches the ground it kills what it lands on, digs a crater, and throws up dust that dims the star for a few dozen cycles. Whether it lands or burns up, what it was made of becomes the planet's: carbon dioxide, a little ready-made food, usable nitrogen and phosphorus, and iron. The books are widened by what arrived, so they still balance.
+- **The air works in layers**, each stopping a different thing:
+  - *High, thin air* takes the star's hardest rays. Any gas does it, so only the amount of air matters. Through thin air those rays raise the rate of copying errors up to five times.
+  - *Falling rock* burns up below that, by how much air it has to cross. A newborn planet's air is thin (0.8 a unit of surface) and stops nothing; it thickens to about 5 as the rock gives up its nitrogen and the sea its carbon dioxide, and then stops about three bodies in four. Big ones always land.
+  - *Ozone* takes the ultraviolet. It forms from free oxygen, so there is none until life makes oxygen: half the ultraviolet is stopped once a hundredth of the planet's oxygen is free. Water stops it too, a third for every unit of depth. A cell shrugs off a small dose; beyond that it is injured and its copying errors rise. With no ozone a bare cell at the surface is dead in a day and one under two units of water is safe. Skin, a wall and a glass shell screen a cell.
+  - *The weather layer* is the storms, rain and lightning already there. Its warming of the planet by carbon dioxide and water is **not built**.
+  - *The outermost air*, where hydrogen leaks away to space, is the hydrogen loss already there.
+- **A new planet starts with a quarter of its nitrogen gas in the air.** The rest is in the rock and comes out through the vents, faster with more active vents, and when a body strikes.
+- **Every cell now mends itself**, slowly, out of what it would otherwise grow with. Before, only cells with the repair gene ever healed, daughters inherited their mother's wounds, and whole seas ran at 20–60% injury.
+- **A body's mouths pump together.** Water is drawn in from all around, as fast as the pumping divided by the area it crosses, so a body of many mouths draws from farther than one (about 1.5 units for one mouth, up to 8) and clears water in proportion to their number.
+- **Jelly and Hydra bud for as long as they are fed.** Their cells no longer stop dividing at the sixth division. Hydra grows as a stalk up from the bed.
+- **Anabaena's cells all divide**, not only the two at the ends of a thread.
+- **Keeping a swallowed light-feeder is 25 times rarer** (a handful of times in a planet's first thousand cycles).
+
+## The whole timeline, first pass (2026-10-12)
+
+Built in one go at Caden's direction ("build it all out first then run tests to adjust"), so most of it is unmeasured. `docs/GEOLOGIC_TIMELINE.md` has the period-by-period table.
+
+- **Muscle works.** A working muscle flattens the cells it joins, twitches all-or-nothing when its nerve fires, pulls far harder than a plain bond, and is priced as cilia are. Nerves are eight times quicker and are only worked out for cells that have them. A row of twelve cells now rows 6.5 units in 40 cycles (0.7 before) for a sixth of what cilia spend.
+- **Collagen needs oxygen.** Matrix (gene 21) and fibre (gene 28) are laid down at half speed when a tenth of the planet's oxygen is free, and not at all without it; a cell lays down at most a fifth of its bulk. Matrix now sticks cells together on contact, keeps them together without upkeep, and makes the tie tougher.
+- **Three new genes** (53 in all): Branching (50), Wings (51), Warm blood (52).
+  - *Branching* is a rule, not a material: a growing cell forks every 2–8 divisions, one daughter to one side and itself to the other, each fork's branches forking sooner and built of cells 15% smaller. This is the engine's fractal growth.
+  - *Wings* grip air on the back-stroke as fins grip water, drag a fiftieth as much, and carry up to four times the cell's weight in proportion to forward speed squared.
+  - *Warm blood* makes up whatever pace the cold takes away, for 0.25 energy a cycle per unit of shortfall on a bare cell, less under fat or inside a body.
+- **Teeth.** Mineral in a mouth cell divides the prey's armour, wall, shell and its body's grip by up to seven.
+- **Skeleton** is capped at 15% of a cell's bulk, so one armoured cell no longer drains the phosphorus around it.
+- **Greenhouse.** On a planet, each doubling of the air's carbon dioxide adds 0.06 to its warmth, within ±0.2.
+- **Senses.** Scent now follows dissolved food and remains (it read carbon dioxide, which is everywhere). An eye in the light tells where other bodies are at up to three times the reach of touch.
+- **Spines** no longer prick a mouth that is not trying to swallow them, so two spined animals of one kind can touch.
+- **Twenty new starters** (48 in all): Worm, Mat, Sponge, Coral, Dickinsonia, Trilobite, Sea scorpion, Fish, Moss, Fern, Amphibian, Tree, Dragonfly, Reptile, Dinosaur, Bird, Flower, Mammal, Grass, Ape.
+- **Where a cell is in its body.** Two more things a gene's switch can read (34 in all): how many divisions forward of the cell its body began as a cell was born, and how many out from the body's middle line. The second reads the same on the left as on the right, so whatever a gene builds by it is built on both sides: a two-sided body from one rule. A cell on the middle line sets its sideways daughters down in pairs, left then right; a cell already out to one side grows farther out on that side.
+- **How new genes arise.** Six new genes in ten are now copies of a gene the cell already has, making something else but keeping the switch the old one had, so a new part appears in the same cells and conditions as an old one. The rest arise from nothing and answer to three signals, where they used to answer at random to all of them. Genes pass between touching cells in runs of up to three, so a machine of several parts can arrive whole.
+- **Oxygen comes in through open surface.** A cell breathes from the water in proportion to how much of its surface nothing is touching (each touching cell covers a twelfth). This is what gives gas exchange (23), the pumped body fluid (22) and transport (8) a use, and what makes thin, branching and sheet-like bodies cheap and thick ones dear. Exposure used to be counted from bonds, which made a sheet look buried.
+- **Five more kinds of cell are named** in the app: Gill or lung, Heart or vessel, Wing, Gland, Immune. `docs/GEOLOGIC_TIMELINE.md` has the full table of cell types against what the engine has.
+- **The water's surface holds.** Nothing that starts a moment under water is thrown out of it; things leave by walking out over the ground or taking wing from the surface.
+- **Laws in place of caps** (Caden: "set world physics that govern the life"): collagen is made at a rate and breaks down at a rate; a wing's lift and drag are area times air thickness times speed squared, and lift adds no energy. Still a cap: skeleton at 15% of a cell.
+- **Deep time** in the ladder panel lists every period, marks the one the planet is in, and says what the next one needs. The engine reports the counts it uses under `steering.land`.
+
+Measured so far, each alone in a pond of prey for 400 cycles from 8 cells: Mat 131 cells, Jelly 89, Sponge 50, Moss 28, Hydra 23, Worm 17–41, Coral 17, Fish 16, Trilobite 15, Dickinsonia 9, Sea scorpion 2. The other eleven have not been run at all.
+
+## Grown animals and the shore (2026-10-12, later)
+
+Caden asked why a sea scorpion still looked like a single cell. `docs/GEOLOGIC_TIMELINE.md` has the measurements; this is what changed for a player.
+
+- **Eleven animals are released grown.** Worm, Trilobite, Sea scorpion, Fish, Amphibian, Dragonfly, Reptile, Dinosaur, Bird, Mammal and Ape are each raised from one egg in a nursery and set down as a body of 16 to 36 cells: a middle line, a limb on each side of every segment, a head with the mouth and eyes, muscle along the middle, fins or feet and gills on the limbs. Releasing one, keeping one stocked, and painting one with the creature brush all set down the same body. Where there is no room for a body its eggs are released as before.
+- **So are ten that grow by simpler rules.** Jelly, Hydra, Sponge, Coral, Dickinsonia, Moss, Fern, Tree, Flower and Grass arrive as bodies of 12 to 125 cells. A release is about four cells for each founder asked for, so a large body comes one at a time. The other 27 starters are still released as single cells.
+- **The top of the air.** On a planet, anything alive thrown more than 14 units above the sea or the ground dies there and its remains fall to the ground beneath. (One winged cell coasting 77 units up had failed a planet's final validation.)
+- **Where they are set down.** Sea animals go into the best-lit water deep enough to hold them, and loose single cells in the way are moved aside. Land plants and land animals (Moss, Fern, Tree, Flower, Grass, Reptile, Dinosaur, Bird, Mammal, Ape) go to the water's edge, in a hand's depth of water.
+- **A body is one individual.** Its cells copy their genes twenty times more faithfully than a lone cell does, take up no genes from one another, and a cell that leaves is the start of a new body, not a piece of the old one.
+- **Breathing inside a body.** Any cell burns fuel with oxygen its body brings it, so gills and a pumped fluid now feed the cells in the middle. Gills pass gas about thirteen times faster than before.
+- **Genes are cheap to carry.** Carrying a gene costs about a hundredth of a cell's upkeep (it was a fourteenth). A gene's cost is the protein it makes.
+- **Nerves cannot jam.** The drive on a nerve has a ceiling, so a strongly lit or strongly signalled animal beats fast and does not seize.
+- **A bite holds on.** Mouth and prey share their momentum while one is eating the other.
+- **Larvae have mouths, and do not eat their own kind.** A cell alone, or at the end of a limb, has a mouth, so the young of these animals can feed. A mouth spares every cell of a kin body that itself has a mouth.
+- **Budding keeps the two sides even.** A cell on a body's middle line buds toward the side it has fewer neighbours on, so a lost limb grows back where it was.
+- **Wind.** A loose, dry cell lying on the ground is blown along it, a spore-sized one half a unit a tick and a heavier one less. A dried-out holdfast grips nothing until water reaches it.
+- **Ashore** is counted by body: a plant is on land when something of it out of the water holds the ground, and all of it out of the water counts.
+
+- **A Shrimp** (the 49th starter): a small crustacean with a thin shell and mouths along its limbs, released grown at about 25 cells.
+- **A body that beats draws more water.** Muscle work stirs the water round a body's mouths, up to doubling what they draw.
+- **What counts as eating an animal.** Prey is judged by the body it belongs to, so eating a fin or a tail counts as eating the animal.
+- **The pond probes have room.** Their cell limit is 40,000; at 8,192 a pond filled 200 cycles after a release and nothing in it could divide.
+- **Two more starters** (51 in all): the Copepod, a soft crustacean of about 12 cells with a small egg, and the Fungus, walled threads that rot remains and take up mineral.
+- **A shared wall.** Two walled cells that touch without being tied pass fuel, nitrogen and phosphorus to whichever has less: trade or theft, as it falls out.
+- **Water up a walled body.** Water and what is dissolved in it move along a tie between walled cells from the wetter to the drier.
+- **Eggs.** The planned animals' egg is smaller, and land animals put fat into the cell that will be the next egg.
+- **One thing at a time.** A mouth that is biting a cell bites no other, and after its last bite it is taken up for one unit of time before it can start on the next. What a mouth can eat is now set by how many things it can handle, so a large meal is worth more of its time than a small one.
+- None of the five above has been measured on a planet. (A fifth rule, that a mouth with mineral in it could not filter, was built and taken out the same day: jaws are a way of eating, not a diet.)
+- **What counts as an animal.** A body of four cells or more, with a mouth or enzymes somewhere in it, that lives by eating: what the ladder panel has always said. The code had wanted most of its cells to be mouths, which left out anything with a head.
+
+Measured on six planets with the whole cast released at once (1,400 cycles), before those four: four are in their Cambrian by the Deep Time panel's own tests, where one was before; movement by muscle is established on five (one before); every planet has 80 to 330 cells of plant standing out of the water (next to none before); Trilobite and Dickinsonia live on all six, Amphibian and Reptile on four, Fish, Dragonfly, Dinosaur and Ape on three, Worm on two, Sea scorpion on one, Bird and Mammal on none. The next test, the Ordovician's, fails everywhere for want of carnivores.
+
+## A body is a refuge, honest counts, soil and spores (2026-10-12, evening)
+
+- **What each species dies of, and who eats whom.** The engine records every death by starter species and cause (starved, wasted, and eleven kinds of injury: swallowed, digested, poisoned, pricked, crushed, dried out, torn, heat, ultraviolet, struck from space, thrown into space), every birth, and whose mouths living tissue went into (`Habitat::deaths`, `births`, `taken`; kept since the world was loaded, not saved). The batch run prints them as `tally`, `died`, `eaten` and `ate` lines. Not shown in the app yet.
+- **A body is a refuge.** A cell in a body is held by each tie it has to the body, and by the matrix round it, against any mouth that cannot take the whole body; teeth cut through. Matrix slows enzymes from outside. A patch of mouth cells is one mouth only with muscle in it to open it. A mouth of many cells keeps nothing under a sixteenth of its bulk.
+- **The land counts count animals and plants.** Warm-blooded cells, fliers, land animals and the largest land animal are counted in animal bodies only (four cells or more, a mouth, mostly not feeding on light); a land animal stands on the ground and is not fixed to it; a land plant has a wall. Before, microbes passed these tests.
+- **Soil.** Remains lying at a site hold water there: five times their own amount, up to 0.02 of depth, which is twice what keeps a cell wet. Held water does not run off and dries at a quarter the rate of open water. Bare rock still sheds rain and dries at once.
+- **How far from the water plants stand.** The land readings gain `inland` (plant cells on ground with no open water) and `interior` (three or more sites from open water). Height above the waterline says little, since ground near a shore is low.
+- **Spores on the wind.** A loose cell falling through the air on a planet is carried sideways four times as fast as one blown along the ground, and comes down no slower. A cell shed from the top of a plant lands away from the plant's foot.
+- **Family trees.** Caden, 2026-10-12: "can we split up the species into differently adapted lines in the app so that we can see the trees of evolution." A line is every cell of one starter kind whose genes carry the same set of twenty adaptations (`TRAITS` in `steering.rs`: light-feeding, a mouth, digesting living tissue, rotting remains, venom, spines, a skeleton, a wall, a skin, eyes, steering, cilia, muscle, fins, wings, a holdfast, warm blood, sex, fixing nitrogen, junctions that learn). When a cell is born carrying a set its parent did not, and that set has not been seen in its kind before, the engine records a new line: what it arose from and the cycle (`Habitat::lines`, saved with the world; at most 192 a kind, and lines with nothing living in them or come of them are forgotten past 96). The Family trees panel, above Life's ascent, draws each kind that has split: the kind as it was designed at the root, each line under the line it arose from, with what it gained and lost, how many cells it has now and since when. A line needs six cells and a hundredth of its kind to be drawn. Lines that were there before the record began (in a world saved by an older engine) hang from the root with no date.
+  - It reads the genes a cell carries, not the parts it has built, so a line "with wings" may never have made one. Genes passed between touching cells make new lines as mutation does.
+  - It does not yet name a line, follow one on the map, or let a line be kept as a creature of its own.
+- **A body set down before the air is made.** A grown animal carries oxygen in its body. Released before a planet's first tick, that oxygen was dropped from the books when the air was first made, the books never balanced again, and the world could not be saved ("Invalid autonomous cellular state"). The air is now added to what is already counted. Found while making a small world to look at the Family trees panel; it was there before this evening's work.
+- **Meat-eaters, and skeletons among animals.** The ladder's Carnivores step is now Meat-eaters: bodies that take more than three tenths of their prey from animals, omnivores included, at the same mark of one body in two hundred. The Skeleton step counts mineral among the cells of animal-like bodies, one in ten, where it counted every living cell. Both from what real food webs and the oldest animal faunas look like; see `docs/GEOLOGIC_TIMELINE.md`.
+- **A quick comparison** (`scripts/quick-compare.sh`): runs the engine as it is now beside the engine as it was, from one or more saved planets, for as many cycles as asked, side by side, and prints each species' growth and commonest death before and after. It refuses to compare runs that released different bodies.
+
 ## Checks
 
 ```sh
-cargo test --profile preview --manifest-path engine/Cargo.toml --lib   # 167 tests
+cargo test --profile preview --manifest-path engine/Cargo.toml --lib   # 188 tests
 npm run check:steering   # the shipped WASM, through the same API the UI uses
 npm run check:scheduler && npm run check:nursery-ui && npm run check:brush-ui
 npm run build

@@ -32,7 +32,7 @@ const a=new World(JSON.stringify(config)),b=new World(JSON.stringify(config));a.
 const healthy=JSON.parse(a.save());const o=healthy.organisms.find(o=>o.cells>=4&&o.regulation);assert.ok(o);
 o.body.nodes[0].health=-1;assert.throws(()=>b.load(JSON.stringify(healthy)));
 // Existing physical save imports stay in their explicitly simpler tissue mode.
-const legacy=JSON.parse(await readFile(new URL('../examples/tidal-world-100.json',import.meta.url),'utf8'));b.load(JSON.stringify(legacy));
+const legacy=JSON.parse(await readFile(new URL('../archive/prototype-v0.6/examples/tidal-world-100.json',import.meta.url),'utf8'));b.load(JSON.stringify(legacy));
 assert.equal(JSON.parse(b.save()).version,4);assert.ok(JSON.parse(b.save()).organisms.every(o=>o.regulation===null));
 await writeFile(new URL('../docs/tissue-results.json',import.meta.url),JSON.stringify({protocol:'Supplied single-cell precursor; ecosystem growth, local regulation, transport and survival rules; samples every 10 cycles.',results},null,2)+'\n');
 console.log('Bundled WASM tissue studies: real growth, regulation, support, cell-energy consistency, valid sampled saves, exact continuation and legacy migration passed.');

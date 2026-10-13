@@ -6,6 +6,12 @@ use crate::{
     *,
 };
 
+/// How fast water creeps along a wall from a wetter cell to a drier one.
+const WICK: f64 = 0.2;
+/// How fast gas crosses a gill for each unit of difference between the
+/// water and the cell. A gill is a surface folded many times over, so far
+/// more crosses it than crosses a smooth cell of the same size.
+const GILL: f64 = 0.2;
 pub const MATRIX: usize = 21;
 pub const PUMP: usize = 22;
 pub const GAS: usize = 23;
@@ -17,7 +23,7 @@ pub const FIBER: usize = 28;
 pub const REMODEL: usize = 29;
 pub const ASSEMBLY: usize = 30;
 pub const LYSIS: usize = 31;
-const Q: f64 = 3.;
+use crate::physical::Q;
 
 /// Abstract equal-mass monomer classes, not atomistic molecules. Sequences are
 /// assembled from food and their contact properties follow composition/motifs.
@@ -255,7 +261,15 @@ fn transfer(x: &mut f64, y: &mut f64, requested: f64) -> f64 {
 /// Oxygen a planet holds over each field site, free or bound. It has to be
 /// large beside what life makes and burns in a cycle, or the air could not
 /// carry a crowded sea through a single night.
-const AIR: f64 = 0.6;
+pub(crate) const AIR: f64 = 0.6;
+/// Free oxygen over a unit of sea at which matrix and fibre are laid down
+/// at half speed: a tenth of all the oxygen a planet can hold. Breathing
+/// manages on a sixth of that, so cells breathe long before they can build.
+const COLLAGEN_HALF: f64 = 0.06;
+/// How fast a cell lays down matrix and fibre for its bulk, beside the
+/// rate matrix breaks down at. A cell making it at full strength comes to
+/// carry about a quarter of its own bulk in it.
+const COLLAGEN_PACE: f64 = 0.25;
 /// Share of the gap between a site's air and the planet's that closes each tick.
 const AIR_MIXING: f64 = 0.2;
 impl Habitat {
@@ -267,7 +281,10 @@ impl Habitat {
             for (i, g) in self.systems.gas.iter_mut().enumerate() {
                 g[1] = AIR * self.domain.area(i) / 2.56;
             }
-            self.systems.initial_gas = self.systems.gas.iter().flatten().sum::<f64>();
+            // Added to what is on the books already, not put in its place:
+            // a body set down before the air was made brought its own
+            // oxygen with it, and that was counted when it arrived.
+            self.systems.initial_gas += self.systems.gas.iter().flatten().sum::<f64>();
         }
         for g in &mut self.systems.gas {
             let total = g[0] + g[1];
@@ -426,11 +443,11 @@ impl Habitat {
                 let moved = transfer(
                     &mut self.systems.gas[site][k],
                     &mut m.body.gas[k],
-                    dt * 0.015 * gates[GAS] * exposure * (concentration - interior),
+                    dt * GILL * gates[GAS] * exposure * (concentration - interior),
                 );
                 self.systems.gas_exchange += moved.abs();
             }
-            let respiration = (dt * 0.08 * gates[GAS])
+            let respiration = (dt * 0.08 * gates[GAS] * c.state.breathing as f64)
                 .min(m.fuel)
                 .min(m.body.gas[0] * 2.)
                 .min(((9. * stature - c.energy as f64) / Q).max(0.));
@@ -453,11 +470,23 @@ impl Habitat {
             c.state.flux.respiration += respiration;
             c.state.flux.waste += respiration;
             e.food_energy += respiration * Q;
+            // The tough stuff an animal lays down between its cells, as
+            // collagen is, takes free oxygen to make: none without it, and
+            // freely once a good share of the planet's oxygen is free. A
+            // cell makes it in proportion to its own bulk and it breaks
+            // down in proportion to how much there is, so how much a cell
+            // carries settles where the two meet.
+            let oxygen = self.systems.gas.get(site).map_or(1., |g| {
+                let level = g[0] / (self.domain.area(site) / 2.56);
+                level / (COLLAGEN_HALF + level)
+            });
             for (gate, rate, cost, fiber) in [
                 (gates[MATRIX], 0.006, 0.5, false),
                 (gates[FIBER], 0.004, 0.7, true),
             ] {
-                let amount = (dt * rate * gate).min(m.fuel).min(c.energy as f64 / cost);
+                let amount = (dt * rate * gate * oxygen * m.biomass * COLLAGEN_PACE)
+                    .min(m.fuel)
+                    .min(c.energy as f64 / cost);
                 m.fuel -= amount;
                 if fiber {
                     m.body.fibers += amount;
@@ -655,6 +684,30 @@ impl Habitat {
                         &mut ym.body.gas[k],
                         DT as f64 * 0.002 * gate * gradient,
                     );
+                }
+            }
+            // Water is drawn along a wall by the wall itself, from a wet
+            // cell to a drier one tied to it, and what is dissolved in it
+            // goes with it. It is what lets a walled body stand with only
+            // its foot wet.
+            let walls = (x.activity(crate::physical::WALL) * y.activity(crate::physical::WALL)) as f64
+                * b.integrity as f64;
+            if walls > 0.01 {
+                let (xm, ym) = (x.material.as_mut().unwrap(), y.material.as_mut().unwrap());
+                let slope = xm.body.water / xm.biomass.max(0.02) - ym.body.water / ym.biomass.max(0.02);
+                let drawn = slope * DT as f64 * WICK * walls * xm.biomass.min(ym.biomass);
+                let (donor, receiver) = if drawn >= 0. { (&mut xm.body, &mut ym.body) } else { (&mut ym.body, &mut xm.body) };
+                let moved = drawn.abs().min(donor.water * 0.5);
+                if moved > 0. {
+                    let fraction = moved / donor.water.max(1e-12);
+                    donor.water -= moved;
+                    receiver.water += moved;
+                    self.systems.water_flow += moved;
+                    for k in 0..crate::physical::SOLUTES {
+                        let carried = donor.solutes[k] * fraction;
+                        donor.solutes[k] -= carried;
+                        receiver.solutes[k] += carried;
+                    }
                 }
             }
             x.state.pressure_gradient =

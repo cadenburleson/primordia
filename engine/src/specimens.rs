@@ -236,6 +236,12 @@ impl Core {
         Ok(json)
     }
     pub fn place_specimen(&mut self, json: &str, x: f32, z: f32) -> Result<u32, String> {
+        self.place_body(json, x, z, false)
+    }
+    /// Sets a body down at a site. With `clear`, single cells drifting where
+    /// it is to go are moved aside to make room, as water moves aside for
+    /// anything lowered into it. Other bodies are never moved.
+    pub(crate) fn place_body(&mut self, json: &str, x: f32, z: f32, clear: bool) -> Result<u32, String> {
         let mut s = Specimen::parse(json)?;
         let original = self
             .autonomous
@@ -289,26 +295,31 @@ impl Core {
             .cells
             .iter()
             .any(|c| c.genome.genes.iter().any(|g| g.action == crate::physical::HOLDFAST));
-        let lift = s
-            .cells
-            .iter()
-            .map(|c| {
-                // Afloat just under the surface where there is sea, else on the ground.
-                let (x, z) = d.coords(c.p);
-                h.planet.as_ref().map_or(ground(c.p) + c.radius(), |p| {
+        // A body afloat hangs wholly under the surface where the water is
+        // deep enough to hold it, and rests on the bottom where it is not.
+        let (mut sink, mut rise) = (f32::INFINITY, f32::NEG_INFINITY);
+        for c in &s.cells {
+            let (x, z) = d.coords(c.p);
+            let height = if d.spherical() {
+                c.p.len() - d.radius()
+            } else {
+                c.p.y
+            };
+            match h.planet.as_ref() {
+                None => rise = rise.max(ground(c.p) + c.radius() + 0.02 - height),
+                Some(p) => {
+                    let floor = p.floor(x, z, c.radius(), self.config.seed);
                     if settles {
-                        p.floor(x, z, c.radius(), self.config.seed) - 0.02
+                        rise = rise.max(floor - height);
                     } else {
-                        p.berth(x, z, c.radius(), self.config.seed)
+                        rise = rise.max(floor + 0.02 - height);
+                        sink = sink
+                            .min(p.berth(x, z, c.radius(), self.config.seed) + 0.02 - height);
                     }
-                }) + 0.02
-                    - if d.spherical() {
-                        c.p.len() - d.radius()
-                    } else {
-                        c.p.y
-                    }
-            })
-            .fold(0f32, f32::max);
+                }
+            }
+        }
+        let lift = if sink.is_finite() { sink.max(rise) } else { rise };
         let bin_size = original
             .cells
             .iter()
@@ -326,21 +337,26 @@ impl Core {
         for c in &original.cells {
             occupied.entry(bin(c.p)).or_default().push(c);
         }
+        let held: BTreeSet<u32> = if clear {
+            original.bonds.iter().flat_map(|b| [b.a, b.b]).collect()
+        } else {
+            BTreeSet::new()
+        };
+        let mut crowd = BTreeSet::new();
         for c in &mut s.cells {
             c.p = c.p.add(f[1].mul(lift));
             let (a, b, k) = bin(c.p);
             for dx in -1..=1 {
                 for dy in -1..=1 {
                     for dz in -1..=1 {
-                        if occupied
-                            .get(&(a + dx, b + dy, k + dz))
-                            .is_some_and(|cells| {
-                                cells.iter().any(|other| {
-                                    other.p.sub(c.p).len() < other.radius() + c.radius() + 0.04
-                                })
-                            })
-                        {
-                            return Err("That spot is occupied. Choose a little more space beside the other organism".into());
+                        for other in occupied.get(&(a + dx, b + dy, k + dz)).into_iter().flatten() {
+                            if other.p.sub(c.p).len() >= other.radius() + c.radius() + 0.04 {
+                                continue;
+                            }
+                            if !clear || held.contains(&other.id) || other.state.anchored {
+                                return Err("That spot is occupied. Choose a little more space beside the other organism".into());
+                            }
+                            crowd.insert(other.id);
                         }
                     }
                 }
@@ -348,6 +364,22 @@ impl Core {
         }
         // Stage the insertion; a rejected file/placement leaves the world intact.
         let mut next = original.clone();
+        if !crowd.is_empty() {
+            let n = s.cells.len() as f32;
+            let middle = s.cells.iter().fold(V3::default(), |p, c| p.add(c.p.mul(1. / n)));
+            let up = d.up(middle);
+            let level = |v: V3| v.sub(up.mul(v.dot(up)));
+            let reach = s
+                .cells
+                .iter()
+                .map(|c| level(c.p.sub(middle)).len() + c.radius())
+                .fold(0f32, f32::max);
+            for c in next.cells.iter_mut().filter(|c| crowd.contains(&c.id)) {
+                let out = level(c.p.sub(middle));
+                let way = if out.len() > 1e-3 { out.normalized() } else { f[0] };
+                c.p = c.p.add(way.mul(reach + c.radius() + 0.1 - out.len()));
+            }
+        }
         let mut references = BTreeSet::new();
         let mut genomes = BTreeSet::new();
         for c in &s.cells {

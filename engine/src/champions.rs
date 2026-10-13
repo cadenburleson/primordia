@@ -150,7 +150,12 @@ impl Core {
             .and_then(|e| e.physical.as_ref())
             .ok_or("Painting life needs the current cellular world")?
             .domain;
-        crate::specimens::inspect(json)?;
+        // A body of many cells moves loose single cells aside as it is
+        // set down; a single cell takes only a free spot.
+        let whole = serde_json::from_str::<serde_json::Value>(&crate::specimens::inspect(json)?)
+            .ok()
+            .and_then(|v| v["cells"].as_u64())
+            .is_some_and(|n| n > 1);
         let mut placed = 0;
         let mut full = None;
         for point in points.chunks(2) {
@@ -163,7 +168,7 @@ impl Core {
                 // Evenly over the disc under the brush.
                 let (r, a) = (radius * self.random().sqrt(), self.random() * std::f32::consts::TAU);
                 let (x, z) = d.coords(centre.add(east.mul(r * a.cos())).add(north.mul(r * a.sin())));
-                match self.place_specimen(json, x, z) {
+                match self.place_body(json, x, z, whole) {
                     Ok(_) => placed += 1,
                     // A crowded spot is simply skipped; a full world ends the stroke.
                     Err(e) if e.contains("limit") => full = Some(e),
@@ -244,7 +249,11 @@ mod tests {
         let advanced = list.iter().find(|x| x.slot == "advanced").unwrap();
         let kept = c.capture_specimen(advanced.body, advanced.title).unwrap();
         let before = c.autonomous.as_ref().unwrap().cells.len();
-        let placed = c.paint_life(&kept, &[-12., 9.], 4., 3).unwrap();
+        // A large body needs open water to be set down in; try a few places.
+        let placed = [[-12., 9.], [18., 18.], [-20., -20.], [22., -18.], [0., 24.], [-24., 0.]]
+            .iter()
+            .find_map(|at| c.paint_life(&kept, at, 6., 3).ok().filter(|&n| n >= 1))
+            .unwrap_or(0);
         assert!(placed >= 1, "{:?} for {} cells", c.place_specimen(&kept, -12., 9.), advanced.cells);
         assert_eq!(c.autonomous.as_ref().unwrap().cells.len(), before + placed as usize * advanced.cells);
         assert_eq!(living(&c, "Most advanced"), placed as usize * advanced.cells);

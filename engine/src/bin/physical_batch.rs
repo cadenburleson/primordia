@@ -77,6 +77,12 @@ fn run() -> Result<(), String> {
     for command in &steering {
         eprintln!("{}", world.steer(command)?);
     }
+    // How many cells of each starter species the run begins with, after
+    // anything it was asked to release: what the ledger below is read against.
+    let mut began: std::collections::BTreeMap<String, u32> = Default::default();
+    for c in &world.autonomous.as_ref().unwrap().cells {
+        *began.entry(c.collection_sources.first().cloned().unwrap_or_default()).or_default() += 1;
+    }
     let start = Instant::now();
     let initial_time = world.time;
     let ticks = (cycles * 4.).ceil() as u32;
@@ -144,14 +150,99 @@ fn run() -> Result<(), String> {
         );
     }
     eprintln!(
-        "diet [light, soup, remains, vents, herbivore, omnivore, carnivore] {} · complex-cell captures {}\nkinds [microbe, plant-like, fungus-like, animal-like] {}\nspecies {}\noxygen {:.2} breath {:.2} restocked {}",
+        "diet [light, soup, remains, vents, herbivore, omnivore, carnivore] {} · complex-cell captures {}\nkinds [microbe, plant-like, fungus-like, animal-like] {}\nspecies {}\noxygen {:.2} breath {:.2} restocked {}\nsky impacts {} airbursts {} air {:.2} rock nitrogen {:.0} ozone {:.2} hard rays {:.2}",
         view["diet"], view["captures"], view["kinds"], view["species"],
-        view["oxygen"].as_f64().unwrap_or(0.), view["breath"].as_f64().unwrap_or(0.), view["restocked"]
+        view["oxygen"].as_f64().unwrap_or(0.), view["breath"].as_f64().unwrap_or(0.), view["restocked"],
+        view["sky"]["impacts"], view["sky"]["airbursts"], view["sky"]["airColumn"].as_f64().unwrap_or(0.), view["sky"]["rockNitrogen"].as_f64().unwrap_or(0.), view["sky"]["ozone"].as_f64().unwrap_or(0.), view["sky"]["hardRays"].as_f64().unwrap_or(0.)
     );
+    eprintln!("land {}", view["land"]);
+    // The family tree of each starter species: its living lines, what each
+    // gained or lost against the line it arose from, and when.
+    let names = primordia_engine::steering::TRAIT_NAMES;
+    let list = |mask: u64| (0..names.len()).filter(|b| mask >> b & 1 == 1).map(|b| names[b]).collect::<Vec<_>>().join(", ");
+    for tree in view["trees"].as_array().unwrap() {
+        eprintln!("tree {} ({} cells, {} lines)", tree["species"].as_str().unwrap(), tree["cells"], tree["lines"]);
+        for b in tree["branches"].as_array().unwrap() {
+            let t = b["traits"].as_u64().unwrap();
+            match b["from"].as_u64() {
+                None => eprintln!("  root: {} · {} cells", list(t), b["cells"]),
+                Some(f) => eprintln!(
+                    "  line: gained [{}] lost [{}] · {} cells · {}",
+                    list(t & !f), list(f & !t), b["cells"],
+                    b["since"].as_f64().map_or("before records began".to_string(), |s| format!("since cycle {s:.0}"))
+                ),
+            }
+        }
+    }
+    // What each starter species died of during this run: starved, wasted
+    // away, then each kind of injury.
+    let h = e.physical.as_ref().unwrap();
+    let causes: Vec<&str> =
+        ["starved", "wasted"].into_iter().chain(primordia_engine::physiology::HARMS).collect();
+    // One line a species for the whole run: cells at the start and the end,
+    // born and died, and the yearly-interest figure of it: growth per hundred
+    // cycles, which is what says whether a species is holding.
+    let mut ended: std::collections::BTreeMap<String, u32> = Default::default();
+    for c in &e.cells {
+        *ended.entry(c.collection_sources.first().cloned().unwrap_or_default()).or_default() += 1;
+    }
+    let span = (world.time - initial_time).max(1e-6) as f64;
+    for (name, &from) in &began {
+        let to = ended.get(name).copied().unwrap_or(0);
+        let born = h.births.get(name).copied().unwrap_or(0);
+        let died: u32 = h.deaths.get(name).map_or(0, |r| r.iter().sum());
+        let rate = if from > 0 && to > 0 { ((to as f64 / from as f64).ln() * 100. / span).exp() - 1. } else { -1. };
+        eprintln!(
+            "tally {:<14} {:>6} -> {:<6} born {:>6} died {:>6}  {:>+7.1}% a hundred cycles",
+            if name.is_empty() { "(evolved)" } else { name },
+            from, to, born, died, rate * 100.
+        );
+    }
+    for (name, row) in &h.deaths {
+        let all: u32 = row.iter().sum();
+        let mut parts: Vec<(u32, &str)> = row.iter().copied().zip(causes.iter().copied()).filter(|p| p.0 > 0).collect();
+        parts.sort_by(|a, b| b.0.cmp(&a.0));
+        eprintln!(
+            "died {:<14} {:>6}: {}",
+            if name.is_empty() { "(evolved)" } else { name },
+            all,
+            parts.iter().map(|(n, c)| format!("{c} {n}")).collect::<Vec<_>>().join(", ")
+        );
+    }
     let mut sizes: Vec<usize> = e.groups().iter().map(Vec::len).collect();
     sizes.sort_unstable();
     let at_least = |n: usize| sizes.iter().filter(|s| **s >= n).count();
     let in_bodies: usize = sizes.iter().filter(|s| **s >= 4).sum();
+    // And who ate each of them, by how much living tissue was taken.
+    let mut eaten: std::collections::BTreeMap<&str, Vec<(f64, &str)>> = Default::default();
+    for ((prey, eater), amount) in &h.taken {
+        eaten.entry(prey).or_default().push((*amount, eater));
+    }
+    for (prey, mut by) in eaten {
+        by.sort_by(|a, b| b.0.total_cmp(&a.0));
+        let all: f64 = by.iter().map(|p| p.0).sum();
+        eprintln!(
+            "eaten {:<14} {:>7.1}: {}",
+            if prey.is_empty() { "(evolved)" } else { prey },
+            all,
+            by.iter().take(6).map(|(n, c)| format!("{} {:.0}%", if c.is_empty() { "(evolved)" } else { c }, n * 100. / all)).collect::<Vec<_>>().join(", ")
+        );
+    }
+    // The same from the eater's side: what each species lived on.
+    let mut ate: std::collections::BTreeMap<&str, Vec<(f64, &str)>> = Default::default();
+    for ((prey, eater), amount) in &h.taken {
+        ate.entry(eater).or_default().push((*amount, prey));
+    }
+    for (eater, mut of) in ate {
+        of.sort_by(|a, b| b.0.total_cmp(&a.0));
+        let all: f64 = of.iter().map(|p| p.0).sum();
+        eprintln!(
+            "ate {:<14} {:>7.1}: {}",
+            if eater.is_empty() { "(evolved)" } else { eater },
+            all,
+            of.iter().take(8).map(|(n, c)| format!("{} {:.0}%", if c.is_empty() { "(evolved)" } else { c }, n * 100. / all)).collect::<Vec<_>>().join(", ")
+        );
+    }
     eprintln!(
         "bodies largest {} · of 4+ {} · of 10+ {} · of 30+ {} · cells in bodies of 4+ {:.0}%",
         sizes.last().copied().unwrap_or(0), at_least(4), at_least(10), at_least(30),

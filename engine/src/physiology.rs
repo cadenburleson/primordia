@@ -9,7 +9,14 @@ use crate::{
 pub const LIPID: usize = 10;
 /// How fast excitable cells fire and recover. At 3 a steadily stimulated
 /// cell beats about once every seventeen cycles: quick enough to row with.
-const NERVE_PACE: f32 = 3.;
+const NERVE_PACE: f32 = 24.;
+/// Steps the firing of nerves is worked out in, each moment: enough that a
+/// nerve this quick is followed and not overshot.
+const NERVE_STEPS: usize = 24;
+/// The most drive that reaches a nerve's membrane, whatever is asking.
+/// Well under the strength at which the membrane stops firing and holds
+/// (about 0.53), where its beats are still full ones.
+const NERVE_FULL: f32 = 0.35;
 /// How many times faster a signal crosses between two fully fat-sheathed cells.
 const MYELIN: f32 = 3.;
 pub const RECEPTOR: usize = 11;
@@ -48,6 +55,37 @@ pub struct CellState {
     /// Light-harvesting capacity of a cell swallowed and kept alive inside
     /// this one. Inherited at division: the step that made complex cells.
     pub symbiont: f32,
+    /// Breathing capacity of a cell swallowed and kept alive inside this
+    /// one, as the mitochondrion was. Inherited at division.
+    pub mitochondria: f32,
+    /// How much of the fuel it burns this cell is able to breathe: its own
+    /// membrane's machinery, or the breathers it carries.
+    pub breathing: f32,
+    /// How many other cells are touching this one.
+    pub touching: u8,
+    /// The work this cell's muscles did in the last moment.
+    pub beat: f32,
+    /// How much longer this cell's mouth is taken up with what it last
+    /// swallowed, and which cell that was. A mouth takes one thing at a time.
+    pub handling: f32,
+    pub prey: u32,
+    /// Where in its body this cell was born: how many divisions forward of
+    /// the cell the body began as, and how many out from the middle line,
+    /// counted one way on one side and the other way on the other. `flip`
+    /// is which side a cell on the middle line set its last daughter down.
+    pub axial: i8,
+    pub lateral: i8,
+    pub flip: bool,
+    /// It has divided along the body and its daughter lies ahead of it.
+    pub passed: bool,
+    /// Divisions since the growing tip this cell came from last forked, and
+    /// how many forks lie between it and the cell its body began as. A
+    /// body that branches by rule repeats itself at each fork, smaller.
+    pub since_fork: u8,
+    pub order: u8,
+    /// Ultraviolet light reaching this cell: what the star sends, less what
+    /// ozone and the water over the cell take out.
+    pub ultraviolet: f32,
     /// 0 for a stem cell that can still become anything; 1 to 3 once it has
     /// committed. Daughters inherit it. A cell on its own is always a stem cell.
     pub fate: u8,
@@ -96,7 +134,16 @@ pub struct CellState {
     /// Whether the cell has hold of the ground, and where.
     pub anchored: bool,
     pub anchor: [f32; 3],
+    /// How much each kind of injury (`HARMS`) has hurt this cell since the
+    /// world was loaded: what a cell that dies of its injuries died of.
+    #[serde(skip)]
+    pub harm: [f32; 11],
 }
+/// The kinds of injury there are, in the order `CellState::harm` keeps them.
+pub const HARMS: [&str; 11] = [
+    "struck from space", "heat", "ultraviolet", "digested", "swallowed", "pricked", "poisoned", "crushed", "dried out",
+    "thrown into space", "torn",
+];
 impl CellState {
     pub fn valid(&self) -> bool {
         self.flux.valid()
@@ -136,6 +183,12 @@ impl CellState {
             && self.fate < crate::autonomous::FATES
             && self.symbiont.is_finite()
             && (0.0..=1.).contains(&self.symbiont)
+            && self.mitochondria.is_finite()
+            && (0.0..=1.).contains(&self.mitochondria)
+            && self.breathing.is_finite()
+            && self.ultraviolet.is_finite()
+            && self.ultraviolet >= 0.
+            && (0.0..=1.).contains(&self.breathing)
     }
 }
 #[derive(Clone, Debug, Default, Serialize, Deserialize)]
@@ -150,6 +203,8 @@ pub struct Ledger {
     pub digested: f64,
     pub excreted: f64,
     pub decomposed: f64,
+    /// Nitrogen taken from the air by living cells.
+    pub nitrogen_fixed: f64,
     pub spikes: u32,
     pub contact_changes: u32,
 }
@@ -165,6 +220,7 @@ impl Ledger {
             self.digested,
             self.excreted,
             self.decomposed,
+            self.nitrogen_fixed,
         ]
         .iter()
         .all(|x| x.is_finite() && *x >= 0.)
@@ -200,10 +256,13 @@ impl Cell {
         let receptor = self.activity(RECEPTOR);
         self.state.food_change = (food - self.state.nutrient_memory).clamp(-1., 1.);
         self.state.nutrient_memory += (food - self.state.nutrient_memory) * 0.08;
-        // Two round cells touch over a small patch, so one neighbour costs a
-        // cell little of its surface; it is being packed in on every side
-        // that buries it. Thin bodies feed almost freely, thick ones do not.
-        self.state.exposure = (1. - (degree as f32 / 6.).powi(2)).clamp(0.05, 1.);
+        // How much of a cell's surface is open to the water. Each cell that
+        // touches it covers a twelfth, twelve being as many as fit round one.
+        // So a cell in a thread or a sheet keeps most of its surface, and
+        // one packed in on every side has almost none. Thin bodies feed and
+        // breathe almost freely, thick ones do not.
+        let _ = degree;
+        self.state.exposure = (1. - self.state.touching as f32 / 12.).clamp(0.05, 1.);
         // Samples one membrane radius along the cell's inherited spatial
         // polarity. This is a scalar promoter input; it never sets a force.
         let r = self.radius();
@@ -243,6 +302,15 @@ impl Cell {
             self.state.light_contrast * self.activity(crate::development::PHOTIC),
             self.state.germline,
             self.state.pressure_gradient,
+            // Where in its body a cell is: how far forward of where the body
+            // began, and how far out from its middle line. The second is the
+            // same on the left as on the right, so whatever a gene builds by
+            // it is built on both sides.
+            (self.state.axial as f32 / 8.).clamp(0., 1.),
+            (self.state.lateral.unsigned_abs() as f32 / 4.).min(1.),
+            // Whether this cell has set a daughter down ahead of itself:
+            // the cell in front is the growing tip, and this one is not.
+            f32::from(u8::from(self.state.passed)),
             // Left-minus-right senses, filled by the habitat where fields are known.
             0.,
             0.,
@@ -252,11 +320,16 @@ impl Cell {
     }
     pub(crate) fn motor_signals(&self) -> [f32; 2] {
         let channels = self.activity(CHANNEL) * (self.energy / 0.02).clamp(0., 1.);
+        // A muscle with no nerve is held as tight as the signal around it
+        // says. One with a nerve twitches when the nerve fires and lets go
+        // between, so the same signal that sets the nerve firing makes it
+        // beat instead of clench.
+        // A twitch is all or nothing: once the nerve is well on its way to
+        // firing, the whole muscle pulls.
+        let firing = ((self.state.excitation - 0.3) * 5.).clamp(0., 1.);
         [
-            (self.chemicals[0] + channels * self.state.excitation * (1. - self.state.recovery))
-                .min(1.),
-            (self.chemicals[1] + channels * self.state.recovery * (1. - self.state.excitation))
-                .min(1.),
+            (self.chemicals[0] * (1. - channels) + channels * firing).min(1.),
+            (self.chemicals[1] * (1. - channels)).min(1.),
         ]
     }
     pub(crate) fn material_role(&self) -> u8 {
@@ -268,8 +341,15 @@ impl Cell {
             20
         } else if self.activity(WALL) > 0.25 {
             17
+        } else if self.activity(crate::physical::WING) > 0.25 {
+            23
         } else if self.activity(FIN) > 0.25 {
             18
+        } else if self.activity(crate::organics::RECOGNITION) > 0.25
+            && self.activity(ENGULF).max(self.activity(9)) > 0.1
+        {
+            // It tells its own from others and eats the others.
+            25
         } else if self.activity(ENGULF) > 0.25 {
             15
         } else if self.activity(TOXIN) > 0.25 {
@@ -278,6 +358,10 @@ impl Cell {
             14
         } else if self.activity(PROPEL) > 0.25 {
             12
+        } else if self.activity(crate::organics::GAS) > 0.25 {
+            21
+        } else if self.activity(crate::organics::PUMP) > 0.25 {
+            22
         } else if m.mineral / m.mass() > 0.025 {
             1
         } else if self.activity(4) > 0.25 {
@@ -302,6 +386,8 @@ impl Cell {
             > 0.25
         {
             10
+        } else if self.activity(5).max(self.activity(6)) > 0.25 {
+            24
         } else if m.body.matrix / m.organic() > 0.02 {
             11
         } else if self.activity(CHEMO) > 0.25 {
@@ -311,6 +397,9 @@ impl Cell {
         }
     }
 }
+/// Share of what a wounded cell has lost that it rebuilds each cycle with no
+/// machinery made for the purpose.
+const MEND: f64 = 0.03;
 impl Habitat {
     /// Adipose-like carbon storage with the same chemical-energy convention as
     /// reduced fuel. Storage isn't free ATP: it must be mobilized and respired.
@@ -346,12 +435,18 @@ impl Habitat {
             m.lipid -= used;
             m.fuel += used;
             self.physiology.lipid_used += used;
+            // Fat is burned as any fuel is: for all it holds with oxygen,
+            // for a fifteenth without.
+            let yielded = crate::physical::FERMENT
+                + (1. - crate::physical::FERMENT) * c.state.breath as f64;
             let extra = used * (crate::physical::FAT_ENERGY - 1.) * crate::physical::Q;
             let before = c.energy as f64;
-            c.energy = (before + extra).min(9. * stature) as f32;
+            c.energy = (before + extra * yielded).min(9. * stature) as f32;
             self.heat += extra - (c.energy as f64 - before);
         }
-        let repaired = (DT as f64 * 0.008 * repair * c.state.injury as f64)
+        // Every living cell mends itself, out of what it would otherwise
+        // grow with. Dedicated repair machinery does it several times faster.
+        let repaired = (DT as f64 * (0.008 * repair + MEND * m.biomass) * c.state.injury as f64)
             .min(m.fuel)
             .min(c.energy as f64 / 0.6)
             .min(m.nitrogen / crate::physical::N_RATIO)
@@ -394,7 +489,8 @@ impl Habitat {
             // Never past the receiver's capacity: a gut fills, it does not burst.
             let room = |m: &crate::physical::Inventory| (m.biomass * 1.5 - m.fuel).max(0.);
             let poured = (slope * DT as f64 * 0.5 * gut).clamp(-room(xm), room(ym));
-            let flow = (carried + poured).clamp(-ym.fuel, xm.fuel);
+            // A store can sit a rounding error under nothing; it gives nothing then.
+            let flow = (carried + poured).clamp(-ym.fuel.max(0.), xm.fuel.max(0.));
             xm.fuel -= flow;
             ym.fuel += flow;
             self.physiology.fuel_transported += flow.abs();
@@ -445,58 +541,82 @@ impl Habitat {
             .iter()
             .map(|c| c.material.as_ref().map_or(0., |m| m.sheath() as f32))
             .collect();
-        let mut state: Vec<_> = e
-            .cells
+        // Only cells with channels fire, and only ties between two of them
+        // carry anything: the rest of the sea is left out of the sums.
+        let live: Vec<usize> = (0..e.cells.len()).filter(|&i| gates[i] > 0.).collect();
+        if live.is_empty() {
+            return;
+        }
+        let wires: Vec<(usize, usize, f32)> = e
+            .bonds
             .iter()
-            .map(|c| [c.state.excitation, c.state.recovery])
-            .collect();
-        let start = state.clone();
-        for _ in 0..8 {
-            let mut coupling = vec![0.; e.cells.len()];
-            for b in &e.bonds {
+            .filter_map(|b| {
                 let (a, c) = (ids[&b.a], ids[&b.b]);
                 let conductivity = gates[a].min(gates[c])
                     * b.integrity
                     * (e.cells[a].activity(8) + e.cells[c].activity(8))
                     * 0.15
                     * (1. + MYELIN * sheaths[a].min(sheaths[c]));
+                (conductivity > 0.).then_some((a, c, conductivity))
+            })
+            .collect();
+        // What sets a cell off does not change within the moment.
+        let mut stimulus = vec![0f32; e.cells.len()];
+        for &i in &live {
+            let c = &e.cells[i];
+            stimulus[i] = c.activity(RECEPTOR)
+                * (c.state.food_change * 1.5
+                    + c.state.injury * 0.5
+                    + c.state.strain * 0.1
+                    + if c.state.ground { 0.03 } else { 0. })
+                + c.activity(crate::development::PHOTIC) * c.state.light * 0.5
+                + c.activity(crate::organics::TOUCH)
+                    * (c.state.strain * 0.2 + c.state.pressure_gradient * 0.1)
+                + c.state.neural_input
+                + 0.4 * (c.chemicals[0] - c.chemicals[1]);
+            // A nerve can be driven only so hard. Past that it fires as
+            // fast as it can; it does not jam on, as this membrane would
+            // if the drive were let through whole.
+            stimulus[i] = stimulus[i].min(NERVE_FULL);
+        }
+        let mut state: Vec<_> = e
+            .cells
+            .iter()
+            .map(|c| [c.state.excitation, c.state.recovery])
+            .collect();
+        let start: Vec<f32> = state.iter().map(|s| s[0]).collect();
+        let mut coupling = vec![0f32; e.cells.len()];
+        let step = DT / NERVE_STEPS as f32 * NERVE_PACE;
+        for _ in 0..NERVE_STEPS {
+            for &i in &live {
+                coupling[i] = 0.;
+            }
+            for &(a, c, conductivity) in &wires {
                 let flow = (state[c][0] - state[a][0]) * conductivity;
                 coupling[a] += flow;
                 coupling[c] -= flow;
             }
-            let old = state.clone();
-            for (i, c) in e.cells.iter().enumerate() {
-                let [u, v] = old[i];
-                let stimulus = c.activity(RECEPTOR)
-                    * (c.state.food_change * 1.5
-                        + c.state.injury * 0.5
-                        + c.state.strain * 0.1
-                        + if c.state.ground { 0.03 } else { 0. })
-                    + c.activity(crate::development::PHOTIC) * c.state.light * 0.5
-                    + c.activity(crate::organics::TOUCH)
-                        * (c.state.strain * 0.2 + c.state.pressure_gradient * 0.1)
-                    + c.state.neural_input;
+            for &i in &live {
+                let [u, v] = state[i];
                 // Recovery pulls hard enough that a cell held under steady
                 // stimulation, by light or by signal A, fires again and again
                 // across a wide range of strengths instead of locking on.
-                let du = 3. * u * (1. - u) * (u - 0.18) - v
-                    + stimulus
-                    + 0.4 * (c.chemicals[0] - c.chemicals[1])
-                    + coupling[i];
+                let du = 3. * u * (1. - u) * (u - 0.18) - v + stimulus[i] + coupling[i];
                 let dv = 0.12 * (u - v * 0.8);
                 state[i] = [
-                    (u + DT / 8. * NERVE_PACE * gates[i] * du).clamp(0., 1.),
-                    (v + DT / 8. * NERVE_PACE * gates[i] * dv).clamp(0., 1.),
+                    (u + step * gates[i] * du).clamp(0., 1.),
+                    (v + step * gates[i] * dv).clamp(0., 1.),
                 ];
             }
         }
-        for (i, c) in e.cells.iter_mut().enumerate() {
+        for &i in &live {
+            let c = &mut e.cells[i];
             let required = DT as f64 * 0.002 * gates[i] as f64 * (0.1 + state[i][0] as f64);
             let paid = self.spend(c, required, false);
             self.physiology.signal_work += paid;
             c.state.excitation = state[i][0];
             c.state.recovery = state[i][1];
-            if start[i][0] < 0.65 && state[i][0] >= 0.65 {
+            if start[i] < 0.65 && state[i][0] >= 0.65 {
                 self.physiology.spikes += 1;
             }
         }

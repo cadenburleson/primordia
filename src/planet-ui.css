@@ -125,8 +125,35 @@ html,body,#app { height:100%; overflow:hidden; }
 .guide-hint .hud-bar b { display:block; height:100%; width:0; background:var(--lime); transition:width .6s; }
 .guide-hint strong { font-size:24px; }
 .ascent { margin:20px 0 24px; }
+.deep-time { margin:20px 0 4px; }
+.deep-time-periods { list-style:none; margin:0; padding:0; display:grid; gap:2px; }
+.period { border-left:4px solid var(--period); padding:5px 10px; background:rgba(255,255,255,.03); border-radius:0 6px 6px 0; }
+.period-top { display:flex; justify-content:space-between; align-items:baseline; gap:10px; }
+.period strong { font-size:12px; letter-spacing:.02em; }
+.period em { font-style:normal; font-size:10px; color:#9fb7a7; white-space:nowrap; }
+.period p { margin:5px 0 2px; font-size:11px; line-height:1.55; color:#c8d8cd; }
+.period .period-needs { color:#9fb7a7; }
+.period.ahead { opacity:.45; }
+.period.ahead strong { font-weight:500; }
+.period.now { background:color-mix(in srgb,var(--period) 22%,transparent); }
+.period.now strong::after { content:" · now"; font-weight:500; color:#9fb7a7; }
+.family-trees { margin:20px 0 4px; }
+.trees-list { display:grid; gap:4px; }
+.tree { background:rgba(255,255,255,.03); border-radius:6px; padding:6px 10px; }
+.tree-head { display:flex; justify-content:space-between; align-items:baseline; gap:10px; cursor:pointer; font-size:12px; }
+.tree-head em, .tree-count { font-style:normal; font-size:10px; color:#9fb7a7; white-space:nowrap; }
+.tree-branches { list-style:none; margin:0; padding:0 0 0 12px; border-left:1px solid #9fb7a733; }
+.tree-root { margin-top:8px; padding-left:0; border-left:0; }
+.tree-line { margin:5px 0; }
+.tree-line.gone > .tree-row { opacity:.5; }
+.tree-row { display:flex; flex-wrap:wrap; align-items:baseline; gap:3px 6px; font-size:11px; line-height:1.5; color:#c8d8cd; }
+.tree-what { color:#9fb7a7; }
+.tree-gain { color:#9fd8a6; }
+.tree-loss { color:#e6a08c; }
+.tree-count { margin-left:auto; }
+.trees-note { margin:8px 0 0; font-size:10px; line-height:1.55; color:#9fb7a7; }
 .ascent-head { display:flex; justify-content:space-between; align-items:baseline; margin-bottom:12px; }
-#ascent-summary { font-size:10px; color:#9fb7a7; }
+#ascent-summary, #trees-summary { font-size:10px; color:#9fb7a7; }
 .ascent-now { border:1px solid #f2b84b55; background:#f2b84b0d; border-radius:10px; padding:15px; margin-bottom:16px; }
 .ascent-now > .eyebrow { color:#f2c877; }
 .ascent-now h3 { font:22px/1.2 var(--serif); margin:9px 0 8px; }

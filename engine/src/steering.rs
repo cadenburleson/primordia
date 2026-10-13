@@ -10,6 +10,63 @@ use crate::{
     *,
 };
 
+/// What marks one line of a starter species out from another: the
+/// adaptations a genome carries, one bit for each, in the order the app
+/// names them. A line is every cell of a species with the same set.
+pub(crate) const TRAITS: [&[usize]; 20] = [
+    &[0],                                                         // feeds on light
+    &[ENGULF],                                                    // a mouth
+    &[9],                                                         // digests living tissue from outside
+    &[15],                                                        // rots remains
+    &[TOXIN],                                                     // venom
+    &[SPINE],                                                     // spines
+    &[3, 29],                                                     // a skeleton
+    &[WALL],                                                      // a wall
+    &[BARRIER],                                                   // a skin
+    &[crate::development::PHOTIC],                                // eyes
+    &[STEER],                                                     // steering
+    &[PROPEL],                                                    // cilia
+    &[4],                                                         // muscle
+    &[FIN],                                                       // fins
+    &[crate::physical::WING],                                     // wings
+    &[crate::physical::HOLDFAST],                                 // a holdfast
+    &[crate::physical::WARM],                                     // warm blood
+    &[crate::development::GAMETIC, crate::development::FUSOGEN],  // sex
+    &[crate::physical::FIX],                                      // fixes nitrogen
+    &[crate::development::SYNAPSE],                               // junctions that learn
+];
+/// What each of `TRAITS` is called.
+pub const TRAIT_NAMES: [&str; 20] = [
+    "feeds on light", "a mouth", "digests living tissue", "rots remains", "venom", "spines", "a skeleton", "a wall",
+    "a skin", "eyes", "steering", "cilia", "muscle", "fins", "wings", "a holdfast", "warm blood", "sex",
+    "fixes nitrogen", "junctions that learn",
+];
+/// The adaptations a set of genes carries, as bits of `TRAITS`.
+pub(crate) fn traits(genes: &[autonomous::Gene]) -> u32 {
+    let mut mask = 0;
+    for g in genes {
+        if g.strength > 0.05 {
+            for (bit, actions) in TRAITS.iter().enumerate() {
+                if actions.contains(&g.action) {
+                    mask |= 1 << bit;
+                }
+            }
+        }
+    }
+    mask
+}
+/// One line of a species: the adaptations it carries, the line it arose
+/// from (itself, for the line records began with) and when it first appeared.
+#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
+pub struct Line {
+    pub traits: u32,
+    pub from: u32,
+    pub since: f32,
+}
+/// The most lines kept for one species. Past this the ones with nothing
+/// living in them and no living descendants are forgotten first.
+pub(crate) const LINES: usize = 96;
+
 pub const GOALS: [&str; 9] = [
     "bodies", "swimming", "movement", "support", "senses", "hunting", "defence", "limbs",
     "reserves",
@@ -43,6 +100,9 @@ pub struct Steering {
     pub light: f32,
     /// Activity of the planet's interior: multiplies chemosynthesis at vents.
     pub vents: f32,
+    /// How crowded the planet's neighbourhood is: multiplies how often
+    /// bodies from space arrive. None at zero.
+    pub bombardment: f32,
     /// Empty, or one of `GOALS`: the trait bodies are bred for.
     pub goal: String,
     /// The goal follows life's ladder by itself: whatever step has not been
@@ -90,6 +150,7 @@ impl Default for Steering {
             restocked: 0,
             light: 1.,
             vents: 1.,
+            bombardment: 1.,
             goal: String::new(),
             auto: false,
             auto_rounds: 0,
@@ -158,13 +219,14 @@ impl Steering {
                 .all(|s| crate::bestiary::SPECIES.iter().any(|known| known.0 == s))
             && (0.25..=8.).contains(&self.light)
             && (0.25..=8.).contains(&self.vents)
+            && (0.0..=8.).contains(&self.bombardment)
             && self.storm_scale <= 16.
             && (self.goal_strength == 0. || (0.05..=0.6).contains(&self.goal_strength))
             && (5.0..=400.).contains(&self.goal_period)
             && self.favour_pressure <= 0.2
             && self.winter_depth <= 1.
             && (self.goal.is_empty() || GOALS.contains(&self.goal.as_str()))
-            && self.milestones.len() <= 64
+            && self.milestones.len() <= RUNG_NAMES.len() * 3
             && self
                 .milestones
                 .iter()
@@ -187,7 +249,7 @@ pub struct Rung {
     pub first: [Option<f32>; 3],
 }
 
-const RUNG_NAMES: [(&str, &str); 24] = [
+const RUNG_NAMES: [(&str, &str); 27] = [
     ("cells", "Living cells"),
     ("colonies", "Colonies"),
     ("bodies", "Multicellular bodies"),
@@ -202,8 +264,11 @@ const RUNG_NAMES: [(&str, &str); 24] = [
     ("fins", "Fins and feet"),
     ("skeleton", "Skeleton"),
     ("hunters", "Hunters"),
-    ("carnivores", "Carnivores"),
+    ("carnivores", "Meat-eaters"),
+    ("fixing", "Nitrogen fixing"),
+    ("breathing", "Oxygen breathing"),
     ("complex", "Complex cells"),
+    ("animals", "Animals"),
     ("guts", "Guts"),
     ("defences", "Defences"),
     ("walls", "Walled life"),
@@ -245,6 +310,9 @@ enum Command {
         scale: f32,
     },
     Vents {
+        scale: f32,
+    },
+    Bombardment {
         scale: f32,
     },
     Goal {
@@ -346,6 +414,112 @@ impl Habitat {
         }
         rates
     }
+    /// Life out of the water, in the air and keeping itself warm: what the
+    /// later ages of a planet are counted by.
+    pub(crate) fn ashore_view(&self, e: &Evolution) -> serde_json::Value {
+        use crate::physical::{WARM, WING};
+        // Living there, not washed up there: a plant holds on to the ground
+        // it stands on, and an animal has been alive a while and is not
+        // dying of it.
+        // A body is ashore when something of it out of the water holds or
+        // stands on the ground, and every cell of it out of the water is
+        // ashore with it: a tree is not only its root.
+        let out = |c: &Cell| c.state.under < 0.3;
+        let (mut rooted, mut standing, mut bodied, mut walking) =
+            (BTreeSet::new(), BTreeSet::new(), BTreeSet::new(), BTreeSet::new());
+        let mut largest = 0;
+        for g in e.groups() {
+            let held = g.iter().any(|&i| e.cells[i].state.anchored && out(&e.cells[i]));
+            let afoot = g.iter().any(|&i| e.cells[i].state.ground && out(&e.cells[i]));
+            // An animal is a body: several cells, a mouth or digestive
+            // enzymes among them, most of them neither feeding on light nor
+            // walled as a fungus is. A microbe that has washed up, or one
+            // that happens to carry a gene for warmth or for wings, is not
+            // a land animal, a warm-blooded one or a flier.
+            let animal = g.len() >= 4
+                && g.iter().any(|&i| e.cells[i].activity(ENGULF) > 0.05 || e.cells[i].activity(9) > 0.05)
+                && g.iter().filter(|&&i| built(&e.cells[i], &[0])).count() * 2 < g.len()
+                && g.iter().filter(|&&i| built(&e.cells[i], &[WALL])).count() * 2 < g.len();
+            if held {
+                rooted.extend(g.iter().map(|&i| e.cells[i].id));
+            }
+            if held || afoot {
+                standing.extend(g.iter().map(|&i| e.cells[i].id));
+            }
+            if animal {
+                bodied.extend(g.iter().map(|&i| e.cells[i].id));
+                // An animal of the land stands on it. One fixed to the
+                // bed of the shallows, as a coral is, is left by the tide
+                // and has not come ashore.
+                if afoot && !held {
+                    walking.extend(g.iter().map(|&i| e.cells[i].id));
+                    largest = largest.max(g.len());
+                }
+            }
+        }
+        let ashore = |c: &Cell| out(c) && standing.contains(&c.id);
+        // A plant of the land has a wall to stand up in. A mat of bacteria
+        // on a wet shore has none, and was there long before plants were.
+        let plant = |c: &Cell| built(c, &[0]) && built(c, &[WALL]) && rooted.contains(&c.id);
+        let animal = |c: &Cell| walking.contains(&c.id) && !built(c, &[0]) && c.age > 20. && c.state.injury < 0.5;
+        let count = |f: &dyn Fn(&Cell) -> bool| e.cells.iter().filter(|c| f(c)).count();
+        // Away from the water's edge: on ground with no open water on it,
+        // only what its soil holds. And how many sites from the nearest
+        // open water each site is, up to three.
+        let open: Vec<bool> = self.planet.as_ref().map_or(Vec::new(), |p| {
+            (0..self.domain.sites())
+                .map(|site| {
+                    let area = if self.domain.spherical() { self.domain.area(site) } else { 1. };
+                    p.water[site] - crate::planet::soil(self.solutes[site][5], area, p.water[site]) >= 0.001 * area
+                })
+                .collect()
+        });
+        let mut steps: Vec<u8> = open.iter().map(|&wet| if wet { 0 } else { 3 }).collect();
+        if !steps.is_empty() {
+            let edges = self.domain.edges();
+            for _ in 0..2 {
+                let before = steps.clone();
+                for &(i, j) in &edges {
+                    steps[i] = steps[i].min(before[j] + 1);
+                    steps[j] = steps[j].min(before[i] + 1);
+                }
+            }
+        }
+        let away = |c: &Cell| steps.get(self.domain.locate(c.p)).copied().unwrap_or(0);
+        let warm: BTreeSet<u32> =
+            e.cells.iter().filter(|c| bodied.contains(&c.id) && built(c, &[WARM])).map(|c| c.id).collect();
+        serde_json::json!({
+            "plants": count(&|c| ashore(c) && plant(c)),
+            "inland": count(&|c| ashore(c) && plant(c) && away(c) >= 1),
+            "interior": count(&|c| ashore(c) && plant(c) && away(c) >= 3),
+            "animals": count(&|c| out(c) && animal(c)),
+            "dry": count(&|c| out(c) && animal(c) && built(c, &[BARRIER])),
+            "woody": count(&|c| ashore(c) && plant(c) && c.state.order >= 2),
+            "flowering": count(&|c| ashore(c) && plant(c) && built(c, &[18, 19])),
+            "grass": count(&|c| ashore(c) && plant(c) && c.material.as_ref().is_some_and(|m| m.shell() > 0.1)),
+            "aloft": count(&|c| bodied.contains(&c.id) && !c.state.ground && c.state.under < 0.05 && built(c, &[WING])),
+            "warm": warm.len(),
+            "warmAloft": count(&|c| !c.state.ground && c.state.under < 0.05 && built(c, &[WING, WARM]) && warm.contains(&c.id)),
+            "largest": largest,
+            "minds": self.development.synapses.iter().filter(|s| warm.contains(&s.from) && warm.contains(&s.to)).count(),
+            "greenhouse": self.planet.as_ref().map_or(0., |p| p.greenhouse),
+        })
+    }
+    /// The sky as the player is shown it: what arrives from space, and
+    /// what each layer of the air is stopping now.
+    pub(crate) fn sky(&self) -> serde_json::Value {
+        serde_json::json!({
+            "bombardment": self.steering.bombardment,
+            "impacts": self.impacts,
+            "airbursts": self.airbursts,
+            "airColumn": self.air_column(),
+            "ozone": self.ozone(),
+            "hardRays": self.hard_rays(),
+            "burnedUp": self.burned_up(),
+            "rockNitrogen": self.rock_nitrogen,
+            "dust": self.planet.as_ref().map_or(0., |p| p.dust),
+        })
+    }
     pub(crate) fn mutation_factor(&self, time: f32) -> f32 {
         let s = &self.steering;
         let storm = if time < s.storm_until {
@@ -391,8 +565,114 @@ impl Habitat {
         }
         if now >= self.steering.next_census {
             self.census(e, core);
+            self.prune_lines(e);
             self.steering.next_census = now + CENSUS_PERIOD;
         }
+    }
+
+    /// A daughter cell has been born carrying `now` where its parent carried
+    /// `was`. The first time a set of adaptations is seen in a species it is
+    /// a new line, and what it arose from and when is kept.
+    pub(crate) fn note_line(&mut self, species: &str, was: u32, now: u32, time: f32) {
+        if species.is_empty() {
+            return;
+        }
+        if !self.lines.contains_key(species) {
+            self.lines.insert(species.to_string(), Vec::new());
+        }
+        let lines = self.lines.get_mut(species).unwrap();
+        for (traits, from) in [(was, was), (now, was)] {
+            if lines.len() < LINES * 2 && !lines.iter().any(|l| l.traits == traits) {
+                lines.push(Line { traits, from, since: time });
+            }
+        }
+    }
+
+    /// Living cells of each line of each starter species.
+    fn living_lines(e: &Evolution) -> BTreeMap<&str, BTreeMap<u32, usize>> {
+        let mut living: BTreeMap<&str, BTreeMap<u32, usize>> = BTreeMap::new();
+        for c in &e.cells {
+            if let Some(name) = c.collection_sources.first() {
+                *living.entry(name.as_str()).or_default().entry(traits(&c.genome.genes)).or_default() += 1;
+            }
+        }
+        living
+    }
+
+    /// Forgets lines that have died out and left nothing living behind
+    /// them, once a species has more on record than it may keep.
+    fn prune_lines(&mut self, e: &Evolution) {
+        let living = Self::living_lines(e);
+        self.lines.retain(|name, _| living.contains_key(name.as_str()));
+        for (name, lines) in self.lines.iter_mut() {
+            if lines.len() <= LINES {
+                continue;
+            }
+            let alive = &living[name.as_str()];
+            // Keep whatever is alive and every line on the way back from it.
+            let mut keep: BTreeSet<u32> = alive.keys().copied().collect();
+            loop {
+                let more: Vec<u32> =
+                    lines.iter().filter(|l| keep.contains(&l.traits) && !keep.contains(&l.from)).map(|l| l.from).collect();
+                if more.is_empty() {
+                    break;
+                }
+                keep.extend(more);
+            }
+            lines.retain(|l| keep.contains(&l.traits));
+            lines.truncate(LINES * 2);
+        }
+    }
+
+    /// The family tree of each starter species, as the app draws it: its
+    /// living lines with a hundredth of the species or more in them, what
+    /// each arose from, and when. A line that was there before records
+    /// began is hung from the species as it was designed, with no date.
+    pub(crate) fn lines_view(&self, e: &Evolution) -> serde_json::Value {
+        let living = Self::living_lines(e);
+        let mut trees = Vec::new();
+        for (name, alive) in &living {
+            let total: usize = alive.values().sum();
+            let designed = crate::bestiary::designed_traits(name);
+            let known = self.lines.get(*name);
+            let line = |t: u32| known.and_then(|k| k.iter().find(|l| l.traits == t));
+            let floor = (total / 100).max(6);
+            let mut shown: Vec<u32> = alive.iter().filter(|a| *a.1 >= floor).map(|a| *a.0).collect();
+            shown.sort_by_key(|t| std::cmp::Reverse(alive[t]));
+            shown.truncate(12);
+            // Where each came from: what was recorded, or the design.
+            let parent = |t: u32| match line(t) {
+                Some(l) if l.from != t => Some(l.from),
+                _ => designed.filter(|d| *d != t),
+            };
+            let mut all = shown.clone();
+            let mut k = 0;
+            while k < all.len() && all.len() < 40 {
+                if let Some(p) = parent(all[k]) {
+                    if !all.contains(&p) {
+                        all.push(p);
+                    }
+                }
+                k += 1;
+            }
+            if all.len() < 2 {
+                continue;
+            }
+            let branches: Vec<serde_json::Value> = all
+                .iter()
+                .map(|&t| {
+                    serde_json::json!({
+                        "traits": t,
+                        "from": parent(t),
+                        "since": line(t).filter(|l| l.from != t).map(|l| l.since),
+                        "cells": alive.get(&t).copied().unwrap_or(0),
+                    })
+                })
+                .collect();
+            trees.push((total, serde_json::json!({"species": name, "cells": total, "lines": alive.len(), "branches": branches})));
+        }
+        trees.sort_by_key(|t| std::cmp::Reverse(t.0));
+        serde_json::Value::Array(trees.into_iter().take(16).map(|t| t.1).collect())
     }
 
     /// (measured performance, enabling material). Performance dominates; the
@@ -728,8 +1008,14 @@ impl Habitat {
     /// and vents for bodies that do not live on prey; herbivore, omnivore and
     /// carnivore for those that do. An eater takes a quarter or more of its
     /// fuel from other life; it is a herbivore if that prey mostly feeds
-    /// itself, a carnivore if the prey are mostly eaters, an omnivore between.
-    /// Also returns the number of eater bodies and of carnivore bodies.
+    /// itself, a carnivore if the prey are mostly animals (cells of bodies
+    /// that eat, or of many-celled bodies that do not feed themselves), an
+    /// omnivore between.
+    /// Also returns the number of eater bodies, and of those that eat
+    /// animals: omnivores and carnivores together. Above the plant-eaters a
+    /// real food web is a tangle of things that eat at more than one level,
+    /// and its predators are not marked off from the rest by eating nothing
+    /// else.
     fn diets(&self, e: &Evolution, groups: &[Vec<usize>]) -> ([usize; 7], usize, usize) {
         let mut cells = [0usize; 7];
         let (mut eaters, mut carnivores) = (0, 0);
@@ -748,6 +1034,7 @@ impl Habitat {
                     carnivores += 1;
                     6
                 } else if animal > 0.3 {
+                    carnivores += 1;
                     5
                 } else {
                     4
@@ -772,32 +1059,39 @@ impl Habitat {
     pub(crate) fn kinds(&self, e: &Evolution, groups: &[Vec<usize>]) -> [usize; 4] {
         let mut cells = [0usize; 4];
         for g in groups {
-            let mut flux = crate::observations::Flux::default();
-            for &i in g {
-                flux.add(&e.cells[i].state.flux);
+            if let Some(kind) = Self::kind_of(e, g) {
+                cells[kind] += g.len();
             }
-            let walled = g.iter().filter(|&&i| built(&e.cells[i], &[WALL])).count() * 2 >= g.len();
-            let armed = g.iter().any(|&i| built(&e.cells[i], &[9, ENGULF, PROPEL, FIN]));
-            // A body that makes its own food lives as a plant does, wall or no
-            // wall. One that does not is a fungus if it is walled, an animal
-            // if it has a mouth, enzymes, a motor or fins, and a microbe otherwise.
-            let kind = if flux.intake() <= 0. {
-                if walled {
-                    continue;
-                }
-                if armed { 3 } else { 0 }
-            } else if (flux.photosynthesis + flux.chemosynthesis) * 2. >= flux.intake() {
-                1
-            } else if walled {
-                2
-            } else if armed {
-                3
-            } else {
-                0
-            };
-            cells[kind] += g.len();
         }
         cells
+    }
+
+    /// Which of those four one body is, or none for a walled body that has
+    /// not fed yet.
+    fn kind_of(e: &Evolution, g: &[usize]) -> Option<usize> {
+        let mut flux = crate::observations::Flux::default();
+        for &i in g {
+            flux.add(&e.cells[i].state.flux);
+        }
+        let walled = g.iter().filter(|&&i| built(&e.cells[i], &[WALL])).count() * 2 >= g.len();
+        let armed = g.iter().any(|&i| built(&e.cells[i], &[9, ENGULF, PROPEL, FIN]));
+        // A body that makes its own food lives as a plant does, wall or no
+        // wall. One that does not is a fungus if it is walled, an animal
+        // if it has a mouth, enzymes, a motor or fins, and a microbe otherwise.
+        Some(if flux.intake() <= 0. {
+            if walled {
+                return None;
+            }
+            if armed { 3 } else { 0 }
+        } else if (flux.photosynthesis + flux.chemosynthesis) * 2. >= flux.intake() {
+            1
+        } else if walled {
+            2
+        } else if armed {
+            3
+        } else {
+            0
+        })
     }
 
     /// Living cells descended from each starter species the player released,
@@ -898,12 +1192,20 @@ impl Habitat {
                 count as f32 / multi.len() as f32
             }
         };
-        let mineral = fraction(
-            e.cells
-                .iter()
-                .filter(|c| mineral_fraction(c) > 0.025)
-                .count(),
-        );
+        // Skeleton is counted among animals, as it is in a fossil bed: of
+        // the cells of animal-like bodies, the share that carry mineral. Of
+        // every living cell it would be a mark Earth itself has never met,
+        // most of whose cells are bacteria and plants.
+        let mineral = {
+            let (mut animal, mut stony) = (0usize, 0usize);
+            for g in &groups {
+                if Self::kind_of(e, g) == Some(3) {
+                    animal += g.len();
+                    stony += g.iter().filter(|&&i| mineral_fraction(&e.cells[i]) > 0.025).count();
+                }
+            }
+            if animal > 0 { stony as f32 / animal as f32 } else { 0. }
+        };
         let synapses = self.development.synapses.len();
         let diploid = fraction(
             e.cells
@@ -923,7 +1225,27 @@ impl Habitat {
             .count();
         let walled = e.cells.iter().filter(|c| built(c, &[WALL])).count();
         let (_, hunters, carnivores) = self.diets(e, &groups);
-        let complex = e.cells.iter().filter(|c| c.state.symbiont > 0.).count();
+        let complex = e
+            .cells
+            .iter()
+            .filter(|c| c.state.symbiont > 0. || c.state.mitochondria > 0.)
+            .count();
+        // Cells burning most of their fuel right down with oxygen.
+        let breathing = e.cells.iter().filter(|c| c.state.breath > 0.5).count();
+        // An animal: a body of four cells or more, with a mouth or digestive
+        // enzymes somewhere in it, that takes a quarter or more of its fuel
+        // from other life. (It used to need most of its cells to be mouths,
+        // which left out every animal with a head and a body behind it.)
+        let animals = groups
+            .iter()
+            .filter(|g| {
+                let mut flux = crate::observations::Flux::default();
+                for &i in g.iter() {
+                    flux.add(&e.cells[i].state.flux);
+                }
+                g.len() >= 4 && flux.eater() && g.iter().any(|&i| built(&e.cells[i], &[9, ENGULF]))
+            })
+            .count();
         // Workers and breeders: a body of four or more with at least one stem
         // cell that can still divide and one committed cell that cannot.
         let castes = groups
@@ -969,7 +1291,7 @@ impl Habitat {
             }
         };
         // key, gene carriers, built measure, measure needed, count, extra gate
-        let rows: [(&'static str, f32, f32, f32, usize, bool); 24] = [
+        let rows: [(&'static str, f32, f32, f32, usize, bool); 27] = [
             (
                 "cells",
                 1.,
@@ -1071,12 +1393,37 @@ impl Habitat {
                 carnivores >= 3,
             ),
             (
+                "fixing",
+                genes(&[crate::physical::FIX]),
+                makers(&[crate::physical::FIX]),
+                0.02,
+                0,
+                true,
+            ),
+            (
+                "breathing",
+                genes(&[crate::physical::RESPIRE]),
+                fraction(breathing),
+                0.1,
+                breathing,
+                true,
+            ),
+            (
                 "complex",
                 genes(&[ENGULF]),
                 fraction(complex),
                 0.1,
                 complex,
                 true,
+            ),
+            // Animals, like all eaters, are few beside what they eat.
+            (
+                "animals",
+                genes(&[9, ENGULF]),
+                per_body(animals) * 20.,
+                1.,
+                animals,
+                animals >= 3,
             ),
             (
                 "guts",
@@ -1110,11 +1457,13 @@ impl Habitat {
                 synapses,
                 synapses >= 8,
             ),
+            // Bodies that move by muscle are animals, and animals are few
+            // beside the threads and mats they live among.
             (
                 "movement",
                 genes(&[4, FIN]),
                 per_body(moving),
-                0.1,
+                0.02,
                 moving,
                 moving >= 3,
             ),
@@ -1225,6 +1574,7 @@ impl Habitat {
             "sharing": s.sharing,
             "light": s.light,
             "vents": s.vents,
+            "sky": self.sky(),
             "storm": (s.storm_until - now).max(0.),
             "goal": s.goal,
             "auto": s.auto,
@@ -1251,6 +1601,9 @@ impl Habitat {
             "sustained": s.sustained,
             "restocked": s.restocked,
             "captures": s.captures,
+            "ashore": e.cells.iter().filter(|c| (c.state.ground || c.state.anchored) && c.state.under < 0.3).count(),
+            "land": self.ashore_view(e),
+            "trees": self.lines_view(e),
             "milestones": s.milestones,
         })
     }
@@ -1371,6 +1724,14 @@ impl Core {
             Command::Vents { scale } => {
                 h.steering.vents = unit(scale, 0.25, 8., "Vent activity")?;
                 format!("The planet's interior now feeds vents at {scale:.2}× its natural rate.")
+            }
+            Command::Bombardment { scale } => {
+                h.steering.bombardment = unit(scale, 0., 8., "Bombardment")?;
+                if scale == 0. {
+                    "Nothing more falls from space.".to_string()
+                } else {
+                    format!("Bodies from space now arrive at {scale:.2}× the natural rate.")
+                }
             }
             Command::Goal {
                 goal,
@@ -1817,7 +2178,8 @@ mod tests {
         let (cells, eaters, carnivores) = h.diets(e, &e.groups());
         // light, dissolved fuel, remains, vents, herbivore, omnivore, carnivore
         assert_eq!(cells, [2, 0, 1, 1, 1, 1, 1]);
-        assert_eq!((eaters, carnivores), (3, 1));
+        // Two of the three eaters eat animals: the omnivore and the carnivore.
+        assert_eq!((eaters, carnivores), (3, 2));
     }
 
     #[test]
@@ -1874,6 +2236,52 @@ mod tests {
         let h = e.physical.as_ref().unwrap();
         let kinds = h.kinds(e, &e.groups());
         assert_eq!(kinds, [e.cells.len() - 8, 3, 1, 3]);
+    }
+
+    #[test]
+    fn a_species_splits_into_lines_and_each_is_hung_from_the_line_it_arose_from() {
+        let mut c = world(64);
+        let e = c.autonomous.as_mut().unwrap();
+        let gene = |action: usize| autonomous::Gene { action, promoter: [0.; autonomous::INPUTS], bias: 1., strength: 1., fates: 15 };
+        // Forty cells of one kind. Ten have gained a mouth, and six of those eyes as well.
+        let base = traits(&e.cells[0].genome.genes);
+        for (k, cell) in e.cells.iter_mut().take(40).enumerate() {
+            cell.collection_sources = vec!["Plankton".into()];
+            cell.genome.genes.retain(|g| g.action != ENGULF && g.action != crate::development::PHOTIC);
+            if k < 10 {
+                cell.genome.genes.push(gene(ENGULF));
+            }
+            if k < 6 {
+                cell.genome.genes.push(gene(crate::development::PHOTIC));
+            }
+        }
+        let plain = traits(&e.cells[39].genome.genes);
+        let (mouthed, sighted) = (plain | 1 << 1, plain | 1 << 1 | 1 << 9);
+        assert_eq!(traits(&e.cells[9].genome.genes), mouthed);
+        assert_eq!(traits(&e.cells[0].genome.genes), sighted);
+        assert!(base & (1 << 1) == 0, "a silent or absent gene is no adaptation");
+        // The births that made them, as the engine notes them when a cell divides.
+        let mut h = e.physical.take().unwrap();
+        h.note_line("Plankton", plain, plain, 10.);
+        h.note_line("Plankton", plain, mouthed, 20.);
+        h.note_line("Plankton", mouthed, sighted, 30.);
+        h.note_line("Plankton", plain, mouthed, 40.); // seen again: nothing new
+        assert_eq!(h.lines["Plankton"].len(), 3);
+        let view = h.lines_view(e);
+        let tree = view.as_array().unwrap().iter().find(|t| t["species"] == "Plankton").unwrap();
+        let branch = |t: u32| tree["branches"].as_array().unwrap().iter().find(|b| b["traits"] == t).unwrap().clone();
+        assert_eq!(tree["cells"], 40);
+        assert_eq!((branch(mouthed)["from"].as_u64(), branch(mouthed)["since"].as_f64(), branch(mouthed)["cells"].as_u64()), (Some(plain as u64), Some(20.), Some(4)));
+        assert_eq!((branch(sighted)["from"].as_u64(), branch(sighted)["since"].as_f64(), branch(sighted)["cells"].as_u64()), (Some(mouthed as u64), Some(30.), Some(6)));
+        assert_eq!(branch(plain)["cells"], 30);
+        // A line with nothing living in it and nothing living come of it is forgotten once there are too many.
+        for k in 0..LINES as u32 + 5 {
+            h.note_line("Plankton", plain, plain | 1 << 19 | (k + 1) << 20, 50.);
+        }
+        h.prune_lines(e);
+        assert_eq!(h.lines["Plankton"].len(), 3);
+        assert!(h.valid(&e.cells));
+        e.physical = Some(h);
     }
 
     #[test]
@@ -1941,7 +2349,7 @@ mod tests {
         let e = c.autonomous.as_ref().unwrap();
         let h = e.physical.as_ref().unwrap();
         let ladder = h.ladder(e);
-        assert_eq!(ladder.len(), 24);
+        assert_eq!(ladder.len(), 27);
         assert_eq!(ladder[0].stage, 3, "founders divide");
         assert!(ladder
             .iter()

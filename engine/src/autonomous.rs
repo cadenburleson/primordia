@@ -5,10 +5,10 @@ use body::{Cell as RenderCell, Link, V3};
 pub const MAX_CELLS: usize = 64000;
 pub const MAX_FOUNDERS: usize = 8192;
 pub const MAX_GENES: usize = 48;
-pub const ACTIONS: usize = 48;
-pub const INPUTS: usize = 32;
+pub const ACTIONS: usize = 53;
+pub const INPUTS: usize = 35;
 /// Vocabulary sizes of earlier engine versions, padded with zeros on load.
-const OLD_ACTIONS: [usize; 9] = [10, 16, 21, 32, 38, 42, 43, 44, 45];
+const OLD_ACTIONS: [usize; 12] = [10, 16, 21, 32, 38, 42, 43, 44, 45, 48, 49, 50];
 const OLD_INPUTS: [usize; 4] = [8, 16, 20, 28];
 /// The last promoter inputs are signed left-minus-right senses.
 pub const LATERAL: usize = 4;
@@ -41,7 +41,27 @@ pub(crate) fn as_list<S: serde::Serializer, T: Serialize, const N: usize>(
     values.as_slice().serialize(s)
 }
 fn promoter_array<'de, D: serde::Deserializer<'de>>(d: D) -> Result<[f32; INPUTS], D::Error> {
-    migrated_array(d, &OLD_INPUTS)
+    let values = Vec::<f32>::deserialize(d)?;
+    let mut result = [0.; INPUTS];
+    match values.len() {
+        n if n == INPUTS => result.copy_from_slice(&values),
+        // Until a cell could tell where in its body it was there were 32
+        // inputs, the last four of them the sideways senses, which are
+        // still the last four.
+        32 => {
+            result[..28].copy_from_slice(&values[..28]);
+            result[INPUTS - LATERAL..].copy_from_slice(&values[28..]);
+        }
+        // And for a short while 34, before a cell could tell that it had
+        // been left behind the growing tip.
+        34 => {
+            result[..30].copy_from_slice(&values[..30]);
+            result[INPUTS - LATERAL..].copy_from_slice(&values[30..]);
+        }
+        n if OLD_INPUTS.contains(&n) => result[..n].copy_from_slice(&values),
+        _ => return Err(serde::de::Error::custom("Invalid cellular vocabulary length")),
+    }
+    Ok(result)
 }
 pub(crate) fn expression_array<'de, D: serde::Deserializer<'de>>(
     d: D,
@@ -103,6 +123,11 @@ pub const ACTION_NAMES: [&str; ACTIONS] = [
     "Glass shell",
     "Holdfast",
     "Rod shape",
+    "Breathing",
+    "Nitrogen fixing",
+    "Branching",
+    "Wings",
+    "Warm blood",
 ];
 /// A cell is a stem cell (fate 0) or committed to one of three fates.
 pub const FATES: u8 = 4;
@@ -112,7 +137,7 @@ fn all_fates() -> u8 {
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
 pub struct Gene {
     pub action: usize,
-    #[serde(deserialize_with = "promoter_array")]
+    #[serde(deserialize_with = "promoter_array", serialize_with = "as_list")]
     pub promoter: [f32; INPUTS],
     pub bias: f32,
     pub strength: f32,
@@ -254,6 +279,14 @@ impl Genome {
                     strength: 0.12,
                     fates: 15,
                 },
+                // What makes oxygen can breathe it.
+                Gene {
+                    action: crate::physical::RESPIRE,
+                    promoter: [0.; INPUTS],
+                    bias: 0.7,
+                    strength: 0.55,
+                    fates: 15,
+                },
             ],
         }
     }
@@ -356,26 +389,40 @@ impl Genome {
             edits[2] += 1;
         }
         if self.genes.len() < MAX_GENES && core.random() < 0.08 * rate {
-            let mut promoter = [0.; INPUTS];
-            for w in &mut promoter {
-                *w = (core.random() - 0.5) * 2.;
-            }
-            self.genes.push(Gene {
-                action: if !favoured.is_empty() && core.random() < 0.5 {
-                    favoured[((core.random() * favoured.len() as f32) as usize).min(favoured.len() - 1)]
-                } else {
-                    (core.random() * ACTIONS as f32) as usize
-                },
-                promoter,
-                bias: (core.random() - 0.5) * 1.2,
-                strength: core.random() * 0.7,
-                // Most new genes work everywhere; some arrive fate-specific.
-                fates: if core.random() < 0.25 {
-                    1 + (core.random() * (all_fates() as f32 - 0.001)) as u8
-                } else {
-                    all_fates()
-                },
-            });
+            let action = if !favoured.is_empty() && core.random() < 0.5 {
+                favoured[((core.random() * favoured.len() as f32) as usize).min(favoured.len() - 1)]
+            } else {
+                (core.random() * ACTIONS as f32) as usize
+            };
+            // New genes mostly come from old ones. A copy of a gene that
+            // comes to make something else keeps the switch its parent had,
+            // so the new thing is made where and when the old one was: in
+            // the same cells of a body, under the same conditions.
+            let gene = if core.random() < 0.6 {
+                let parent = &self.genes[((core.random() * self.genes.len() as f32) as usize).min(self.genes.len() - 1)];
+                Gene { action, ..parent.clone() }
+            } else {
+                // The rest arise from nothing, answering to two or three
+                // signals and deaf to the rest, as a real switch is.
+                let mut promoter = [0.; INPUTS];
+                for _ in 0..3 {
+                    let slot = ((core.random() * INPUTS as f32) as usize).min(INPUTS - 1);
+                    promoter[slot] = (core.random() - 0.5) * 2.;
+                }
+                Gene {
+                    action,
+                    promoter,
+                    bias: (core.random() - 0.5) * 1.2,
+                    strength: core.random() * 0.7,
+                    // Most new genes work everywhere; some arrive fate-specific.
+                    fates: if core.random() < 0.25 {
+                        1 + (core.random() * (all_fates() as f32 - 0.001)) as u8
+                    } else {
+                        all_fates()
+                    },
+                }
+            };
+            self.genes.push(gene);
             edits[3] += 1;
         }
         edits
@@ -418,6 +465,13 @@ impl Evolution {
                 expression: [0.; ACTIONS],
                 heading: angle,
             });
+        }
+        // Until a cell has sensed anything, every gene it has counts as
+        // switched on, not off.
+        for c in &mut cells {
+            for g in &c.genome.genes {
+                c.expression[g.action] = (c.expression[g.action] + g.strength).min(1.);
+            }
         }
         Self {
             physical: None,

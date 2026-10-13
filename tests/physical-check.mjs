@@ -8,7 +8,7 @@ const results=[];
 for(const seed of [8042,1197,6219]){
  const w=new World(JSON.stringify({...config,seed}));w.start_physical();
  const first=JSON.parse(w.save());assert.equal(first.autonomous.cells.length,64);
- assert.ok(first.autonomous.cells.every(c=>c.material&&c.genome.genes.every(g=>[0,1,2,7].includes(g.action))));
+ assert.ok(first.autonomous.cells.every(c=>c.material&&c.genome.genes.every(g=>[0,1,2,7,48].includes(g.action))));
  let maxErrors=[0,0,0],elapsed=0,steps=0,peakCells=64;
  for(let sample=0;sample<30;sample++){
   const start=performance.now();w.step(40);elapsed+=performance.now()-start;steps+=40;

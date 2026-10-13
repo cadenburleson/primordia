@@ -76,8 +76,8 @@ fn ordinary_founders_have_no_supplied_adult_or_sexual_program() {
         .genome
         .genes
         .iter()
-        .all(|g| [0, 1, 2, 7].contains(&g.action))
-        && c.material.as_ref().unwrap().proteins[16..]
+        .all(|g| [0, 1, 2, 7, crate::physical::RESPIRE].contains(&g.action))
+        && c.material.as_ref().unwrap().proteins[16..crate::physical::RESPIRE]
             .iter()
             .all(|v| *v == 0.)
         && c.lifecycle.homolog.is_none()));
@@ -124,10 +124,17 @@ fn contact_signals_adapt_and_drive_excitation_using_paid_energy() {
     for c in &mut control.cells {
         c.state.neural_input = 0.;
     }
+    // A nerve fires and is quiet again within a few moments, so what
+    // matters is the most it was excited, not how it was left.
+    let (mut fired, mut quiet, mut pulled, mut slack) = (0f32, 0f32, 0f32, 0f32);
     for _ in 0..12 {
         h.neural_contacts(&mut e);
         h.excitable_signals(&mut e);
         hc.excitable_signals(&mut control);
+        fired = fired.max(e.cells[1].state.excitation);
+        quiet = quiet.max(control.cells[1].state.excitation);
+        pulled = pulled.max(e.cells[1].motor_signals()[0]);
+        slack = slack.max(control.cells[1].motor_signals()[0]);
     }
     assert!(
         h.development.adaptations > 0
@@ -135,8 +142,8 @@ fn contact_signals_adapt_and_drive_excitation_using_paid_energy() {
             && h.development.neural_work > 0.
     );
     assert_ne!(h.development.synapses[0].weight, original[0].weight);
-    assert!(e.cells[1].state.excitation > control.cells[1].state.excitation);
-    assert!(e.cells[1].motor_signals()[0] > control.cells[1].motor_signals()[0]);
+    assert!(fired > quiet, "excited {fired} against {quiet}");
+    assert!(pulled > slack, "muscle drive {pulled} against {slack}");
     assert!(h.errors(&e.cells).iter().all(|x| x.abs() < 1e-8));
     e.bonds.clear();
     h.prune_synapses(&e);
@@ -278,7 +285,7 @@ fn diploid_expression_and_crossover_preserve_inherited_programs() {
     let mut combinations = BTreeSet::new();
     for _ in 0..100 {
         let genes = c.gamete_chromosome(&mut core).genes;
-        assert_eq!(genes.len(), 4);
+        assert_eq!(genes.len(), 5);
         combinations.insert(genes[0].action);
     }
     assert_eq!(combinations, BTreeSet::from([0, 4]));
@@ -296,6 +303,8 @@ fn zygote_growth_copies_both_chromosomes_and_keeps_the_reproductive_origin() {
     e.cells[0].energy = 8.;
     e.cells[0].cooldown = 0.;
     e.cells[0].material.as_mut().unwrap().proteins[7] = 0.08;
+    // Its division genes are switched on.
+    e.cells[0].expression[7] = 1.;
     rebase(&mut h, &e);
     for _ in 0..300 {
         h.divide(&mut e, &mut core);

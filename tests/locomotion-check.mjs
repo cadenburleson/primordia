@@ -26,7 +26,7 @@ resumed.load(lab.save());lab.step(15);resumed.step(15);assert.equal(lab.save(),r
 lab.replay_best(false);assert.equal(JSON.parse(lab.metadata(1)).lab.replaying,false);
 const corrupt=JSON.parse(lab.save());corrupt.organisms[0].body.nodes[0]={p:{x:0,y:0,z:0},v:{x:0,y:0,z:0},rest:{x:0,y:0,z:0},radius:.19,role:0,contact:false};
 corrupt.organisms[0].body.links=[{a:0,b:999,rest:1,target:1,kind:1,activation:0,strain:0}];assert.throws(()=>resumed.load(JSON.stringify(corrupt)));
-const old=new World(JSON.stringify(config));old.load(await readFile(new URL('../examples/tidal-world-100.json',import.meta.url),'utf8'));assert.equal(JSON.parse(old.save()).version,4);old.step(4);
+const old=new World(JSON.stringify(config));old.load(await readFile(new URL('../archive/prototype-v0.6/examples/tidal-world-100.json',import.meta.url),'utf8'));assert.equal(JSON.parse(old.save()).version,4);old.step(4);
 const report={seed:8042,trialCycles:20,measurementCycles:12,baseline,inactive,best:view.lab.champion,generations:view.lab.generation,progress:view.lab.progress};
 await writeFile(new URL('../docs/locomotion-results.json',import.meta.url),JSON.stringify(report,null,2)+'\n');
 lab.replay_best(true);lab.step(44);await writeFile(new URL('../examples/locomotion-lab.json',import.meta.url),lab.save()+'\n');

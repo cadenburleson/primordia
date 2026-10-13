@@ -7,9 +7,9 @@ const report=[];
 for(const seed of [8042,1197,6219]){
  const w=new World(JSON.stringify({...config,seed}));w.start_autonomous();const first=JSON.parse(w.save());
  assert.equal(first.organisms.length,0);assert.equal(first.autonomous.cells.length,64);assert.equal(first.autonomous.bonds.length,0);
- const genes=first.autonomous.cells[0].genome.genes;assert.equal(genes.length,4);
+ const genes=first.autonomous.cells[0].genome.genes;assert.equal(genes.length,5);
  assert.ok(first.autonomous.cells.every(c=>JSON.stringify(c.genome.genes)===JSON.stringify(genes)&&c.generation===0));
- assert.ok(genes.every(g=>[0,1,2,7].includes(g.action)));
+ assert.ok(genes.every(g=>[0,1,2,7,48].includes(g.action)));
  let checkpoint='',peak=0,expressionChanges=0,maxGenomes=0;
  for(let sample=0;sample<30;sample++){
   w.step(40);const saved=w.save(),state=JSON.parse(saved),a=state.autonomous,m=JSON.parse(w.metadata(0));

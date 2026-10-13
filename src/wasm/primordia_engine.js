@@ -371,7 +371,8 @@ export class World {
         return ret;
     }
     /**
-     * One founder of a starter species, as an organism snapshot.
+     * A starter species as an organism snapshot: the grown body of one
+     * that grows into a body, one founder cell of anything else.
      * @param {string} species
      * @returns {string}
      */
