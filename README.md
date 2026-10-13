@@ -124,7 +124,6 @@ Measured over 400 cycles:
 
 Known to be wrong or missing:
 
-- **The built engine in this repository is older than the engine source.** Until you run `npm run build:wasm`, the app runs the earlier Fish, Sea scorpion and Worm, and the Lancelet in its list is not in the built engine. The clips above come from the engine source.
 - One body's own eggs and sperm can fuse with each other. There are no sexes yet, and eggs and sperm are the same size.
 - A fish in a pond takes in about four fifths of what it burns, which is why adults lose parts.
 - The sea scorpion filters plankton like the others. A hunter needs a jaw and prey worth catching.
@@ -151,3 +150,7 @@ tests/       Checks run against the built engine
 examples/    Saved worlds you can open in the app
 archive/     Two earlier versions, kept for reference
 ```
+
+## License
+
+[MIT](LICENSE)

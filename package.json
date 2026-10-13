@@ -2,6 +2,7 @@
   "name": "primordia",
   "version": "0.12.0",
   "private": true,
+  "license": "MIT",
   "type": "module",
   "scripts": {
     "dev": "vite --host 127.0.0.1 --port 5194 --strictPort",
