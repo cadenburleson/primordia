@@ -8,3 +8,7 @@ engine/target/
 .tools/
 .build-backups/
 .quick/
+__pycache__/
+films/
+
+.playwright-mcp/

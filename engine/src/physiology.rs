@@ -9,7 +9,14 @@ use crate::{
 pub const LIPID: usize = 10;
 /// How fast excitable cells fire and recover. At 3 a steadily stimulated
 /// cell beats about once every seventeen cycles: quick enough to row with.
+/// (At 24 the beat is over before a backboned body has bent: such a body
+/// swims well at 6, where it beats once in about twenty ticks. But the
+/// starters that still feed by squeezing stall at 6, so it stays here
+/// until their bodies are rebuilt. See docs/ANIMAL_BODIES_PLAN.md.)
 const NERVE_PACE: f32 = 24.;
+/// Channel a nerve cell carries, beside its living tissue, at which it fires
+/// as fast as a nerve can. With less it is slower in proportion.
+pub(crate) const CHANNEL_SET: f64 = 0.45;
 /// Steps the firing of nerves is worked out in, each moment: enough that a
 /// nerve this quick is followed and not overshot.
 const NERVE_STEPS: usize = 24;
@@ -531,10 +538,20 @@ impl Habitat {
     /// Channels, receptor input and signal maintenance require produced stores.
     pub(crate) fn excitable_signals(&mut self, e: &mut Evolution) {
         let ids = e.index();
+        // How fast a nerve cell fires and recovers goes by how much channel
+        // it carries for its size, up to a full set. That is what lets one
+        // kind beat slower than another, and one end of a body slower than
+        // the other: a gene can ask for more channel or less, where whether
+        // a cell has channels at all is close to yes or no.
         let gates: Vec<_> = e
             .cells
             .iter()
-            .map(|c| c.activity(CHANNEL) * (c.energy / 0.02).clamp(0., 1.))
+            .map(|c| {
+                let set = c.material.as_ref().map_or(1., |m| {
+                    (m.proteins[CHANNEL] / (CHANNEL_SET * m.biomass).max(1e-12)).min(1.) as f32
+                });
+                c.activity(CHANNEL).min(set * (1. - c.state.injury * 0.75)) * (c.energy / 0.02).clamp(0., 1.)
+            })
             .collect();
         let sheaths: Vec<f32> = e
             .cells

@@ -175,6 +175,8 @@ fn gametic_budding_splits_existing_stores_and_gametes_cannot_fission() {
     for k in [7, GAMETIC, FUSOGEN] {
         c.material.as_mut().unwrap().proteins[k] = 0.08;
     }
+    // Its gene for gametes is at work now, not only its leftover protein.
+    c.expression[GAMETIC] = 1.;
     c.lifecycle.homolog = Some(c.genome.clone());
     rebase(&mut h, &e);
     for _ in 0..300 {

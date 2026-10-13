@@ -414,6 +414,38 @@ const WALL_STIFFNESS: f32 = 0.1;
 const JOINT_TORQUE: f32 = 1.;
 /// The hardest a joint pushes on any one of the cells it bends about.
 const JOINT_PUSH: f32 = 20.;
+/// How nearly straight three cells must lie, as the angle between the two
+/// arms, for the joint between them to be a backbone's.
+const STRAIGHT: f32 = 2.9;
+/// Bending stiffness of a backbone's joint per unit of mineral in its three
+/// cells: enough for it to follow its muscle within a beat.
+const SPINE_STRENGTH: f32 = 120.;
+/// The hardest muscle twists a backbone's joint: what the same muscle pulls
+/// a tie with, at one cell's width from the joint.
+const MUSCLE_TWIST: f32 = 13.;
+/// The hardest a backbone's joint pushes on any one of its cells.
+const SPINE_PUSH: f32 = 60.;
+/// A backbone's own spring toward straight, which muscle works against and
+/// no muscle takes away. Without it a line of joints has nothing to stop it
+/// folding one way and the other in turn.
+const BACKBONE: f32 = 2.;
+/// How far its muscle turns a backbone's joint, each way.
+const SWING: f32 = 0.45;
+/// Where bone meets bone, and how hard.
+const STOP: f32 = 0.9;
+const STOP_STIFF: f32 = 60.;
+/// The share of the way a joint's aim goes, each moment, toward where its
+/// muscle is taking it: a muscle takes time to pull a joint round.
+const EASE: f32 = 0.5;
+/// The cover each tie gives a cell from the water along the tie. A cell in
+/// the middle of a line has two, and meets half the water end-on that it
+/// meets broadside, as a thin rod does.
+const SHIELD: f32 = 0.25;
+/// How much wider a full fin makes a cell across its own line.
+const FIN_SPAN: f32 = 3.;
+/// How firmly a newborn and its mother must hold (the product of the glue each
+/// has, of 1) for it to stay in a body with a plan without fail.
+const HELD: f32 = 0.25;
 /// Stiffness a bond gains from fully built muscle in both its cells.
 const MUSCLE_SPRING: f32 = 0.6;
 /// Share of the way a muscle goes, each moment, toward as tight as its
@@ -848,6 +880,17 @@ pub struct MaterialJoint {
     pub flexion: f32,
     pub extension: f32,
     pub work: f64,
+    /// Laid down in a straight and level line, a joint is a backbone's: it
+    /// can turn to either side, and which side matters. `bend` is how far
+    /// it is turned to the left (less than nothing, to the right) and `aim`
+    /// where its muscle is taking it. `angle` and `target` still hold the
+    /// plain angle between its two arms, for whoever reads those.
+    #[serde(default)]
+    pub straight: bool,
+    #[serde(default)]
+    pub bend: f32,
+    #[serde(default)]
+    pub aim: f32,
 }
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct Habitat {
@@ -1508,6 +1551,8 @@ impl Habitat {
                     && [j.rest, j.target, j.angle]
                         .iter()
                         .all(|v| v.is_finite() && (0.0..=std::f32::consts::PI).contains(v))
+                    && j.bend.is_finite()
+                    && j.aim.is_finite()
                     && [j.flexion, j.extension]
                         .iter()
                         .all(|v| v.is_finite() && (0.0..=1.).contains(v))
@@ -2641,7 +2686,37 @@ impl Habitat {
                     } else {
                         0.
                     }) as f64;
+                // A body does not glue to itself: its cells tie on touching
+                // only where they were born next to each other, not wherever
+                // a bend or a fold later brings two of them together.
+                // (Cells that have taken up a place in a body's plan, that is:
+                // a clump with no plan sticks as it always did.)
+                // Next to each other in the plan, that is: one place apart
+                // along the middle line, or one place apart out along the
+                // same limb. Not a limb to the limb beside it, nor a limb to
+                // the segment behind its own, or the body webs itself shut.
+                let apart = if e.cells[i].state.fate != 0 || e.cells[j].state.fate != 0 {
+                    let (x, y) = (&e.cells[i].state, &e.cells[j].state);
+                    let along = (x.axial as i32 - y.axial as i32).abs();
+                    let out = (x.lateral as i32 - y.lateral as i32).abs();
+                    // And of one body now, not only of one egg: twins that
+                    // parted at the first division, or a piece that has come
+                    // away, do not grow back on where they happen to touch.
+                    // (Which body each cell is in is only worked out in a
+                    // world with mouths in it, which any with planned
+                    // animals is.)
+                    if body.get(i) == body.get(j)
+                        && ((out == 0 && x.lateral == 0 && along == 1) || (along == 0 && out == 1))
+                    {
+                        1
+                    } else {
+                        2
+                    }
+                } else {
+                    0
+                };
                 if !bonded.contains(&key)
+                    && apart <= 1
                     && e.cells[i].lifecycle.phase != crate::development::Phase::Gamete
                     && e.cells[j].lifecycle.phase != crate::development::Phase::Gamete
                     && degree[i] < 6
@@ -3226,38 +3301,69 @@ impl Habitat {
             }
         }
     }
-    /// A fin's extra resistance to slipping backward through the water along
-    /// the cell's heading. The water takes the opposite push.
-    fn fin_drag(&mut self, c: &mut Cell, mass: f64, ratio: f64, site: usize) {
-        let heading = self.domain.tangent(c.p, c.heading);
+    /// The water's hold on a cell that is part of a body: less along each
+    /// line to a cell it is tied to, more across a fin. The water takes the
+    /// opposite push.
+    fn drag_shaped(
+        &mut self,
+        c: &mut Cell,
+        mass: f64,
+        ratio: f64,
+        cover: &[(V3, f32)],
+        blade: Option<(V3, f32)>,
+        site: usize,
+    ) {
+        // Cover shares the water's hold out by direction and takes nothing
+        // from it in all: what a cell is spared along its ties it meets
+        // across them. So a body is held as hard as before, taken over
+        // every way it might move, and its shape decides which ways.
+        let even = 1. / (1. - cover.iter().map(|&(_, share)| share).sum::<f32>() / 3.).max(0.4);
+        let widest = (even + blade.map_or(0., |(_, span)| span)) as f64;
+        // What the water's speed past the cell comes to, by the shape the
+        // cell shows it.
+        let met = |slip: V3| {
+            let mut held = slip;
+            for &(along, share) in cover {
+                held = held.sub(along.mul(share * slip.dot(along)));
+            }
+            // Cover never reaches the whole of a cell.
+            if held.dot(slip) < 0.2 * slip.dot(slip) {
+                held = slip.mul(0.2);
+            }
+            held = held.mul(even);
+            if let Some((across, span)) = blade {
+                held = held.add(across.mul(span * slip.dot(across)));
+            }
+            held
+        };
         if let Some(flow) = &mut self.fluid.surface {
             let water = self.planet.as_ref().unwrap().water[site];
             if water < 1e-9 {
                 return;
             }
             let fluid_mass = water * WATER_DENSITY;
-            let slip = c.v.sub(flow.velocities[site]).dot(heading);
-            if slip < 0. {
-                let push = -slip * (ratio / (1. + ratio * (1. + mass / fluid_mass))) as f32;
-                c.v = c.v.add(heading.mul(push));
-                flow.velocities[site] =
-                    flow.velocities[site].sub(heading.mul(push * (mass / fluid_mass) as f32));
-            }
+            let up = self.domain.up(c.p);
+            let uv = flow.velocities[site];
+            let uv = uv.sub(up.mul(uv.dot(up)));
+            let delta = met(uv.sub(c.v))
+                .mul((ratio / (1. + ratio * widest * (1. + mass / fluid_mass))) as f32);
+            c.v = c.v.add(delta);
+            let level = delta.sub(up.mul(delta.dot(up)));
+            flow.velocities[site] =
+                flow.velocities[site].sub(level.mul((mass / fluid_mass) as f32));
             return;
         }
         let u = self.fluid.velocity(site);
-        let slip = (c.v.x as f64 - u[0]) * heading.x as f64 + (c.v.z as f64 - u[1]) * heading.z as f64;
-        if slip < 0. {
-            let push = (-slip * ratio / (1. + ratio)) as f32;
-            c.v = c.v.add(heading.mul(push));
-            self.fluid.impulse(
-                site,
-                [
-                    -mass * (push * heading.x) as f64,
-                    -mass * (push * heading.z) as f64,
-                ],
-            );
-        }
+        let old = c.v;
+        let slip = V3::new(u[0] as f32 - old.x, -old.y, u[1] as f32 - old.z);
+        c.v = old.add(met(slip).mul((ratio / (1. + ratio * widest)) as f32));
+        self.fluid.impulse(
+            site,
+            [
+                -mass * (c.v.x as f64 - old.x as f64),
+                -mass * (c.v.z as f64 - old.z as f64),
+            ],
+        );
     }
     fn sync_joints(&mut self, e: &Evolution) {
         let ids = e.index();
@@ -3279,12 +3385,15 @@ impl Habitat {
             for ends in ns.windows(2).take(3) {
                 let (a, c) = (ends[0], ends[1]);
                 let key = (a, e.cells[b].id, c);
-                let angle = crate::articulation::angle_and_gradients(
-                    e.cells[ids[&a]].p,
-                    e.cells[b].p,
-                    e.cells[ids[&c]].p,
-                )
-                .0;
+                let (pa, pb, pc) = (e.cells[ids[&a]].p, e.cells[b].p, e.cells[ids[&c]].p);
+                let angle = crate::articulation::angle_and_gradients(pa, pb, pc).0;
+                // Three cells laid in a straight and level line make a
+                // backbone's joint, which can turn either way.
+                let up = self.domain.up(pb);
+                let level = |p: V3| {
+                    let arm = p.sub(pb);
+                    (arm.dot(up) / arm.len().max(1e-4)).abs() < 0.5
+                };
                 let joint = previous.get(&key).cloned().unwrap_or(MaterialJoint {
                     a,
                     b: e.cells[b].id,
@@ -3295,6 +3404,17 @@ impl Habitat {
                     flexion: 0.,
                     extension: 0.,
                     work: 0.,
+                    // Or three cells that the body's plan set one after
+                    // another in a line, along its length or out along a
+                    // limb, however they happen to lie when their bone sets.
+                    straight: (angle > STRAIGHT && level(pa) && level(pc)) || {
+                        let place = |i: usize| (e.cells[i].state.axial as i32, e.cells[i].state.lateral as i32);
+                        let ((xa, ya), (xb, yb), (xc, yc)) = (place(ids[&a]), place(b), place(ids[&c]));
+                        (ya == yb && yb == yc && (xa - xb).abs() == 1 && xa + xc == 2 * xb)
+                            || (xa == xb && xb == xc && (ya - yb).abs() == 1 && ya + yc == 2 * yb)
+                    },
+                    bend: 0.,
+                    aim: 0.,
                 });
                 self.joints.push(joint);
             }
@@ -3307,8 +3427,35 @@ impl Habitat {
             .fold(1., f32::min)
             * JOINT_STRENGTH
     }
+    fn spine_k(e: &Evolution, a: usize, b: usize, c: usize) -> f32 {
+        [a, b, c]
+            .into_iter()
+            .map(|i| e.cells[i].rigidity())
+            .fold(1., f32::min)
+            * SPINE_STRENGTH
+            * Self::bulk(e, a, b, c)
+    }
+    /// How much more a joint's muscle and bone can do in a cell this size
+    /// than in a cell of the usual size. Muscle pulls by its cross-section
+    /// and works on a lever as long as the cell is wide, so its twist goes
+    /// as the cell's volume; so does the water a cell that size has to move.
+    /// A joint is as strong as the least of the three cells it joins.
+    fn bulk(e: &Evolution, a: usize, b: usize, c: usize) -> f32 {
+        ([a, b, c].into_iter().map(|i| e.cells[i].radius()).fold(f32::MAX, f32::min) / 0.22).powi(3)
+    }
     fn prepare_joint_motors(&mut self, e: &mut Evolution) {
         let ids = e.index();
+        // Who is tied to whom, for the nerve cells that ride on a backbone.
+        let mut tied = vec![Vec::new(); e.cells.len()];
+        if self.joints.iter().any(|j| j.straight) {
+            for b in &e.bonds {
+                if b.integrity > 0. {
+                    let (x, y) = (ids[&b.a], ids[&b.b]);
+                    tied[x].push(y);
+                    tied[y].push(x);
+                }
+            }
+        }
         // Temporarily take the vector so ATP accounting can borrow the habitat.
         let mut joints = std::mem::take(&mut self.joints);
         for j in &mut joints {
@@ -3319,6 +3466,66 @@ impl Habitat {
             let cell = &e.cells[b];
             let motor = if self.passive { 0. } else { cell.activity(4) };
             let signals = cell.motor_signals();
+            if j.straight {
+                let (pa, pb, pc) = (e.cells[a].p, cell.p, e.cells[c].p);
+                let up = self.domain.up(pb);
+                let bend = crate::articulation::bend_and_gradients(pa, pb, pc, up).0;
+                // A backbone's joint is pulled from its two sides, each by
+                // the nerve cells that ride on that side of it: one way
+                // when those on its left fire, the other when those on its
+                // right do. With none riding on it, it is turned by its own
+                // cell's two signals, as any joint is.
+                let left = crate::articulation::cross(up, pc.sub(pa));
+                let (mut port, mut starboard, mut ridden) = (0f32, 0f32, false);
+                for &n in &tied[b] {
+                    let rider = &e.cells[n];
+                    if n == a || n == c || rider.activity(crate::physiology::CHANNEL) < 0.02 {
+                        continue;
+                    }
+                    ridden = true;
+                    let firing = ((rider.state.excitation - 0.3) * 5.).clamp(0., 1.);
+                    if rider.p.sub(pb).dot(left) > 0. {
+                        port = port.max(firing);
+                    } else {
+                        starboard = starboard.max(firing);
+                    }
+                }
+                if !ridden {
+                    // A nerve cell of its own stands for both sides of its
+                    // segment: the joint is pulled one way while the cell
+                    // fires and the other way while it recovers.
+                    (port, starboard) = if cell.activity(crate::physiology::CHANNEL) >= 0.02 {
+                        let firing = ((cell.state.excitation - 0.3) * 5.).clamp(0., 1.);
+                        (firing, ((cell.state.recovery - 0.1) * 5.).clamp(0., 1.) * (1. - firing))
+                    } else {
+                        (signals[0], signals[1])
+                    };
+                }
+                let (port, starboard) = (motor * port, motor * starboard);
+                let wanted = ((port - starboard) * SWING).clamp(-STOP, STOP);
+                let next = j.aim + (wanted - j.aim) * EASE;
+                let k = Self::spine_k(e, a, b, c) as f64;
+                // Never more work than its muscle could do in turning it that far.
+                let increase = (0.5 * k * ((bend - next).powi(2) - (bend - j.aim).powi(2)) as f64)
+                    .clamp(0., (MUSCLE_TWIST * Self::bulk(e, a, b, c) * (next - j.aim).abs()) as f64);
+                let required =
+                    increase * WORK_PRICE + DT as f64 * 0.001 * (port + starboard) as f64;
+                let fraction = if required > 0. {
+                    (Self::spare(&e.cells[b]) / required).min(1.)
+                } else {
+                    1.
+                };
+                j.aim += (next - j.aim) * fraction as f32;
+                j.flexion = (port * fraction as f32).clamp(0., 1.);
+                j.extension = (starboard * fraction as f32).clamp(0., 1.);
+                let paid = self.spend(&mut e.cells[b], required * fraction, true);
+                j.work += paid;
+                e.motor_work += paid;
+                j.bend = bend;
+                j.angle = angle;
+                j.target = std::f32::consts::PI - j.aim.abs();
+                continue;
+            }
             let flexion = motor * signals[0];
             let extension = motor * signals[1];
             let next = (j.rest + (extension - flexion) * 0.45).clamp(0., std::f32::consts::PI);
@@ -3327,7 +3534,7 @@ impl Habitat {
                 (0.5 * k * ((angle - next).powi(2) - (angle - j.target).powi(2)) as f64).max(0.);
             let required = increase + DT as f64 * 0.001 * (flexion + extension) as f64;
             let fraction = if required > 0. {
-                (e.cells[b].energy as f64 / required).min(1.)
+                (Self::spare(&e.cells[b]) / required).min(1.)
             } else {
                 1.
             };
@@ -3378,7 +3585,9 @@ impl Habitat {
             let xs = x.motor_signals();
             let ys = y.motor_signals();
             let drive = (xs[0] + ys[0]) * 0.5 * (1. - (xs[1] + ys[1]) * 0.5);
-            let next = if self.passive {
+            // Muscle between two bones has nothing to shorten: bone keeps its
+            // length, and what muscle does there it does by turning the joint.
+            let next = if self.passive || x.rigidity().min(y.rigidity()) > 0.025 {
                 0.
             } else {
                 // A muscle tightens faster than it lets go.
@@ -3472,12 +3681,20 @@ impl Habitat {
             .bonds
             .iter()
             .map(|b| {
-                (
-                    ids[&b.a],
-                    ids[&b.b],
-                    b.rest * (1. - b.activation * 0.22),
-                    Self::spring_k(b) as f32,
-                )
+                // A tie is as strong as the area it joins: between two parts
+                // twice as wide, four times as stiff. A joint's push already
+                // grows that way, and a tie that did not was torn by its own
+                // body's strokes once the parts were large. (In a body with
+                // a plan, whose parts are sized by their place. Applied to
+                // every tie it also flattened a clump of algae, which is a
+                // question about small walled cells still to be looked at.)
+                let (i, j) = (ids[&b.a], ids[&b.b]);
+                let area = if e.cells[i].state.fate != 0 || e.cells[j].state.fate != 0 {
+                    (e.cells[i].radius().min(e.cells[j].radius()) / 0.22).powi(2)
+                } else {
+                    1.
+                };
+                (i, j, b.rest * (1. - b.activation * 0.22), Self::spring_k(b) as f32 * area)
             })
             .collect();
         let angular: Vec<_> = self
@@ -3485,7 +3702,11 @@ impl Habitat {
             .iter()
             .map(|j| {
                 let (a, b, c) = (ids[&j.a], ids[&j.b], ids[&j.c]);
-                (a, b, c, j.target, Self::joint_k(e, a, b, c))
+                if j.straight {
+                    (a, b, c, j.aim, Self::spine_k(e, a, b, c), Self::bulk(e, a, b, c))
+                } else {
+                    (a, b, c, j.target, Self::joint_k(e, a, b, c), 0.)
+                }
             })
             .collect();
         for c in &mut e.cells {
@@ -3513,6 +3734,39 @@ impl Habitat {
             bonded[ids[&b.a]] = true;
             bonded[ids[&b.b]] = true;
         }
+        // The water holds a cell by the side of it that meets the water in
+        // the way the cell is moving. Along the line to a cell it is tied
+        // to it is covered by that cell, and less by a narrower one. A fin
+        // is a blade standing along the cell's own line: it widens the cell
+        // across that line and not along it. So a wave passed down a body
+        // pushes it along, and a stroke that only opens and shuts does not.
+        let mut cover: Vec<Vec<(V3, f32)>> = vec![Vec::new(); e.cells.len()];
+        for &(a, c, ..) in &springs {
+            let along = e.cells[c].p.sub(e.cells[a].p).normalized();
+            let (ra, rc) = (properties[a].1, properties[c].1);
+            cover[a].push((along, SHIELD * (rc / ra).min(1.).powi(2)));
+            cover[c].push((along, SHIELD * (ra / rc).min(1.).powi(2)));
+        }
+        let blades: Vec<Option<(V3, f32)>> = (0..e.cells.len())
+            .map(|i| {
+                if fins[i] <= 0. {
+                    return None;
+                }
+                // A cell's line is the line most of its cover lies along.
+                let mut line = cover[i].first()?.0;
+                for _ in 0..4 {
+                    let next = cover[i]
+                        .iter()
+                        .fold(V3::default(), |sum, &(d, w)| sum.add(d.mul(w * d.dot(line))));
+                    if next.len() < 1e-6 {
+                        return None;
+                    }
+                    line = next.normalized();
+                }
+                let across = crate::articulation::cross(self.domain.up(e.cells[i].p), line);
+                (across.len() > 1e-4).then(|| (across.normalized(), FIN_SPAN * fins[i] as f32))
+            })
+            .collect();
         if !self.passive {
             for (i, c) in e.cells.iter_mut().enumerate() {
                 let steer = c.activity(STEER);
@@ -3782,19 +4036,51 @@ impl Habitat {
                 force[a] = force[a].add(f);
                 force[c] = force[c].sub(f);
             }
-            for &(a, b, c, target, k) in &angular {
-                let (angle, gradients) = crate::articulation::angle_and_gradients(
-                    e.cells[a].p,
-                    e.cells[b].p,
-                    e.cells[c].p,
-                );
-                let torque = (-(angle - target) * k).clamp(-JOINT_TORQUE, JOINT_TORQUE);
+            for &(a, b, c, target, k, bulk) in &angular {
+                let straight = bulk > 0.;
+                let (pa, pb, pc) = (e.cells[a].p, e.cells[b].p, e.cells[c].p);
+                let (gradients, torque, halt, limit) = if straight {
+                    let (bend, gradients) =
+                        crate::articulation::bend_and_gradients(pa, pb, pc, domain.up(pb));
+                    // Muscle toward where it is aiming, no harder than
+                    // muscle pulls, and the backbone's own spring.
+                    let torque = (-(bend - target) * k).clamp(-MUSCLE_TWIST * bulk, MUSCLE_TWIST * bulk)
+                        - BACKBONE * bulk * bend;
+                    // Past its stop a joint is bone on bone.
+                    let halt = if bend.abs() > STOP {
+                        -STOP_STIFF * bulk * (bend - STOP.copysign(bend))
+                    } else {
+                        0.
+                    };
+                    (gradients, torque, halt, SPINE_PUSH * bulk.powf(2. / 3.))
+                } else {
+                    let (angle, gradients) = crate::articulation::angle_and_gradients(pa, pb, pc);
+                    (gradients, (-(angle - target) * k).clamp(-JOINT_TORQUE, JOINT_TORQUE), 0., JOINT_PUSH)
+                };
+                // Two cells pressed almost into one make a lever of no
+                // length, and the push from it would be without limit. The
+                // three pushes of a joint are held back together, so that
+                // they still sum to nothing: held back one by one they
+                // push the whole body along with nothing pushed the other way.
+                let most = gradients.iter().map(|g| g.len()).fold(0f32, f32::max) * torque.abs();
+                let torque = (if most > limit { torque * limit / most } else { torque }) + halt;
                 for (i, grad) in [a, b, c].into_iter().zip(gradients) {
-                    // Two cells pressed almost into one make a lever of no
-                    // length, and the push from it would be without limit.
-                    let push = grad.mul(torque);
-                    let size = push.len();
-                    force[i] = force[i].add(if size > JOINT_PUSH { push.mul(JOINT_PUSH / size) } else { push });
+                    force[i] = force[i].add(grad.mul(torque));
+                }
+                // A backbone bends from side to side. Up and down it has
+                // only its spring and its stop: no muscle of its own works
+                // that way, and without them it would fold where it stood.
+                if straight {
+                    let side = crate::articulation::cross(domain.up(pb), pc.sub(pa));
+                    if side.len() > 1e-3 {
+                        let (rise, gradients) =
+                            crate::articulation::bend_and_gradients(pa, pb, pc, side.normalized());
+                        let torque = -BACKBONE * bulk * rise
+                            - if rise.abs() > STOP { STOP_STIFF * bulk * (rise - STOP.copysign(rise)) } else { 0. };
+                        for (i, grad) in [a, b, c].into_iter().zip(gradients) {
+                            force[i] = force[i].add(grad.mul(torque));
+                        }
+                    }
                 }
             }
             for (&(i, j), &room) in pairs.iter().zip(&room) {
@@ -3865,7 +4151,11 @@ impl Habitat {
                 // A winged cell out of the water is in air, which drags on
                 // it a fiftieth as hard.
                 let thin = if wings[i] > 0. { (submersion[i] as f64).max(0.02) } else { 1. };
-                self.drag_cached(c, mass, drag_ratio * thin, sites[i]);
+                if cover[i].is_empty() {
+                    self.drag_cached(c, mass, drag_ratio * thin, sites[i]);
+                } else {
+                    self.drag_shaped(c, mass, drag_ratio * thin, &cover[i], blades[i], sites[i]);
+                }
                 // And the same air drags on the wing, by the same measure:
                 // its area, the air's thickness, the square of its speed.
                 if wings[i] > 0. && submersion[i] < 0.1 && !c.state.ground {
@@ -3890,9 +4180,6 @@ impl Habitat {
                         let grip = drag_ratio * FIN_GRIP * AIR_GRIP * wings[i] as f64;
                         c.v = c.v.add(heading.mul((-slip as f64 * grip / (1. + grip)) as f32));
                     }
-                }
-                if fins[i] > 0. {
-                    self.fin_drag(c, mass, drag_ratio * FIN_GRIP * fins[i], sites[i]);
                 }
                 if crawling[i] {
                     let up = self.domain.up(c.p);
@@ -4046,7 +4333,12 @@ impl Habitat {
             x.state.strain = x.state.strain.max(strain.min(2.));
             y.state.strain = y.state.strain.max(strain.min(2.));
             // Walled sisters share a wall: the join is tough and does not let go.
-            let cemented = x.activity(WALL) * y.activity(WALL);
+            // And bone joined to bone along one line of the body is one
+            // piece of bone: it does not come apart by chance either. Out
+            // along a limb it still can, since that is how these animals'
+            // young come away.
+            let fused = x.rigidity().min(y.rigidity()) > 0.025 && x.state.lateral == y.state.lateral;
+            let cemented = (x.activity(WALL) * y.activity(WALL)).max(if fused { 1. } else { 0. });
             let toughness = 0.4 + (x.scaffold() + y.scaffold()) * 0.5 + cemented * 0.6;
             let brittleness = 1. + b.stiffness * 0.4;
             let damage = DT * 0.03 * (strain - toughness / brittleness).max(0.);
@@ -4096,14 +4388,39 @@ impl Habitat {
             let glue = (x.activity(2) * y.activity(2)).max(tended(x) * tended(y)) as f64;
             let rate = 0.004 * (1. + strain as f64 * 8.)
                 / (0.1 + glue * (1. + 8. * glue) + cemented as f64 * 6.);
+            // Living tissue does not come apart by chance. In a body with a
+            // plan whose young are gametes, a tie between two cells that
+            // both hold on in earnest lasts until it is torn. (As at birth,
+            // reading the genes for gametes stands in for a missing rule:
+            // a planned animal with none still has its young by letting
+            // cells go.)
+            let held = glue > HELD as f64
+                && (x.state.fate != 0 || y.state.fate != 0)
+                && x.genome.genes.iter().any(|g| g.action == crate::development::GAMETIC);
             let survive = b.integrity > 0.02
                 && strain < 2.
-                && (core.random() as f64) >= 1. - (-rate * DT as f64).exp();
+                && (fused || held || (core.random() as f64) >= 1. - (-rate * DT as f64).exp());
             if !survive {
                 self.dissociations += 1;
+                // `TORN` names each tie of a planned body as it goes, and why.
+                #[cfg(test)]
+                if (x.state.fate != 0 || y.state.fate != 0) && std::env::var("TORN").is_ok() {
+                    eprintln!(
+                        "  torn: {}/{} to {}/{} (fates {} {}), stretched to {:.2} of its length, whole {:.2}, glue {:.2}, bone {}, fins {:.2} {:.2}, on the ground {} {}, speeds {:.2} {:.2}",
+                        x.state.axial, x.state.lateral, y.state.axial, y.state.lateral, x.state.fate, y.state.fate,
+                        x.p.sub(y.p).len() / b.rest, b.integrity, glue, fused,
+                        x.activity(FIN), y.activity(FIN), x.state.ground, y.state.ground, x.v.len(), y.v.len(),
+                    );
+                }
             }
             survive
         });
+    }
+    /// What a cell's muscle may spend: its energy above a reserve of a
+    /// quarter of all it can hold. A muscle tires before it starves its own
+    /// cell; without this a single hard stroke could spend a cell to death.
+    fn spare(c: &Cell) -> f64 {
+        (c.energy as f64 - 2.25 * c.stature()).max(0.)
     }
     fn spring_k(b: &Bond) -> f64 {
         (1. + b.stiffness as f64 * 60. + MUSCLE_PULL * b.activation as f64) * b.integrity as f64
@@ -4153,6 +4470,15 @@ impl Habitat {
             {
                 continue;
             }
+            // A cell whose gene for gametes is driven fully makes nothing
+            // else when it divides, so it waits until it can make one. (One
+            // that divided before it could left an ordinary daughter in a
+            // place the body has no use for: a second tail on a worm.)
+            if c.expression[crate::development::GAMETIC] > 0.5
+                && (c.activity(crate::development::GAMETIC) <= 0.25 || c.activity(crate::development::FUSOGEN) <= 0.1)
+            {
+                continue;
+            }
             // Dividing costs in proportion to what is divided.
             let cost = e.cells[i].stature();
             self.spend(&mut e.cells[i], cost, false);
@@ -4177,9 +4503,17 @@ impl Habitat {
             // began as. A gene that reads this can stop a body growing at a size.
             child.lifecycle.depth = child.lifecycle.depth.saturating_add(1).min(1_000_000);
             e.cells[i].lifecycle.depth = child.lifecycle.depth;
-            let gamete = child.activity(crate::development::GAMETIC) > 0.25
+            // (Only a cell whose gene for it is at work now makes a gamete,
+            // whatever it still carries: a fertilised egg holds what both its
+            // gametes held, and must not shed its first daughter as another.)
+            let gamete = child.expression[crate::development::GAMETIC] > 0.02
+                && child.activity(crate::development::GAMETIC) > 0.25
                 && child.activity(crate::development::FUSOGEN) > 0.1
-                && core.random() < child.activity(crate::development::GAMETIC);
+                // (How often is set by how hard the gene is driven: fully
+                // driven, every daughter is a gamete, and none is left in
+                // the body as a part it has no place for.)
+                && core.random()
+                    < child.activity(crate::development::GAMETIC).max(child.expression[crate::development::GAMETIC]);
             if gamete {
                 child.genome = child.gamete_chromosome(core);
                 if child.lifecycle.homolog.is_some() {
@@ -4340,11 +4674,48 @@ impl Habitat {
             }
             let axis = child.heading
                 + side * e.cells[i].expression[BROADEN].min(1.) * std::f32::consts::FRAC_PI_2;
-            let delta = random_direction
+            let mut delta = random_direction
                 .mul(1. - polarity)
                 .add(self.domain.tangent(child.p, axis).mul(dist * polarity))
                 .normalized()
                 .mul(dist);
+            // The growing end of a body grows outward. A cell with a single
+            // neighbour that is lengthening its body sets its daughter down
+            // on the side away from that neighbour, whichever way the body
+            // has turned or tumbled since it began. Without this a tip that
+            // has come to face inward sets its daughter down inside the
+            // line, and the line's order is lost.
+            if !sideways && polarity > 0.5 {
+                let id = e.cells[i].id;
+                let mut tied = e.bonds.iter().filter_map(|b| {
+                    if b.a == id {
+                        Some(b.b)
+                    } else if b.b == id {
+                        Some(b.a)
+                    } else {
+                        None
+                    }
+                });
+                if let (Some(only), None) = (tied.next(), tied.next()) {
+                    // (In a body with a plan, that is: one whose cells behind
+                    // the tip have taken up their places. A plain thread or
+                    // sheet grows as it always did.)
+                    if let Some(&k) = ids.get(&only).filter(|&&k| e.cells[k].state.fate != 0) {
+                        let away = e.cells[i].p.sub(e.cells[k].p);
+                        if away.len() > 1e-4 {
+                            let away = away.normalized();
+                            delta = away.mul(dist);
+                            let (east, north) = (
+                                self.domain.tangent(child.p, 0.),
+                                self.domain.tangent(child.p, std::f32::consts::FRAC_PI_2),
+                            );
+                            let facing = away.dot(north).atan2(away.dot(east));
+                            child.heading = facing;
+                            e.cells[i].heading = facing;
+                        }
+                    }
+                }
+            }
             child.p = child.p.add(delta.mul(0.5));
             e.cells[i].p = e.cells[i].p.sub(delta.mul(0.5));
             if !self.domain.spherical() {
@@ -4356,12 +4727,43 @@ impl Habitat {
             // A cell that is not making glue now does not hold on to the
             // daughter it has just made, whatever glue it still carries.
             let sticking = child.expression[2] > 0.02 || child.activity(WALL) > 0.05 || child.scaffold() > 0.2;
+            // In a body with a plan (one whose cells have taken up their
+            // places) whose young are gametes, a newborn is born inside the
+            // body and stays in it, so long as it and its mother both make
+            // glue in earnest. What leaves such a body is what has stopped
+            // making glue, or a gamete. Elsewhere a daughter stays by chance,
+            // more often the more glue the two hold: that is what sets a
+            // colony's size, and it is also the only way a planned animal
+            // with no gametes has young at all. (Reading the genes for
+            // gametes here stands in for that: once every planned animal
+            // breeds by gametes or buds, the plan alone should decide.)
+            let germ = child
+                .genome
+                .genes
+                .iter()
+                .chain(child.lifecycle.homolog.iter().flat_map(|g| &g.genes))
+                .any(|g| g.action == crate::development::GAMETIC);
+            let planned = germ && (e.cells[i].state.fate != 0 || {
+                let id = e.cells[i].id;
+                e.bonds.iter().any(|b| {
+                    let other = if b.a == id {
+                        b.b
+                    } else if b.b == id {
+                        b.a
+                    } else {
+                        return false;
+                    };
+                    ids.get(&other).is_some_and(|&k| e.cells[k].state.fate != 0)
+                })
+            });
             let attached = !gamete
                 && sticking
                 && degree.get(&child.parent).copied().unwrap_or(0) < 6
-                && core.random()
-                    < (child.activity(2) * e.cells[i].activity(2))
+                && {
+                    let hold = (child.activity(2) * e.cells[i].activity(2))
                         .max(child.activity(WALL) * e.cells[i].activity(WALL));
+                    core.random() < hold || (planned && hold > HELD)
+                };
             if attached {
                 e.bonds.push(Bond {
                     a: child.parent,
@@ -4377,7 +4779,12 @@ impl Habitat {
             // with its daughter: a neighbour on the daughter's side is the
             // daughter's neighbour from then on. A body built this way grows
             // longer where it would otherwise sprout a branch at every division.
-            if attached && polarity > 0.5 {
+            // (A cell with a place in a plan that sets a daughter down to
+            // one side is budding a limb: the bud is tied to the cell it
+            // grew from and to nothing else. Sharing ties by nearness there
+            // handed the body's own next segment to the bud, and left the
+            // cell that made it hanging off its limb.)
+            if attached && polarity > 0.5 && !(sideways && e.cells[i].state.fate != 0) {
                 let (front, back, newborn) = (child.p, e.cells[i].p, child.id);
                 let reach = child.radius() + 0.05;
                 let mut held = 1;
@@ -4400,6 +4807,13 @@ impl Habitat {
                         held += 1;
                     } else if at.sub(front).len() < reach + e.cells[k].radius()
                         && degree.get(&other).copied().unwrap_or(0) < 6
+                        // In a body with a plan, only a cell born beside the
+                        // newborn's place: the one behind its mother is not.
+                        && (e.cells[k].state.fate == 0
+                            || (e.cells[k].state.axial as i32 - child.state.axial as i32)
+                                .abs()
+                                .max((e.cells[k].state.lateral as i32 - child.state.lateral as i32).abs())
+                                <= 1)
                     {
                         // A neighbour to one side touches both daughters and
                         // stays cemented to both.
@@ -4667,12 +5081,11 @@ impl Habitat {
         self.sync_joints(e); // remove broken contacts/dead endpoints before save/display
         let ids = e.index();
         for j in &mut self.joints {
-            j.angle = crate::articulation::angle_and_gradients(
-                e.cells[ids[&j.a]].p,
-                e.cells[ids[&j.b]].p,
-                e.cells[ids[&j.c]].p,
-            )
-            .0;
+            let (pa, pb, pc) = (e.cells[ids[&j.a]].p, e.cells[ids[&j.b]].p, e.cells[ids[&j.c]].p);
+            j.angle = crate::articulation::angle_and_gradients(pa, pb, pc).0;
+            if j.straight {
+                j.bend = crate::articulation::bend_and_gradients(pa, pb, pc, self.domain.up(pb)).0;
+            }
         }
         // The physical export reads this habitat directly.
         for i in 0..GRID * GRID {
@@ -4772,7 +5185,9 @@ impl Cell {
     /// mineral in it, as bone does, or by a wall, as a plant's cells do.
     pub fn rigidity(&self) -> f32 {
         let m = self.material.as_ref().unwrap();
-        (m.mineral / m.mass()) as f32 + WALL_STIFFNESS * self.activity(WALL)
+        // Against the living tissue the bone is laid in, not the water, fuel
+        // or fat the cell is carrying: none of those softens bone.
+        (m.mineral / (m.biomass + m.mineral).max(1e-9)) as f32 + WALL_STIFFNESS * self.activity(WALL)
     }
     pub fn activity(&self, k: usize) -> f32 {
         self.material.as_ref().map_or(self.expression[k], |m| {

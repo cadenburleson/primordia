@@ -132,6 +132,19 @@ impl Specimen {
                 .iter()
                 .any(|n| !pairs.contains(&(n.from.min(n.to), n.from.max(n.to))))
         {
+            #[cfg(test)]
+            eprintln!(
+                "SPECIMEN refused: cells valid {}, pieces {}, joints valid {}, development valid {}; cells with a bad genome {}, state {}, life cycle {}, number {}; states {:?}",
+                e.valid(),
+                e.groups().len(),
+                joints_valid,
+                development.valid(&e.cells, &s.joints),
+                e.cells.iter().filter(|x| !x.genome.valid()).count(),
+                e.cells.iter().filter(|x| !x.state.valid()).count(),
+                e.cells.iter().filter(|x| !x.lifecycle.valid(x)).count(),
+                e.cells.iter().filter(|x| ![x.v.x, x.v.y, x.v.z, x.energy, x.age, x.cooldown, x.heading].iter().all(|v| v.is_finite())).count(),
+                e.cells.iter().filter(|x| !x.state.valid()).map(|x| format!("{:?}", x.state)).next(),
+            );
             return Err("Invalid connected organism structure, chromosomes, or signaling".into());
         }
         Ok(s)

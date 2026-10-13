@@ -142,7 +142,7 @@ NERVE_STEPS = 24
 STEP = 0.25  # DT / NERVE_STEPS * NERVE_PACE
 
 
-def ladder(n, drive, tie, cross, ticks=400, cross_all=False, gates=None, sampled=False):
+def ladder(n, drive, tie, cross, ticks=400, cross_all=False, gates=None, sampled=False, across=0.0):
     """`drive` is one number (the head cells only) or a list (every cell, head first).
     `gates` is how much channel each cell has, head first: fewer channels, a slower cell."""
     drives = drive if isinstance(drive, list) else [drive] + [0.0] * (n - 1)
@@ -169,6 +169,10 @@ def ladder(n, drive, tie, cross, ticks=400, cross_all=False, gates=None, sampled
                         coupling += (u[side][i + 1] - x) * tie
                     if i == 0 or cross_all:
                         coupling -= cross * (seen_u if sampled else u)[1 - side][i]
+                    # `across`: a plain tie between the two cells of a pair, which passes firing
+                    # on as the ties along a line do. The engine gives every tie between two
+                    # nerve cells this, wanted or not.
+                    coupling += (u[1 - side][i] - x) * across
                     du = 3 * x * (1 - x) * (x - 0.18) - y + drives[i] + coupling
                     dv = 0.12 * (x - y * 0.8)
                     nx = min(1.0, max(0.0, x + STEP * gates[i] * du))
@@ -277,7 +281,7 @@ FIN_SPAN = 3.0                   # NEW: how much wider a fin makes a cell, acros
 
 def swimmer(n=9, shaped=True, fins="none", fall=0.1, hold=0.1, nerve_tie=0.05, bone_tie=600.0,
             mineral=0.5, beats=30, drive=0.35, flank_pull=True, brace=0.0, torque=JOINT_TORQUE,
-            swing_to=SWING, soft=None, ease=1.0, spring=0.0, water="engine", fair=False, sine=None, flanks=True, stiff=None, small=1.0, cord=False, rib=None, sampled=False, pace=1.0, square=0.0, trace=False):
+            swing_to=SWING, soft=None, ease=1.0, spring=0.0, water="engine", fair=False, sine=None, flanks=True, stiff=None, small=1.0, cord=False, rib=None, sampled=False, pace=1.0, square=0.0, one_line=None, trace=False):
     """A stiff middle line of n bone cells, a nerve-and-muscle cell on each flank of each.
     Returns body lengths a beat, the widest joint swing, and the longest any tie was stretched."""
     # Cells: 0..n-1 the middle, n..2n-1 the left flank (+z), 2n..3n-1 the right flank (-z).
@@ -375,6 +379,11 @@ def swimmer(n=9, shaped=True, fins="none", fall=0.1, hold=0.1, nerve_tie=0.05, b
             activation[k] += (want - activation[k]) * (0.9 if want > activation[k] else 0.4)
         for i in range(1, n - 1):
             pull = muscle * (firing[0][i] - firing[1][i])        # NEW: a joint is pulled from its two sides
+            if one_line is not None:
+                # One nerve cell to a segment, standing for both of its sides: the joint is
+                # pulled one way while the cell fires and the other way while it recovers.
+                after = min(1.0, max(0.0, (v[0][i] - one_line) * 5)) * (1 - firing[0][i])
+                pull = muscle * (firing[0][i] - after)
             # The beat is brought up over the first beats, as a body that grows into its stroke.
             aim = max(-STOP, min(STOP, pull * swing_to * min(1.0, tick / 40)))
             if sine:

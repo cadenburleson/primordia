@@ -67,6 +67,23 @@ pub(crate) fn angle_and_gradients(a: V3, b: V3, c: V3) -> (f32, [V3; 3]) {
     let gc = r.mul(cos).sub(q).mul(1. / (lv * sin));
     (cos.acos(), [ga, ga.add(gc).mul(-1.), gc])
 }
+/// How far a line of three points turns at its middle one, seen from above:
+/// nothing for a straight line, more than nothing for a turn to the left.
+/// Unlike the angle between the two arms it knows one side from the other
+/// and is smooth through a straight line, where a backbone spends its time.
+pub(crate) fn bend_and_gradients(a: V3, b: V3, c: V3, up: V3) -> (f32, [V3; 3]) {
+    let flat = |v: V3| v.sub(up.mul(v.dot(up)));
+    let (e1, e2) = (flat(b.sub(a)), flat(c.sub(b)));
+    let (l1, l2) = (e1.len().max(0.001), e2.len().max(0.001));
+    let (d1, d2) = (e1.mul(1. / l1), e2.mul(1. / l2));
+    let bend = up.dot(cross(d1, d2)).atan2(d1.dot(d2));
+    let ga = cross(up, d1).mul(1. / l1);
+    let gc = cross(up, d2).mul(1. / l2);
+    (bend, [ga, ga.add(gc).mul(-1.), gc])
+}
+pub(crate) fn cross(a: V3, b: V3) -> V3 {
+    V3::new(a.y * b.z - a.z * b.y, a.z * b.x - a.x * b.z, a.x * b.y - a.y * b.x)
+}
 impl Body {
     pub(crate) fn sync_joints(&mut self, d: &[f32; DEVELOPMENT]) {
         let Some(anatomy) = self.anatomy.as_ref() else {

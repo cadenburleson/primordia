@@ -41,6 +41,7 @@ export const SPECIES:[string,string,string,string][]=[
   ['shrimp','Shrimp','#e8836b','Cambrian. A small crustacean: a jointed body in a thin shell, with limbs that row it and sweep drifting cells into the mouths along them. Bigger hunters live on it'],
   ['copepod','Copepod','#f2b38a','Cambrian. The smallest crustacean: a soft body of a few cells with filtering limbs. It breeds fast, and the young of bigger animals live on it'],
   ['scorpion','Sea scorpion','#7a4fb5','Ordovician. A large armoured hunter that swims by muscle, with spines for claws and strong venom'],
+  ['lancelet','Lancelet','#6fb6c9','Cambrian. The first swimmer with a stiffened back: one line of jointed parts, each with muscle, a fin and a nerve, and no limbs. Still being worked out: it does not yet grow reliably'],
   ['fish','Fish','#4f8fd6','Silurian and Devonian. A long stiffened body that swims by muscle with fins, with eyes, nerves that learn and a store of fat'],
   ['moss','Moss','#5fa64a','Silurian. The first plant to stand on land: walled cells in a line, a waxy skin and a grip on the ground'],
   ['fungus','Fungus','#b08fc7','Silurian. Walled threads that branch over the ground, rot what lies on it and take mineral from rock. Pressed against a plant, the two trade across the wall they share'],
