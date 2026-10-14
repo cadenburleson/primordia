@@ -1060,6 +1060,7 @@ impl Evolution {
                         } else {
                             [0.; 4]
                         },
+                        marks: c.marks(),
                     });
                 }
                 for b in &group_bonds[g] {

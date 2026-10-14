@@ -20,7 +20,7 @@ for(const seed of [8042,1197,6219]){
   // Same inherited sequence can produce different expression in local contexts.
   const seen=new Map();for(const c of a.cells){const key=c.genome.id;const prev=seen.get(key);if(prev&&prev.some((x,i)=>Math.abs(x-c.expression[i])>.02))expressionChanges++;seen.set(key,c.expression);}
   w.load(saved);assert.equal(w.save(),saved);
-  const cellData=w.cell_data(),links=w.link_data();assert.equal(cellData.length%13,0);assert.equal(links.length%6,0);for(let i=0;i<links.length;i+=6){assert.ok(links[i]>=0&&links[i]<cellData.length/13&&links[i+1]>=0&&links[i+1]<cellData.length/13);}
+  const cellData=w.cell_data(),links=w.link_data();assert.equal(cellData.length%14,0);assert.equal(links.length%6,0);for(let i=0;i<links.length;i+=6){assert.ok(links[i]>=0&&links[i]<cellData.length/14&&links[i+1]>=0&&links[i+1]<cellData.length/14);}
   if(seed===8042&&m.autonomous.peakBody>peak){checkpoint=saved;peak=m.autonomous.peakBody;}
   if(sample%10===0)console.log(JSON.stringify({seed,cycles:state.time,cells:a.cells.length,divisions:a.divisions,genomes:m.autonomous.genomes,peakBody:a.peak_body,innovations:a.innovations}));
  }

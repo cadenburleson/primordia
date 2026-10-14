@@ -1337,7 +1337,8 @@ impl Core {
         data
     }
     // Transfer-friendly global particle records: organism index, xyz, radius, role, contact,
-    // health, reserve, and for a rod its length in widths and the axis it lies along.
+    // health, reserve, for a rod its length in widths and the axis it lies along,
+    // and the drawing's marks.
     pub fn cell_data(&self) -> Vec<f32> {
         if let Some(e) = &self.autonomous {
             let display = Core {
@@ -1368,6 +1369,7 @@ impl Core {
                     n.long[1],
                     n.long[2],
                     n.long[3],
+                    n.marks as f32,
                 ]);
             }
         }

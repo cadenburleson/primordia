@@ -7,8 +7,8 @@ const lab=new World(JSON.stringify(config));lab.start_lab();
 assert.equal(JSON.parse(lab.metadata(1)).selected.cells,1);
 lab.step(16);
 let view=JSON.parse(lab.metadata(1));assert.ok(view.selected.cells>1);assert.equal(view.selected.body.nodes.length,view.selected.cells);
-const cells=lab.cell_data(),links=lab.link_data();assert.equal(cells.length,view.selected.cells*13);assert.equal(links.length%6,0);
-for(let i=0;i<links.length;i+=6){assert.ok(links[i]<cells.length/13);assert.ok(links[i+1]<cells.length/13);}
+const cells=lab.cell_data(),links=lab.link_data();assert.equal(cells.length,view.selected.cells*14);assert.equal(links.length%6,0);
+for(let i=0;i<links.length;i+=6){assert.ok(links[i]<cells.length/14);assert.ok(links[i+1]<cells.length/14);}
 lab.step(64);const baseline=JSON.parse(lab.metadata(1)).lab.baseline;
 assert.ok(baseline.viable);assert.ok(baseline.work>0);assert.ok(baseline.distance>.1);
 const passive=new World(JSON.stringify(config));passive.start_lab();const quiet=JSON.parse(passive.save());

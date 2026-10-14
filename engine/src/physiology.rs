@@ -339,6 +339,24 @@ impl Cell {
             (self.chemicals[1] * (1. - channels)).min(1.),
         ]
     }
+    /// What the drawing marks on this cell, the same marks the films use:
+    /// see `body::Cell::marks` for the order of the bits.
+    pub(crate) fn marks(&self) -> u16 {
+        use crate::development::{Phase, PHOTIC};
+        use crate::physical::{ENGULF, FIN};
+        u16::from(self.activity(ENGULF) > 0.25)
+            | u16::from(self.state.handling > 0.) << 1
+            | u16::from(self.activity(PHOTIC) > 0.25) << 2
+            | u16::from(self.material.is_some() && self.rigidity() > 0.025) << 3
+            | u16::from(self.activity(FIN) > 0.25) << 4
+            | u16::from(self.activity(4) > 0.25) << 5
+            | u16::from(self.state.excitation > 0.5) << 6
+            | u16::from(self.lifecycle.phase == Phase::Gamete) << 7
+            | u16::from(self.lifecycle.phase == Phase::Zygote) << 8
+            | u16::from(self.state.fate == 0) << 9
+            | u16::from(self.state.lateral == 0) << 10
+            | u16::from(self.state.axial == 0) << 11
+    }
     pub(crate) fn material_role(&self) -> u8 {
         let Some(m) = &self.material else { return 0 };
         use crate::physical::{CHEMO, ENGULF, FIN, PROPEL, SPINE, TOXIN, WALL};

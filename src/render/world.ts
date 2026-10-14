@@ -5,10 +5,16 @@ import { habitatY, noise } from '../sim/random';
 import { STRIDE, CELL_STRIDE, LINK_STRIDE, JOINT_STRIDE, MAX_BODY_CELLS, type Snapshot, type WorldConfig } from '../sim/types';
 import {geometry,ground,point,position,coordinates,sample} from '../sim/geometry';
 import {jointGeometry} from './joints';
-import {CELL_TYPES,CHOSEN_COLOR,cellType,isChosen,isComplex} from '../sim/roles';
+import {CELL_TYPES,CHOSEN_COLOR,MARK,cellType,isChosen,isComplex} from '../sim/roles';
 import {resourceValues,resourceRGB,type ResourceLayer} from '../sim/resource-view';
 
 const MAX_CELLS = 65000;
+/** How many eyes, mouths and meals are drawn at most, and how many line ends. */
+const MAX_MARKS = 16000, MAX_LINE_POINTS = 240000;
+const eyeColor=new THREE.Color('#0f0f14'),mouthColor=new THREE.Color('#781e14'),digestingColor=new THREE.Color('#ffde59'),gameteColor=new THREE.Color('#c878ff'),zygoteColor=new THREE.Color('#ff69b4'),finColor=new THREE.Color('#9fe3f2');
+const tieColor=new THREE.Color('#28180f'),boneColor=new THREE.Color('#efe6c9'),braceColor=new THREE.Color('#7b9b9b'),tornColor=new THREE.Color('#713946'),pullingColor=new THREE.Color('#ff3c32');
+/** A tail fin seen from above, for a part of radius one facing +z: a fan spreading back from it. */
+const FAN=[[0,0],[-1.3,2.2],[0,1.5],[1.3,2.2]];
 const temp = new THREE.Object3D(), color = new THREE.Color();
 const chosenColor=new THREE.Color(CHOSEN_COLOR),complexColor=new THREE.Color('#ffffff'),injuryColor=new THREE.Color('#653e48'),mineralColor=new THREE.Color('#b7c9bd'),snowColor=new THREE.Color('#e5ece1');
 // The sea reads by its bed: turquoise over the shallows, navy over the deeps.
@@ -74,7 +80,16 @@ export class WorldView {
   private glassy=new Uint8Array(MAX_CELLS);
   /** For each cell, how many times longer than wide it is and the direction it lies along; zero for a round cell. */
   private rods=new Float32Array(MAX_CELLS*4);
-  bones: THREE.InstancedMesh;
+  /** Drawn flat over the bodies, as in the films: ties as lines (red while a muscle pulls), a tail fin's outline, a ring round each egg and sperm. */
+  lines=new THREE.LineSegments(new THREE.BufferGeometry(),new THREE.LineBasicMaterial({vertexColors:true,depthWrite:false}));
+  private linePositions=new Float32Array(MAX_LINE_POINTS*3);
+  private lineColors=new Float32Array(MAX_LINE_POINTS*3);
+  /** Eyes, a head's mouth and meals being digested, as flat dots on top of the cells. */
+  dots: THREE.InstancedMesh;
+  private marks=new Uint16Array(MAX_CELLS);
+  private bodySize=new Uint16Array(MAX_CELLS);
+  /** For a cell on a body's middle line, a part of that line it is tied to; -1 if none. */
+  private lineNeighbour=new Int32Array(MAX_CELLS);
   jointCuffs:THREE.InstancedMesh;
   jointMuscles:THREE.InstancedMesh;
   terrain = new THREE.Group();
@@ -95,7 +110,7 @@ export class WorldView {
   trace = new THREE.Line(new THREE.BufferGeometry(),new THREE.LineBasicMaterial({color:'#a5d89d',transparent:true,opacity:.6}));
   private positions=new Float32Array(MAX_CELLS*3);
   updateMs=0;
-  private linkMotion:{index:number;a:number;b:number;kind:number;activation:number}[]=[];
+  private linkMotion:{a:number;b:number;r:number;g:number;b2:number}[]=[];
   private jointMotion:{a:number;b:number;c:number;flexion:number;extension:number}[]=[];
   ring: THREE.Mesh;
   snapshot: Snapshot | null = null;
@@ -157,16 +172,18 @@ export class WorldView {
     this.spined.instanceMatrix.setUsage(THREE.DynamicDrawUsage);this.spined.frustumCulled=false;this.spined.count=0;this.scene.add(this.spined);
     this.shelled = new THREE.InstancedMesh(new THREE.CylinderGeometry(1.15,1.15,1,12), new THREE.MeshStandardMaterial({roughness:.3,metalness:.15}), MAX_CELLS);
     this.shelled.instanceMatrix.setUsage(THREE.DynamicDrawUsage);this.shelled.frustumCulled=false;this.shelled.count=0;this.scene.add(this.shelled);
-    this.bones = new THREE.InstancedMesh(new THREE.CylinderGeometry(.06,.06,1,5),new THREE.MeshStandardMaterial({ color:'#dfdabd',roughness:.6 }), 22000);
+    this.lines.geometry.setAttribute('position',new THREE.BufferAttribute(this.linePositions,3).setUsage(THREE.DynamicDrawUsage));
+    this.lines.geometry.setAttribute('color',new THREE.BufferAttribute(this.lineColors,3).setUsage(THREE.DynamicDrawUsage));
+    this.lines.geometry.setDrawRange(0,0);this.lines.frustumCulled=false;this.lines.renderOrder=10;
     this.jointCuffs=new THREE.InstancedMesh(new THREE.TorusGeometry(.23,.026,6,14),new THREE.MeshStandardMaterial({color:'#e7e0bb',roughness:.4}),8000);
     this.jointMuscles=new THREE.InstancedMesh(new THREE.CylinderGeometry(.035,.035,1,6),new THREE.MeshStandardMaterial({roughness:.4}),16000);
-    for(const mesh of [this.jointCuffs,this.jointMuscles]){mesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);mesh.frustumCulled=false;mesh.count=0;this.scene.add(mesh);}
+    this.dots=new THREE.InstancedMesh(new THREE.CircleGeometry(1,12),new THREE.MeshBasicMaterial({side:THREE.DoubleSide}),MAX_MARKS);this.dots.renderOrder=11;
+    for(const mesh of [this.jointCuffs,this.jointMuscles,this.dots]){mesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);mesh.frustumCulled=false;mesh.count=0;this.scene.add(mesh);}
     this.cells.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
-    this.bones.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
-    this.cells.frustumCulled = false; this.bones.frustumCulled = false;
-    this.cells.count = 0; this.bones.count = 0;
+    this.cells.frustumCulled = false;
+    this.cells.count = 0;
     this.flow.visible=false;
-    this.scene.add(this.cells, this.bones, this.terrain, this.selected,this.trace,this.flow);
+    this.scene.add(this.cells, this.lines, this.terrain, this.selected,this.trace,this.flow);
     this.selected.add(new THREE.Mesh(new THREE.TorusGeometry(1,.025,8,64),new THREE.MeshBasicMaterial({ color:'#ebf5be',depthTest:false })));
     this.selected.rotation.x = Math.PI/2; this.selected.visible = false;
     this.selectedBounds.visible=false;this.scene.add(this.selectedBounds);
@@ -377,10 +394,11 @@ export class WorldView {
           const p=(start+c)*CELL_STRIDE;role=cellType(physical[p+5]);chosen=isChosen(physical[p+5]);complex=isComplex(physical[p+5]);health=physical[p+7];
           temp.position.set(physical[p+1],physical[p+2],physical[p+3]);
           for(let k=0;k<4;k++)this.rods[count*4+k]=physical[p+9+k];
+          this.marks[count]=physical[p+13];
           nodeKeys[start+c]=count;
         }else{
           const offset=bodyOffset(c,displayed,shape,data[o+8]).applyQuaternion(quat);
-          temp.position.set(x+offset.x,worldY+offset.y,z+offset.z);this.rods[count*4]=0;
+          temp.position.set(x+offset.x,worldY+offset.y,z+offset.z);this.rods[count*4]=0;this.marks[count]=0;
         }
         if(snapshot.ids[i]===this.selectedId){this.selectedBounds.box.expandByPoint(temp.position);selectedRadius=Math.max(selectedRadius,r);}
         color.setHSL(.30+pigment*.42,.35+chemo*.3,.48+photo*.16);
@@ -389,7 +407,7 @@ export class WorldView {
         color.lerp(injuryColor,(1-health)*.8);
         this.boxed[count]=materialTypes&&role===17?1:0;this.spiky[count]=materialTypes&&role===14?1:0;this.glassy[count]=materialTypes&&role===19?1:0;
         this.cells.setColorAt(count,color);if(this.boxed[count])this.walled.setColorAt(count,color);if(this.spiky[count])this.spined.setColorAt(count,color);if(this.glassy[count])this.shelled.setColorAt(count,color);this.overviewPositions.setXYZ(count,temp.position.x,temp.position.y,temp.position.z);
-        this.cellIds[count]=snapshot.ids[i];this.pickRadii[count]=r;count++;
+        this.cellIds[count]=snapshot.ids[i];this.pickRadii[count]=r;this.bodySize[count]=displayed;count++;
       }
       if(snapshot.ids[i]===this.selectedId){
         if(g.sphere&&start>=0){const p=start*CELL_STRIDE;this.selected.position.set(physical[p+1],physical[p+2],physical[p+3]);this.selected.quaternion.setFromUnitVectors(new THREE.Vector3(0,0,1),this.selected.position.clone().normalize());}
@@ -400,17 +418,21 @@ export class WorldView {
     }
 
     if(!this.selectedBounds.box.isEmpty())this.selectedBounds.box.expandByScalar(selectedRadius);
+    this.lineNeighbour.fill(-1,0,count);
     for(let p=0;p<snapshot.linkData.length;p+=LINK_STRIDE){
       const a=nodeKeys[snapshot.linkData[p]],b=nodeKeys[snapshot.linkData[p+1]];
-      if(a===undefined||b===undefined||a<0||b<0||linkCount>=22000)continue;
+      if(a===undefined||b===undefined||a<0||b<0)continue;
+      if(this.marks[b]&MARK.midline&&this.lineNeighbour[a]<0)this.lineNeighbour[a]=b;
+      if(this.marks[a]&MARK.midline&&this.lineNeighbour[b]<0)this.lineNeighbour[b]=a;
+      if(linkCount>=22000)continue;
       const kind=snapshot.linkData[p+2],activation=snapshot.linkData[p+3];
-      this.linkMotion.push({index:linkCount,a,b,kind,activation});
-      color.set(kind===2?'#e68c74':kind===1?'#e9e1bb':kind===3?'#7b9b9b':'#567c60');
-      if(snapshot.linkData[p+5]<.15)color.set('#713946');
-      if(kind===2)color.lerp(new THREE.Color('#ffdb9e'),activation*.7);
-      this.bones.setColorAt(linkCount++,color);
+      color.copy(kind===1?boneColor:kind===3?braceColor:tieColor);
+      if(snapshot.linkData[p+5]<.15)color.copy(tornColor);
+      // A muscle turns red as it pulls.
+      if(kind===2)color.lerp(pullingColor,Math.min(1,activation*4));
+      this.linkMotion.push({a,b,r:color.r,g:color.g,b2:color.b});linkCount++;
     }
-    this.cells.count=count;this.walled.count=count;this.spined.count=count;this.shelled.count=count;this.bones.count=linkCount;
+    this.cells.count=count;this.walled.count=count;this.spined.count=count;this.shelled.count=count;
     this.overviewCells.geometry.setDrawRange(0,count);this.overviewPositions.needsUpdate=true;this.applyCameraMode();
     for(let p=0;p<snapshot.jointData.length&&this.jointMotion.length<8000;p+=JOINT_STRIDE){
       const a=nodeKeys[snapshot.jointData[p]],b=nodeKeys[snapshot.jointData[p+1]],c=nodeKeys[snapshot.jointData[p+2]];
@@ -426,7 +448,6 @@ export class WorldView {
     if(this.walled.instanceColor)this.walled.instanceColor.needsUpdate=true;
     if(this.spined.instanceColor)this.spined.instanceColor.needsUpdate=true;
     if(this.shelled.instanceColor)this.shelled.instanceColor.needsUpdate=true;
-    if(this.bones.instanceColor)this.bones.instanceColor.needsUpdate=true;
     if(this.selectedId&&!snapshot.ids.includes(this.selectedId))this.selected.visible=false;
     const physics=snapshot.autonomous?.physics,flow=physics?.flow;
     this.flow.visible=this.overlay&&!!flow;
@@ -460,13 +481,6 @@ export class WorldView {
       temp.rotation.set(0,0,0);temp.scale.setScalar(this.spiky[i]===1?this.pickRadii[i]:0);temp.updateMatrix();this.spined.setMatrixAt(i,temp.matrix);
     }
     this.walled.instanceMatrix.needsUpdate=true;this.spined.instanceMatrix.needsUpdate=true;this.shelled.instanceMatrix.needsUpdate=true;
-    for(const link of this.linkMotion){
-      a.fromArray(this.positions,link.a*3);b.fromArray(this.positions,link.b*3);delta.subVectors(b,a);
-      const length=delta.length();temp.position.copy(a).add(b).multiplyScalar(.5);
-      temp.quaternion.setFromUnitVectors(up,delta.normalize());
-      const thickness=link.kind===2?.8+link.activation*.5:link.kind===1?.7:.3;
-      temp.scale.set(thickness,length,thickness);temp.updateMatrix();this.bones.setMatrixAt(link.index,temp.matrix);
-    }
     for(let i=0;i<this.jointMotion.length;i++){
       const j=this.jointMotion[i];a.fromArray(this.positions,j.a*3);b.fromArray(this.positions,j.b*3);c.fromArray(this.positions,j.c*3);
       const {axis,bands}=jointGeometry(a,b,c);
@@ -477,12 +491,66 @@ export class WorldView {
       }
     }
     this.jointCuffs.instanceMatrix.needsUpdate=true;this.jointMuscles.instanceMatrix.needsUpdate=true;
-    this.cells.instanceMatrix.needsUpdate=true;this.bones.instanceMatrix.needsUpdate=true;
+    this.cells.instanceMatrix.needsUpdate=true;
+    this.drawMarks(sphere);
+  }
+  /** A point on top of cell i, where the flat drawing lies: lifted along the ground's up by the cell's radius. */
+  private top(i:number,out:THREE.Vector3,sphere:boolean,up=new THREE.Vector3()){
+    out.fromArray(this.positions,i*3);
+    if(sphere)up.copy(out).normalize();else up.set(0,1,0);
+    return out.addScaledVector(up,this.pickRadii[i]*1.03);
+  }
+  /** Ties, eyes, mouth, tail fin and rings, drawn flat on top of the bodies and placed as the films place them. Which way a part faces is read off the part of the middle line it is tied to. */
+  private drawMarks(sphere:boolean){
+    let dots=0,points=0;
+    const p=new THREE.Vector3(),q=new THREE.Vector3(),f=new THREE.Vector3(),up=new THREE.Vector3(),side=new THREE.Vector3(),across=new THREE.Vector3(),z=new THREE.Vector3(0,0,1);
+    const pos=this.linePositions,col=this.lineColors;
+    const line=(from:THREE.Vector3,to:THREE.Vector3,r:number,g:number,b:number)=>{
+      if(points+2>MAX_LINE_POINTS)return;
+      from.toArray(pos,points*3);to.toArray(pos,points*3+3);
+      col[points*3]=col[points*3+3]=r;col[points*3+1]=col[points*3+4]=g;col[points*3+2]=col[points*3+5]=b;points+=2;
+    };
+    const dot=(at:THREE.Vector3,r:number,c:THREE.Color)=>{
+      if(dots>=MAX_MARKS)return;
+      temp.position.copy(at);temp.quaternion.setFromUnitVectors(z,up);temp.scale.setScalar(r);temp.updateMatrix();
+      this.dots.setMatrixAt(dots,temp.matrix);this.dots.setColorAt(dots++,c);
+    };
+    for(const link of this.linkMotion)line(this.top(link.a,p,sphere),this.top(link.b,q,sphere),link.r,link.g,link.b2);
+    const a=new THREE.Vector3(),b=new THREE.Vector3();
+    for(let i=0;i<this.cells.count;i++){
+      const m=this.marks[i];if(!m)continue;
+      const r=this.pickRadii[i];this.top(i,p,sphere,up);
+      let facing=false;const n=m&MARK.midline?this.lineNeighbour[i]:-1;
+      if(n>=0){f.subVectors(p,this.top(n,q,sphere));f.addScaledVector(up,-f.dot(up));if(f.lengthSq()>1e-12){f.normalize();side.crossVectors(up,f);facing=true;}}
+      if(facing&&m&MARK.eye&&m&MARK.mouth&&m&MARK.founder){
+        // A head: an eye to each side, the mouth in front.
+        for(const s of [-1,1])dot(q.copy(p).addScaledVector(f,r*.2).addScaledVector(side,s*r*.55),r*.2,eyeColor);
+        dot(q.copy(p).addScaledVector(f,r*.8),r*.22,mouthColor);
+      }else if(m&MARK.eye&&!(m&MARK.mouth))dot(p,r*.28,eyeColor);
+      if(m&MARK.digesting)dot(p,r*.5,digestingColor);
+      if(facing&&m&MARK.fin&&m&MARK.stem&&this.bodySize[i]>=3){
+        for(let k=0;k<4;k++){
+          const [s0,f0]=FAN[k],[s1,f1]=FAN[(k+1)%4];
+          line(a.copy(p).addScaledVector(side,s0*r).addScaledVector(f,f0*r),b.copy(p).addScaledVector(side,s1*r).addScaledVector(f,f1*r),finColor.r,finColor.g,finColor.b);
+        }
+      }
+      if(m&(MARK.gamete|MARK.zygote)){
+        const c=m&MARK.zygote?zygoteColor:gameteColor,ring=r*1.35;
+        side.set(1,0,0);if(Math.abs(up.x)>.9)side.set(0,1,0);side.addScaledVector(up,-side.dot(up)).normalize();across.crossVectors(up,side);
+        for(let k=0;k<24;k++){
+          const t0=k/24*Math.PI*2,t1=(k+1)/24*Math.PI*2;
+          line(a.copy(p).addScaledVector(side,Math.cos(t0)*ring).addScaledVector(across,Math.sin(t0)*ring),b.copy(p).addScaledVector(side,Math.cos(t1)*ring).addScaledVector(across,Math.sin(t1)*ring),c.r,c.g,c.b);
+        }
+      }
+    }
+    this.dots.count=dots;this.dots.instanceMatrix.needsUpdate=true;if(this.dots.instanceColor)this.dots.instanceColor.needsUpdate=true;
+    const g=this.lines.geometry;g.setDrawRange(0,points);
+    for(const name of ['position','color']){const attribute=g.getAttribute(name) as THREE.BufferAttribute;attribute.clearUpdateRanges();attribute.addUpdateRange(0,points*3);attribute.needsUpdate=true;}
   }
   private applyCameraMode(){
     const markers=this.cameraMode==='overview'&&!!this.config&&geometry(this.config).sphere&&(this.config.worldSize??64)>256;
     this.overviewCells.visible=markers;
-    for(const mesh of [this.cells,this.walled,this.spined,this.shelled,this.bones,this.jointCuffs,this.jointMuscles,this.matter])mesh.visible=!markers;
+    for(const mesh of [this.cells,this.walled,this.spined,this.shelled,this.lines,this.jointCuffs,this.jointMuscles,this.dots,this.matter])mesh.visible=!markers;
     if(markers)this.selected.visible=false;
     this.selectedBounds.visible=!markers&&!this.selectedBounds.box.isEmpty();
     this.renderDirty=true;

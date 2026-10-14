@@ -65,6 +65,11 @@ pub struct Cell {
     /// direction it lies along. All zero for a round cell.
     #[serde(default)]
     pub long: [f32; 4],
+    /// For the drawing only, one bit each: mouth, swallowing, eye, bone,
+    /// fin, muscle, firing, egg or sperm, fertilised egg, growing tip, on
+    /// the body's middle line, the cell the body began as.
+    #[serde(default)]
+    pub marks: u16,
 }
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct Link {
@@ -241,6 +246,7 @@ impl Body {
                 reserve: 0.,
                 signal: [0.; 3],
                 long: [0.; 4],
+                marks: 0,
             });
         }
         let previous = std::mem::take(&mut self.links);

@@ -33,3 +33,5 @@ export const cellType=(role:number)=>role&31;
 export const isChosen=(role:number)=>(role&64)!==0;
 export const isComplex=(role:number)=>(role&32)!==0;
 export const isCommitted=(role:number)=>(role&128)!==0;
+/** What the drawing marks on a cell, one bit each, as the engine packs them after a cell's rod axis. */
+export const MARK={mouth:1,digesting:2,eye:4,bone:8,fin:16,muscle:32,firing:64,gamete:128,zygote:256,stem:512,midline:1024,founder:2048} as const;

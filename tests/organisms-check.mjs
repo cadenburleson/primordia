@@ -22,8 +22,8 @@ for(const [seed,temperature,kind] of [[8042,.48,'tidal'],[6219,.22,'alien'],[119
   peakCells=Math.max(peakCells,meta.stats.cells);peakMixed=Math.max(peakMixed,a.physiology.mixedBodies);peakJoints=Math.max(peakJoints,p.joints);peakStorage=Math.max(peakStorage,a.physiology.lipid);peakExcited=Math.max(peakExcited,a.physiology.excited);
   const saved=w.save();w.load(saved);assert.equal(w.save(),saved);
   const display=w.display_world();const data=display.cell_data(),links=display.link_data(),joints=display.joint_data();
-  assert.equal(data.length/13,meta.stats.cells);assert.ok([...data,...links,...joints].every(Number.isFinite));
-  for(let k=0;k<links.length;k+=6)assert.ok(links[k]<data.length/13&&links[k+1]<data.length/13);
+  assert.equal(data.length/14,meta.stats.cells);assert.ok([...data,...links,...joints].every(Number.isFinite));
+  for(let k=0;k<links.length;k+=6)assert.ok(links[k]<data.length/14&&links[k+1]<data.length/14);
   assert.equal(w.save(),saved);display.free();
   if(sample%5===0)console.log(JSON.stringify({seed,cycles:meta.stats.time,cells:meta.stats.cells,divisions:a.divisions,weather:planet.weather,eruptions:planet.eruptions,mixed:a.physiology.mixedBodies}));
  }
