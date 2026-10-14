@@ -4521,6 +4521,10 @@ impl Habitat {
                 }
                 child.lifecycle.homolog = None;
                 child.lifecycle.phase = crate::development::Phase::Gamete;
+                // A gamete leaves its body loose, but it is not a piece come
+                // away to start a new one: it keeps its body's origin, so it
+                // cannot fuse with another gamete from the same body.
+                child.state.tied = false;
                 self.development.gametes += 1;
             } else {
                 child.lifecycle.phase = crate::development::Phase::Somatic;

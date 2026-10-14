@@ -205,6 +205,38 @@ fn gametic_budding_splits_existing_stores_and_gametes_cannot_fission() {
     assert_eq!(e.cells.len(), 1);
 }
 #[test]
+fn a_gamete_shed_from_a_body_keeps_that_bodys_origin() {
+    let (mut core, mut e, mut h) = fixture();
+    e.cells.truncate(1);
+    let c = &mut e.cells[0];
+    c.material.as_mut().unwrap().biomass = 0.45;
+    for k in [7, GAMETIC, FUSOGEN] {
+        c.material.as_mut().unwrap().proteins[k] = 0.08;
+    }
+    c.expression[GAMETIC] = 1.;
+    // A part of a body: it was tied to others when it last looked.
+    c.state.tied = true;
+    c.lifecycle.root = c.id;
+    let origin = c.id;
+    rebase(&mut h, &e);
+    for _ in 0..300 {
+        h.divide(&mut e, &mut core);
+        if h.development.gametes > 0 {
+            break;
+        }
+    }
+    assert_eq!(h.development.gametes, 1);
+    // Loose in the water, the gamete is read again. It must still count as
+    // its body's, or its siblings could fertilise it.
+    h.physiology(&mut e, &core);
+    let gamete = e
+        .cells
+        .iter()
+        .find(|c| c.lifecycle.phase == Phase::Gamete)
+        .unwrap();
+    assert_eq!(gamete.body_origin(), origin);
+}
+#[test]
 fn fertilization_inherits_two_chromosomes_conserves_matter_and_resets_memory() {
     let (mut core, mut e, mut h) = gamete_fixture();
     e.cells[1].genome.genes.push(Gene {
