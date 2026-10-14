@@ -431,6 +431,9 @@ const SPINE_PUSH: f32 = 60.;
 const BACKBONE: f32 = 2.;
 /// How far its muscle turns a backbone's joint, each way.
 const SWING: f32 = 0.45;
+/// How far a full turn command bends each backbone joint toward its side,
+/// on top of the swimming beat: a fish's turns are made by the same muscle.
+const TURN_BEND: f32 = 0.3;
 /// Where bone meets bone, and how hard.
 const STOP: f32 = 0.9;
 const STOP_STIFF: f32 = 60.;
@@ -2095,9 +2098,13 @@ impl Habitat {
             // The share of a protein lost each tick: little while its gene is
             // working, a great deal once it falls silent.
             let (kept, dropped) = (1. - (-0.025 * dt).exp(), 1. - (-0.2 * dt).exp());
+            // An egg or sperm reads none of its genes: it lives on the
+            // machinery and stores it was made with until it fuses or runs
+            // out, as real gametes do. What it carries wears out slowly.
+            let gamete = c.lifecycle.phase == crate::development::Phase::Gamete;
             for k in 0..ACTIONS {
                 // Commitment genes regulate; they build nothing.
-                let building = if BECOME.contains(&k) || k == BROADEN || k == SIZE || k == ELONGATE || k == BRANCH {
+                let building = if gamete || BECOME.contains(&k) || k == BROADEN || k == SIZE || k == ELONGATE || k == BRANCH {
                     0.
                 } else {
                     c.expression[k] as f64
@@ -2127,7 +2134,7 @@ impl Habitat {
                 self.heat += before - c.energy as f64;
                 // Machinery whose gene is silent in this cell is dismantled fast,
                 // so what a cell is follows what its genes are doing now.
-                let turnover = m.proteins[k] * if c.expression[k] > 0. { kept } else { dropped };
+                let turnover = m.proteins[k] * if gamete || c.expression[k] > 0. { kept } else { dropped };
                 m.proteins[k] -= turnover;
                 m.fuel += turnover;
                 m.nitrogen += turnover * needs;
@@ -2766,6 +2773,11 @@ impl Habitat {
                     }
                 }
                 for (a, b) in [(i, j), (j, i)] {
+                    // An egg or sperm takes no food, by mouth or by digesting
+                    // what it touches: it lives on what it was made with.
+                    if e.cells[a].lifecycle.phase == crate::development::Phase::Gamete {
+                        continue;
+                    }
                     let gate = e.cells[a].activity(crate::organics::MATRIX_DIGEST) as f64;
                     if gate > 0. && e.cells[a].energy > 0.1 {
                         let (left, right) = e.cells.split_at_mut(a.max(b));
@@ -3502,7 +3514,14 @@ impl Habitat {
                     };
                 }
                 let (port, starboard) = (motor * port, motor * starboard);
-                let wanted = ((port - starboard) * SWING).clamp(-STOP, STOP);
+                // A swimming body turns as a fish does: what it senses
+                // pulls harder on one side, so the body curves toward what
+                // it is after and its own swimming carries it round. Which
+                // side is which is read from the way the joint's cell faces.
+                let forward = self.domain.tangent(pb, cell.heading);
+                let headward = if pa.sub(pc).dot(forward) >= 0. { 1. } else { -1. };
+                let turn = motor * cell.state.turn * headward * TURN_BEND;
+                let wanted = ((port - starboard) * SWING + turn).clamp(-STOP, STOP);
                 let next = j.aim + (wanted - j.aim) * EASE;
                 let k = Self::spine_k(e, a, b, c) as f64;
                 // Never more work than its muscle could do in turning it that far.
